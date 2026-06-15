@@ -1,0 +1,26 @@
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.iml
+
+# Flutter/Dart generated files
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/build/
+**/coverage/
+**/doc/api/
+
+# Android/Gradle generated files
+**/.gradle/
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
