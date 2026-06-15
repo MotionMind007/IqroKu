@@ -1,4 +1,13 @@
 class AppAssets {
+  static const welcomePage = 'assets/brand/welcomepage.png';
+  static const appLogo = 'assets/brand/logo.png';
+  static const googleLogo = 'assets/brand/logo-google.webp';
+  static const onboarding1 = 'assets/brand/onboarding_1.png';
+  static const onboarding2 = 'assets/brand/onboarding_2.png';
+  static const onboarding3 = 'assets/brand/onboarding_3.png';
+  static const avatarMale = 'assets/brand/male-avatar.png';
+  static const avatarFemale = 'assets/brand/female-avatar.png';
+
   static const home = 'assets/icons/home.png';
   static const iqroBasic = 'assets/icons/iqro_basic.png';
   static const iqroBook = 'assets/icons/iqro_book.png';

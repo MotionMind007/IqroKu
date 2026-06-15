@@ -5,24 +5,30 @@ import '../../core/assets/app_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_chrome.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.state});
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key, required this.state});
 
   final IqrokuState state;
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _RegisterScreenState extends State<RegisterScreen> {
+  final nameController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
+  final confirmPasswordController = TextEditingController();
   bool obscurePassword = true;
+  bool obscureConfirm = true;
+  bool agreedToTerms = false;
 
   @override
   void dispose() {
+    nameController.dispose();
     emailController.dispose();
     passwordController.dispose();
+    confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -40,8 +46,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: IconButton(
-                      onPressed: widget.state.backToWelcome,
-                      tooltip: 'Kembali',
+                      onPressed: widget.state.goToLogin,
+                      tooltip: 'Kembali ke login',
                       icon: const Icon(Icons.arrow_back_ios_new, size: 20),
                     ),
                   ),
@@ -49,33 +55,46 @@ class _LoginScreenState extends State<LoginScreen> {
                   Center(
                     child: Image.asset(
                       AppAssets.appLogo,
-                      width: 210,
+                      width: 160,
                       fit: BoxFit.contain,
                     ),
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    'Masuk ke IqroKu',
+                    'Buat Akun Baru',
                     textAlign: TextAlign.center,
-                    style: AppText.hero.copyWith(fontSize: 30),
+                    style: AppText.hero.copyWith(fontSize: 26),
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    "Simpan progress Iqro, hafalan, bookmark Qur'an, dan profil anak dalam satu akun.",
+                    'Daftar untuk menyimpan progress belajar anak dan sinkronisasi data.',
                     textAlign: TextAlign.center,
                     style: AppText.body,
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 24),
                   AppCard(
                     padding: const EdgeInsets.all(18),
                     child: Column(
                       children: [
                         TextField(
+                          controller: nameController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: const InputDecoration(
+                            labelText: 'Nama Lengkap',
+                            prefixIcon: Icon(Icons.person_outline),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(14),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
                           controller: emailController,
                           keyboardType: TextInputType.emailAddress,
                           decoration: const InputDecoration(
                             labelText: 'Email',
-                            hintText: 'contoh@email.com',
                             prefixIcon: Icon(Icons.mail_outline),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.all(
@@ -108,18 +127,63 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () {},
-                            child: const Text('Lupa password?'),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: confirmPasswordController,
+                          obscureText: obscureConfirm,
+                          decoration: InputDecoration(
+                            labelText: 'Konfirmasi Password',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              onPressed: () => setState(
+                                () => obscureConfirm = !obscureConfirm,
+                              ),
+                              icon: Icon(
+                                obscureConfirm
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                            ),
+                            border: const OutlineInputBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(14),
+                              ),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: agreedToTerms,
+                              onChanged: (value) => setState(
+                                () => agreedToTerms = value ?? false,
+                              ),
+                              activeColor: AppColors.primary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => setState(
+                                  () => agreedToTerms = !agreedToTerms,
+                                ),
+                                child: Text(
+                                  'Saya setuju dengan Syarat & Ketentuan dan Kebijakan Privasi',
+                                  style: AppText.caption.copyWith(
+                                    color: AppColors.text,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
                         FilledButton(
-                          key: const ValueKey('login_submit_button'),
-                          onPressed: widget.state.loginAsDemoUser,
+                          onPressed: agreedToTerms
+                              ? widget.state.loginAsDemoUser
+                              : null,
                           style: FilledButton.styleFrom(
                             minimumSize: const Size(double.infinity, 52),
                             backgroundColor: AppColors.primary,
@@ -128,11 +192,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           child: const Text(
-                            'Masuk',
+                            'Daftar',
                             style: TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         Row(
                           children: [
                             const Expanded(
@@ -152,7 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         OutlinedButton.icon(
                           onPressed: widget.state.loginAsDemoUser,
                           icon: Image.asset(
@@ -161,7 +225,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             height: 22,
                             fit: BoxFit.contain,
                           ),
-                          label: const Text('Masuk dengan Google'),
+                          label: const Text('Daftar dengan Google'),
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size(double.infinity, 50),
                             foregroundColor: AppColors.text,
@@ -174,18 +238,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Text(
-                        'Belum punya akun? ',
+                        'Sudah punya akun? ',
                         style: AppText.body,
                       ),
                       GestureDetector(
-                        onTap: widget.state.goToRegister,
+                        onTap: widget.state.goToLogin,
                         child: Text(
-                          'Daftar Sekarang',
+                          'Masuk',
                           style: AppText.bodyStrong.copyWith(
                             color: AppColors.primary,
                           ),

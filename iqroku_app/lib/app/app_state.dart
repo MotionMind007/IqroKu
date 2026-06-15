@@ -8,7 +8,7 @@ class IqrokuState extends ChangeNotifier {
 
   final DummyIqrokuRepository repository;
 
-  AppLaunchStage launchStage = AppLaunchStage.welcome;
+  AppLaunchStage launchStage = AppLaunchStage.onboarding;
   int selectedTab = 0;
   int selectedIqroBook = 1;
   int selectedIqroPage = 8;
@@ -17,14 +17,34 @@ class IqrokuState extends ChangeNotifier {
   bool memorizationMode = false;
   String selectedChildId = 'nedy';
 
+  void completeOnboarding() {
+    launchStage = AppLaunchStage.welcome;
+    notifyListeners();
+  }
+
   void continueFromWelcome() {
     launchStage = AppLaunchStage.login;
     notifyListeners();
   }
 
+  void goToLogin() {
+    launchStage = AppLaunchStage.login;
+    notifyListeners();
+  }
+
+  void goToRegister() {
+    launchStage = AppLaunchStage.register;
+    notifyListeners();
+  }
+
   void loginAsDemoUser() {
-    launchStage = AppLaunchStage.authenticated;
+    launchStage = AppLaunchStage.setupChild;
     selectedTab = 0;
+    notifyListeners();
+  }
+
+  void completeSetup() {
+    launchStage = AppLaunchStage.authenticated;
     notifyListeners();
   }
 
@@ -69,4 +89,4 @@ class IqrokuState extends ChangeNotifier {
   }
 }
 
-enum AppLaunchStage { welcome, login, authenticated }
+enum AppLaunchStage { onboarding, welcome, login, register, setupChild, authenticated }
