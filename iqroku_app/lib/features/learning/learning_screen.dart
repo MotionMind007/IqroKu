@@ -27,7 +27,11 @@ class LearningScreen extends StatelessWidget {
         key: const ValueKey('learning_scroll_view'),
         padding: AppInsets.page,
         children: [
-          const AppTopBar(title: 'Belajar Iqro', trailing: Icons.help_outline),
+          AppTopBar(
+            title: 'Belajar Iqro',
+            trailing: Icons.help_outline,
+            onBack: state.goHome,
+          ),
           const SizedBox(height: 16),
           SizedBox(
             height: 44,

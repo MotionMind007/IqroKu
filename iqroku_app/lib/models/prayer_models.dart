@@ -45,3 +45,35 @@ class QiblaDirection {
 }
 
 enum LocationSource { device, fallback }
+
+class DailyPrayer {
+  const DailyPrayer({
+    required this.id,
+    required this.title,
+    required this.category,
+    required this.arabic,
+    required this.latin,
+    required this.meaning,
+    required this.sortOrder,
+  });
+
+  final String id;
+  final String title;
+  final String category;
+  final String arabic;
+  final String latin;
+  final String meaning;
+  final int sortOrder;
+
+  static DailyPrayer fromJson(Map<String, Object?> json) {
+    return DailyPrayer(
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? 'Doa',
+      category: json['category'] as String? ?? 'Harian',
+      arabic: json['arabic'] as String? ?? '',
+      latin: json['latin'] as String? ?? '',
+      meaning: json['meaning'] as String? ?? '',
+      sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 100,
+    );
+  }
+}

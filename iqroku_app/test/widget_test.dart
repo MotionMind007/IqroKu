@@ -11,6 +11,7 @@ import 'package:iqroku/app/iqroku_app.dart';
 import 'package:iqroku/data/assessment_service.dart';
 import 'package:iqroku/data/audio_playback_service.dart';
 import 'package:iqroku/data/auth_api_service.dart';
+import 'package:iqroku/data/daily_prayer_api_service.dart';
 import 'package:iqroku/data/dummy_iqroku_repository.dart';
 import 'package:iqroku/data/islamic_activity_service.dart';
 import 'package:iqroku/data/quran_api_service.dart';
@@ -37,6 +38,7 @@ void main() {
       IqrokuApp(
         assessmentService: const FakeAssessmentService(),
         authService: FakeAuthApiService(),
+        dailyPrayerApiService: const FakeDailyPrayerApiService(),
         quranApiService: const FakeQuranApiService(),
         islamicActivityService: const FakeIslamicActivityService(),
         voiceRecordingService: FakeVoiceRecordingService(),
@@ -380,6 +382,25 @@ class FakeAuthApiService extends AuthApiService {
     );
     children.add(child);
     return child;
+  }
+}
+
+class FakeDailyPrayerApiService extends DailyPrayerApiService {
+  const FakeDailyPrayerApiService();
+
+  @override
+  Future<List<DailyPrayer>> fetchDailyPrayers() async {
+    return const [
+      DailyPrayer(
+        id: 'doa-belajar',
+        title: 'Doa Sebelum Belajar',
+        category: 'Belajar',
+        arabic: 'رَبِّ زِدْنِي عِلْمًا',
+        latin: 'Rabbi zidnii ilman',
+        meaning: 'Ya Rabb, tambahkanlah ilmuku.',
+        sortOrder: 10,
+      ),
+    ];
   }
 }
 

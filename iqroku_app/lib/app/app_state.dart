@@ -6,6 +6,7 @@ import '../core/assets/app_assets.dart';
 import '../data/assessment_service.dart';
 import '../data/audio_playback_service.dart';
 import '../data/auth_api_service.dart';
+import '../data/daily_prayer_api_service.dart';
 import '../data/dummy_iqroku_repository.dart';
 import '../data/islamic_activity_service.dart';
 import '../data/iqro_content_repository.dart';
@@ -25,6 +26,7 @@ class IqrokuState extends ChangeNotifier {
     this.iqroContentRepository = const IqroContentRepository(),
     this.assessmentService = const MockAssessmentService(),
     this.authService = const AuthApiService(),
+    this.dailyPrayerApiService = const DailyPrayerApiService(),
     this.quranApiService = const QuranApiService(),
     this.islamicActivityService = const IslamicActivityService(),
     VoiceRecordingService? voiceRecordingService,
@@ -56,6 +58,7 @@ class IqrokuState extends ChangeNotifier {
   final IqroContentRepository iqroContentRepository;
   final AssessmentService assessmentService;
   final AuthApiService authService;
+  final DailyPrayerApiService dailyPrayerApiService;
   final QuranApiService quranApiService;
   final IslamicActivityService islamicActivityService;
   final VoiceRecordingService voiceRecordingService;
@@ -70,6 +73,7 @@ class IqrokuState extends ChangeNotifier {
   SurahDetail? _selectedSurahDetail;
   PrayerSchedule? _prayerSchedule;
   QiblaDirection? _qiblaDirection;
+  List<DailyPrayer>? _dailyPrayers;
   Timer? _voiceTimer;
   StreamSubscription<void>? _playbackCompleteSubscription;
   DateTime? _voiceStartedAt;
@@ -92,6 +96,7 @@ class IqrokuState extends ChangeNotifier {
   bool quranLoading = false;
   bool surahDetailLoading = false;
   bool islamicActivityLoading = false;
+  bool dailyPrayersLoading = false;
   bool isVoiceRecording = false;
   bool authLoading = false;
   int voiceRecordingSeconds = 0;
@@ -102,6 +107,7 @@ class IqrokuState extends ChangeNotifier {
   String? iqroContentError;
   String? quranError;
   String? islamicActivityError;
+  String? dailyPrayersError;
   String? voiceRecordingError;
   String? playingAttemptId;
   String? playingQuranAudioUrl;
@@ -261,6 +267,8 @@ class IqrokuState extends ChangeNotifier {
   String get prayerDateLabel {
     return _prayerSchedule?.dateLabel ?? _todayLabel();
   }
+
+  List<DailyPrayer> get dailyPrayers => _dailyPrayers ?? _fallbackDailyPrayers;
 
   double get qiblaDegrees => _qiblaDirection?.degrees ?? 295;
 
@@ -427,6 +435,31 @@ class IqrokuState extends ChangeNotifier {
       debugPrint('Islamic activity load failed: $error');
     } finally {
       islamicActivityLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadDailyPrayers({bool forceRefresh = false}) async {
+    if (dailyPrayersLoading || (_dailyPrayers != null && !forceRefresh)) {
+      return;
+    }
+
+    dailyPrayersLoading = true;
+    dailyPrayersError = null;
+    notifyListeners();
+
+    try {
+      final prayers = await dailyPrayerApiService.fetchDailyPrayers();
+      if (prayers.isNotEmpty) {
+        _dailyPrayers = prayers;
+      }
+      dailyPrayersError = null;
+    } catch (error) {
+      dailyPrayersError =
+          'Doa terbaru belum bisa dimuat. Menampilkan doa bawaan aplikasi.';
+      debugPrint('Daily prayers load failed: $error');
+    } finally {
+      dailyPrayersLoading = false;
       notifyListeners();
     }
   }
@@ -706,6 +739,7 @@ class IqrokuState extends ChangeNotifier {
   void openDailyPrayers() {
     selectedTab = 5;
     notifyListeners();
+    unawaited(loadDailyPrayers(forceRefresh: true));
   }
 
   void selectIqroBook(int bookId) {
@@ -1025,6 +1059,7 @@ class IqrokuState extends ChangeNotifier {
 
   Future<void> openQuranReader(int index) async {
     await selectSurah(index);
+    selectedTab = 2;
     quranView = QuranView.reader;
     memorizationMode = false;
     murottalMode = false;
@@ -1033,6 +1068,7 @@ class IqrokuState extends ChangeNotifier {
 
   Future<void> openQuranMemorization(int index) async {
     await selectSurah(index);
+    selectedTab = 2;
     quranView = QuranView.memorization;
     memorizationMode = true;
     murottalMode = false;
@@ -1580,6 +1616,49 @@ class IqrokuState extends ChangeNotifier {
     super.dispose();
   }
 }
+
+const _fallbackDailyPrayers = [
+  DailyPrayer(
+    id: 'doa-belajar',
+    title: 'Doa Sebelum Belajar',
+    category: 'Belajar',
+    arabic: 'رَبِّ زِدْنِي عِلْمًا وَارْزُقْنِي فَهْمًا',
+    latin: 'Rabbi zidnii ilman warzuqnii fahman',
+    meaning: 'Ya Rabb, tambahkanlah ilmuku dan berilah aku pemahaman.',
+    sortOrder: 10,
+  ),
+  DailyPrayer(
+    id: 'doa-orang-tua',
+    title: 'Doa Kedua Orang Tua',
+    category: 'Keluarga',
+    arabic: 'رَبِّ اغْفِرْ لِي وَلِوَالِدَيَّ وَارْحَمْهُمَا',
+    latin: 'Rabbighfir lii waliwaalidayya warhamhumaa',
+    meaning:
+        'Ya Rabb, ampunilah aku dan kedua orang tuaku, serta sayangilah mereka.',
+    sortOrder: 20,
+  ),
+  DailyPrayer(
+    id: 'doa-sebelum-tidur',
+    title: 'Doa Sebelum Tidur',
+    category: 'Harian',
+    arabic: 'بِاسْمِكَ اللَّهُمَّ أَحْيَا وَأَمُوتُ',
+    latin: 'Bismikallaahumma ahyaa wa amuut',
+    meaning: 'Dengan nama-Mu ya Allah aku hidup dan aku mati.',
+    sortOrder: 30,
+  ),
+  DailyPrayer(
+    id: 'doa-bangun-tidur',
+    title: 'Doa Bangun Tidur',
+    category: 'Harian',
+    arabic:
+        'الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا وَإِلَيْهِ النُّشُورُ',
+    latin:
+        'Alhamdulillaahil ladzii ahyaanaa ba’da maa amaatanaa wa ilaihin nusyuur',
+    meaning:
+        'Segala puji bagi Allah yang menghidupkan kami setelah mematikan kami, dan kepada-Nya kami kembali.',
+    sortOrder: 40,
+  ),
+];
 
 enum AppLaunchStage {
   onboarding,

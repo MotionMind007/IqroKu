@@ -27,6 +27,12 @@ http://localhost:8787/admin
 
 The dashboard shows parent users, child profiles, Free vs Plus users, active subscriptions, estimated monthly revenue, reading attempts, assessment counts, and recent activity.
 
+Daily prayers can be managed from:
+
+```text
+http://localhost:8787/admin/prayers
+```
+
 Raw metrics are available at:
 
 ```text
@@ -38,6 +44,11 @@ http://localhost:8787/admin/metrics
 - `GET /health`
 - `GET /admin`
 - `GET /admin/metrics`
+- `GET /admin/prayers`
+- `GET /daily-prayers`
+- `POST /admin/prayers`
+- `POST /admin/prayers/:id/update`
+- `POST /admin/prayers/:id/delete`
 - `POST /auth/demo-login`
 - `POST /auth/register`
 - `POST /auth/login`

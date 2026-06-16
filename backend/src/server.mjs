@@ -51,6 +51,53 @@ async function route(method, url, body) {
     return buildAdminMetrics(state);
   }
 
+  if (method === 'GET' && path === '/admin/prayers') {
+    return { html: renderAdminPrayers(prayersForAdmin(state)) };
+  }
+
+  if (method === 'GET' && path === '/daily-prayers') {
+    return publicPrayers(state);
+  }
+
+  if (method === 'POST' && path === '/admin/prayers') {
+    const prayer = prayerFromBody(body);
+    state.dailyPrayers.unshift({
+      id: randomUUID(),
+      ...prayer,
+      active: parseBoolean(body.active, true),
+      createdAt: now(),
+      updatedAt: now(),
+    });
+    await store.save();
+    return {
+      html: renderAdminPrayers(prayersForAdmin(state), 'Doa baru sudah tersimpan.'),
+    };
+  }
+
+  const prayerAction = adminPrayerAction(path);
+  if (method === 'POST' && prayerAction) {
+    const prayer = state.dailyPrayers.find((item) => item.id === prayerAction.id);
+    if (!prayer) {
+      throw httpError(404, 'prayer_not_found');
+    }
+    if (prayerAction.action === 'delete') {
+      state.dailyPrayers = state.dailyPrayers.filter((item) => item.id !== prayer.id);
+      await store.save();
+      return {
+        html: renderAdminPrayers(prayersForAdmin(state), 'Doa sudah dihapus.'),
+      };
+    }
+    Object.assign(prayer, {
+      ...prayerFromBody(body),
+      active: parseBoolean(body.active, false),
+      updatedAt: now(),
+    });
+    await store.save();
+    return {
+      html: renderAdminPrayers(prayersForAdmin(state), 'Perubahan doa sudah tersimpan.'),
+    };
+  }
+
   if (method === 'POST' && path === '/auth/demo-login') {
     const email = cleanString(body.email) || 'parent@iqroku.local';
     const name = cleanString(body.name) || 'Orang Tua';
@@ -234,7 +281,14 @@ async function readJson(request) {
     chunks.push(chunk);
   }
   const raw = Buffer.concat(chunks).toString('utf8').trim();
-  return raw ? JSON.parse(raw) : {};
+  if (!raw) {
+    return {};
+  }
+  const contentType = String(request.headers['content-type'] ?? '');
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    return Object.fromEntries(new URLSearchParams(raw));
+  }
+  return JSON.parse(raw);
 }
 
 function sendJson(response, status, body) {
@@ -339,6 +393,64 @@ function scoreAttempt({ pageNumber, durationSeconds, targetLines }) {
       ? 'Hasil penilaian: lancar dengan toleransi latihan anak.'
       : 'Hasil penilaian: perlu ulang agar bacaan makin mantap.',
   };
+}
+
+function publicPrayers(state) {
+  return sortPrayers(state.dailyPrayers)
+    .filter((prayer) => prayer.active !== false)
+    .map(publicPrayer);
+}
+
+function prayersForAdmin(state) {
+  return sortPrayers(state.dailyPrayers);
+}
+
+function sortPrayers(prayers = []) {
+  return [...prayers].sort((a, b) => {
+    const sort = Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0);
+    return sort === 0 ? String(a.title ?? '').localeCompare(String(b.title ?? '')) : sort;
+  });
+}
+
+function publicPrayer(prayer) {
+  return {
+    id: prayer.id,
+    title: prayer.title,
+    category: prayer.category,
+    arabic: prayer.arabic,
+    latin: prayer.latin,
+    meaning: prayer.meaning,
+    sortOrder: Number(prayer.sortOrder ?? 0),
+  };
+}
+
+function prayerFromBody(body) {
+  const title = cleanString(requiredBody(body, 'title'));
+  const arabic = cleanString(requiredBody(body, 'arabic'));
+  const meaning = cleanString(requiredBody(body, 'meaning'));
+  return {
+    title,
+    category: cleanString(body.category) || 'Harian',
+    arabic,
+    latin: cleanString(body.latin),
+    meaning,
+    sortOrder: Number(body.sortOrder ?? 100),
+  };
+}
+
+function adminPrayerAction(path) {
+  const match = /^\/admin\/prayers\/([^/]+)\/(update|delete)$/.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { id: decodeURIComponent(match[1]), action: match[2] };
+}
+
+function parseBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+  return ['true', '1', 'yes', 'on'].includes(String(value).toLowerCase());
 }
 
 function buildAdminMetrics(state) {
@@ -562,7 +674,7 @@ function renderAdminDashboard(metrics) {
         </div>
         <div>
           <span class="badge">Generated ${escapeHtml(formatDateTime(metrics.generatedAt))}</span>
-          <p><a href="/admin/metrics">View JSON metrics</a></p>
+          <p><a href="/admin/prayers">Kelola Doa</a> · <a href="/admin/metrics">View JSON metrics</a></p>
         </div>
       </header>
 
@@ -581,6 +693,267 @@ function renderAdminDashboard(metrics) {
     </main>
   </body>
 </html>`;
+}
+
+function renderAdminPrayers(prayers, notice = '') {
+  return `<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kelola Doa - IqroKu Admin</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --canvas: #f8f6ef;
+        --surface: #ffffff;
+        --paper: #fffbf1;
+        --line: #e7e1d6;
+        --text: #17201b;
+        --muted: #6d756f;
+        --primary: #23864b;
+        --primary-dark: #0f5b39;
+        --danger: #d84f3f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
+        background: linear-gradient(180deg, var(--canvas), #fff);
+      }
+      main {
+        width: min(980px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 44px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 18px;
+      }
+      h1, h2, h3 { margin: 0; letter-spacing: 0; }
+      h1 { font-size: 28px; }
+      h2 { font-size: 18px; }
+      h3 { font-size: 16px; }
+      p { margin: 6px 0 0; color: var(--muted); }
+      a {
+        color: var(--primary);
+        font-weight: 800;
+        text-decoration: none;
+      }
+      section, .prayer {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        box-shadow: 0 6px 14px rgba(0, 0, 0, .06);
+      }
+      section { padding: 16px; margin-bottom: 16px; }
+      .notice {
+        padding: 12px 14px;
+        margin-bottom: 16px;
+        border: 1px solid rgba(35, 134, 75, .2);
+        border-radius: 12px;
+        background: #e7f5ec;
+        color: var(--primary-dark);
+        font-weight: 800;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      label {
+        display: grid;
+        gap: 7px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      input, textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 11px 12px;
+        color: var(--text);
+        background: #fff;
+        font: inherit;
+      }
+      textarea { min-height: 96px; resize: vertical; }
+      .wide { grid-column: 1 / -1; }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-top: 12px;
+      }
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 15px;
+        background: var(--primary);
+        color: #fff;
+        font-weight: 900;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #edf6f0;
+        color: var(--primary-dark);
+      }
+      button.danger {
+        background: #fff0ee;
+        color: var(--danger);
+      }
+      .check {
+        display: inline-flex;
+        grid-auto-flow: column;
+        align-items: center;
+        gap: 8px;
+        color: var(--text);
+      }
+      .check input { width: auto; }
+      .prayer {
+        padding: 16px;
+        margin-bottom: 12px;
+      }
+      .prayer-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: rgba(35, 134, 75, .12);
+        color: var(--primary);
+        font-size: 12px;
+        font-weight: 900;
+        white-space: nowrap;
+      }
+      .pill.off {
+        background: rgba(109, 117, 111, .14);
+        color: var(--muted);
+      }
+      .empty {
+        padding: 18px 0;
+        color: var(--muted);
+      }
+      @media (max-width: 720px) {
+        header { flex-direction: column; }
+        .grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Kelola Doa</h1>
+          <p>Update konten Doa-doa dari dashboard, lalu aplikasi akan mengambil data terbaru dari backend.</p>
+        </div>
+        <p><a href="/admin">Dashboard</a> · <a href="/daily-prayers">JSON publik</a></p>
+      </header>
+
+      ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
+
+      <section>
+        <h2>Tambah Doa Baru</h2>
+        <p>Isi minimal judul, Arab, dan arti. Urutan kecil tampil lebih atas.</p>
+        <form method="post" action="/admin/prayers">
+          ${renderPrayerFields({
+            title: '',
+            category: 'Harian',
+            arabic: '',
+            latin: '',
+            meaning: '',
+            sortOrder: nextPrayerSortOrder(prayers),
+            active: true,
+          })}
+          <div class="actions">
+            <button type="submit">Simpan Doa</button>
+          </div>
+        </form>
+      </section>
+
+      <section>
+        <h2>Daftar Doa</h2>
+        <p>${prayers.length} konten doa tersimpan.</p>
+      </section>
+
+      ${prayers.length ? prayers.map(renderPrayerEditor).join('') : '<div class="empty">Belum ada doa.</div>'}
+    </main>
+  </body>
+</html>`;
+}
+
+function renderPrayerEditor(prayer) {
+  return `<div class="prayer">
+    <div class="prayer-head">
+      <div>
+        <h3>${escapeHtml(prayer.title)}</h3>
+        <p>${escapeHtml(prayer.category || 'Harian')} · Urutan ${escapeHtml(prayer.sortOrder ?? 0)}</p>
+      </div>
+      <span class="pill ${prayer.active === false ? 'off' : ''}">${prayer.active === false ? 'Nonaktif' : 'Aktif'}</span>
+    </div>
+    <form method="post" action="/admin/prayers/${encodeURIComponent(prayer.id)}/update">
+      ${renderPrayerFields(prayer)}
+      <div class="actions">
+        <button type="submit">Update</button>
+      </div>
+    </form>
+    <form method="post" action="/admin/prayers/${encodeURIComponent(prayer.id)}/delete">
+      <div class="actions">
+        <button class="danger" type="submit">Hapus</button>
+      </div>
+    </form>
+  </div>`;
+}
+
+function renderPrayerFields(prayer) {
+  return `<div class="grid">
+    <label>
+      Judul
+      <input name="title" required value="${escapeHtml(prayer.title)}">
+    </label>
+    <label>
+      Kategori
+      <input name="category" value="${escapeHtml(prayer.category)}">
+    </label>
+    <label class="wide">
+      Teks Arab
+      <textarea name="arabic" required dir="rtl">${escapeHtml(prayer.arabic)}</textarea>
+    </label>
+    <label class="wide">
+      Latin
+      <textarea name="latin">${escapeHtml(prayer.latin)}</textarea>
+    </label>
+    <label class="wide">
+      Arti Indonesia
+      <textarea name="meaning" required>${escapeHtml(prayer.meaning)}</textarea>
+    </label>
+    <label>
+      Urutan
+      <input name="sortOrder" type="number" value="${escapeHtml(prayer.sortOrder ?? 100)}">
+    </label>
+    <label class="check">
+      <input name="active" type="checkbox" ${prayer.active === false ? '' : 'checked'}>
+      Aktif tampil di app
+    </label>
+  </div>`;
+}
+
+function nextPrayerSortOrder(prayers) {
+  const maxSort = prayers.reduce((max, prayer) => {
+    return Math.max(max, Number(prayer.sortOrder ?? 0));
+  }, 0);
+  return maxSort + 10;
 }
 
 function renderParentsTable(parents) {

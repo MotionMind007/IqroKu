@@ -4,6 +4,7 @@ import '../core/theme/app_theme.dart';
 import '../data/assessment_service.dart';
 import '../data/audio_playback_service.dart';
 import '../data/auth_api_service.dart';
+import '../data/daily_prayer_api_service.dart';
 import '../data/dummy_iqroku_repository.dart';
 import '../data/islamic_activity_service.dart';
 import '../data/quran_api_service.dart';
@@ -22,6 +23,7 @@ class IqrokuApp extends StatefulWidget {
     this.repository = const DummyIqrokuRepository(),
     this.assessmentService = const MockAssessmentService(),
     this.authService = const AuthApiService(),
+    this.dailyPrayerApiService = const DailyPrayerApiService(),
     this.quranApiService = const QuranApiService(),
     this.islamicActivityService = const IslamicActivityService(),
     this.voiceRecordingService,
@@ -31,6 +33,7 @@ class IqrokuApp extends StatefulWidget {
   final DummyIqrokuRepository repository;
   final AssessmentService assessmentService;
   final AuthApiService authService;
+  final DailyPrayerApiService dailyPrayerApiService;
   final QuranApiService quranApiService;
   final IslamicActivityService islamicActivityService;
   final VoiceRecordingService? voiceRecordingService;
@@ -50,6 +53,7 @@ class _IqrokuAppState extends State<IqrokuApp> {
       repository: widget.repository,
       assessmentService: widget.assessmentService,
       authService: widget.authService,
+      dailyPrayerApiService: widget.dailyPrayerApiService,
       quranApiService: widget.quranApiService,
       islamicActivityService: widget.islamicActivityService,
       voiceRecordingService: widget.voiceRecordingService,
@@ -59,6 +63,7 @@ class _IqrokuAppState extends State<IqrokuApp> {
     state.loadIqroContent();
     state.loadQuranContent();
     state.loadIslamicActivity();
+    state.loadDailyPrayers();
   }
 
   @override

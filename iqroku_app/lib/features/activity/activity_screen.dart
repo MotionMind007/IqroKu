@@ -319,7 +319,7 @@ class QiblaCompassScreen extends StatelessWidget {
                 child: _QiblaChip(
                   icon: Icons.flag,
                   label: state.activityLocationSource == LocationSource.device
-                      ? 'Lokasi otomatis'
+                      ? state.prayerLocationLabel
                       : 'Fallback Papua',
                 ),
               ),
