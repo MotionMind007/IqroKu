@@ -5,13 +5,18 @@ import 'package:flutter/foundation.dart';
 import '../core/assets/app_assets.dart';
 import '../data/assessment_service.dart';
 import '../data/audio_playback_service.dart';
+import '../data/auth_api_service.dart';
 import '../data/dummy_iqroku_repository.dart';
+import '../data/islamic_activity_service.dart';
 import '../data/iqro_content_repository.dart';
 import '../data/local_app_storage.dart';
+import '../data/quran_api_service.dart';
 import '../data/voice_recording_service.dart';
 import '../models/iqro_models.dart';
 import '../models/learning_status.dart';
+import '../models/prayer_models.dart';
 import '../models/profile_models.dart';
+import '../models/quran_models.dart';
 
 class IqrokuState extends ChangeNotifier {
   IqrokuState({
@@ -19,6 +24,9 @@ class IqrokuState extends ChangeNotifier {
     this.storage = const LocalAppStorage(),
     this.iqroContentRepository = const IqroContentRepository(),
     this.assessmentService = const MockAssessmentService(),
+    this.authService = const AuthApiService(),
+    this.quranApiService = const QuranApiService(),
+    this.islamicActivityService = const IslamicActivityService(),
     VoiceRecordingService? voiceRecordingService,
     AudioPlaybackService? audioPlaybackService,
   }) : childProfiles = List.of(repository.children.take(freeChildLimit)),
@@ -31,6 +39,7 @@ class IqrokuState extends ChangeNotifier {
     _playbackCompleteSubscription = this.audioPlaybackService.onComplete.listen(
       (_) {
         playingAttemptId = null;
+        playingQuranAudioUrl = null;
         notifyListeners();
       },
     );
@@ -39,12 +48,16 @@ class IqrokuState extends ChangeNotifier {
   static const freeChildLimit = 1;
   static const freeIqroBookLimit = 1;
   static const freeIqroPageLimit = 10;
+  static const quranMemorizationBookId = 99;
   static const subscriptionPriceLabel = 'Rp49.000/bulan';
 
   final DummyIqrokuRepository repository;
   final LocalAppStorage storage;
   final IqroContentRepository iqroContentRepository;
   final AssessmentService assessmentService;
+  final AuthApiService authService;
+  final QuranApiService quranApiService;
+  final IslamicActivityService islamicActivityService;
   final VoiceRecordingService voiceRecordingService;
   final AudioPlaybackService audioPlaybackService;
   final List<ChildProfile> childProfiles;
@@ -53,6 +66,10 @@ class IqrokuState extends ChangeNotifier {
   final Map<String, Map<int, Map<int, LearningStatus>>> _iqroProgress = {};
   Future<void> _saveQueue = Future.value();
   IqroContent? _iqroContent;
+  List<Surah>? _quranSurahs;
+  SurahDetail? _selectedSurahDetail;
+  PrayerSchedule? _prayerSchedule;
+  QiblaDirection? _qiblaDirection;
   Timer? _voiceTimer;
   StreamSubscription<void>? _playbackCompleteSubscription;
   DateTime? _voiceStartedAt;
@@ -63,17 +80,31 @@ class IqrokuState extends ChangeNotifier {
   int selectedIqroBook = 1;
   int selectedIqroPage = 8;
   int selectedSurahIndex = 3;
+  QuranView quranView = QuranView.list;
+  ActivityView activityView = ActivityView.schedule;
   bool memorizationMode = false;
+  bool murottalMode = false;
+  int? quranMemorizationRecordingSurahId;
   String selectedChildId = 'nedy';
   bool familyPlusActive = false;
   bool childSetupCompleted = false;
   bool iqroContentLoading = false;
+  bool quranLoading = false;
+  bool surahDetailLoading = false;
+  bool islamicActivityLoading = false;
   bool isVoiceRecording = false;
+  bool authLoading = false;
   int voiceRecordingSeconds = 0;
   DateTime? subscriptionActivatedAt;
+  ParentAccount? parentAccount;
+  String? authToken;
+  String? authError;
   String? iqroContentError;
+  String? quranError;
+  String? islamicActivityError;
   String? voiceRecordingError;
   String? playingAttemptId;
+  String? playingQuranAudioUrl;
   String? playbackError;
   String? subscriptionNotice;
 
@@ -186,6 +217,95 @@ class IqrokuState extends ChangeNotifier {
 
   int get selectedIqroTotalPages => selectedIqroBookData.totalPages;
 
+  List<Surah> get quranSurahs => _quranSurahs ?? repository.surahs;
+
+  Surah get selectedSurahData {
+    final surahs = quranSurahs.isEmpty ? repository.surahs : quranSurahs;
+    final index = selectedSurahIndex.clamp(0, surahs.length - 1);
+    return surahs[index];
+  }
+
+  SurahDetail? get selectedSurahDetail => _selectedSurahDetail;
+
+  AyahPreview get selectedQuranPreview {
+    final detail = _selectedSurahDetail;
+    if (detail == null || detail.ayahs.isEmpty) {
+      return repository.readerPreview;
+    }
+    final previewAyahs = detail.ayahs.take(3).toList(growable: false);
+    return AyahPreview(
+      arabic: previewAyahs.map((ayah) => ayah.arabic).join('\n'),
+      translation: previewAyahs
+          .map((ayah) => '${ayah.number}. ${ayah.translation}')
+          .join('\n'),
+    );
+  }
+
+  List<PrayerTime> get prayerTimes {
+    return _prayerSchedule?.times ?? repository.prayerTimes;
+  }
+
+  PrayerTime get activePrayerTime {
+    return prayerTimes.firstWhere(
+      (time) => time.active,
+      orElse: () => prayerTimes.first,
+    );
+  }
+
+  String get prayerLocationLabel {
+    return _qiblaDirection?.locationLabel ??
+        _prayerSchedule?.locationLabel ??
+        'Jayapura, Papua (fallback)';
+  }
+
+  String get prayerDateLabel {
+    return _prayerSchedule?.dateLabel ?? _todayLabel();
+  }
+
+  double get qiblaDegrees => _qiblaDirection?.degrees ?? 295;
+
+  double get activityLatitude {
+    return _qiblaDirection?.latitude ?? _prayerSchedule?.latitude ?? -2.5489;
+  }
+
+  double get activityLongitude {
+    return _qiblaDirection?.longitude ?? _prayerSchedule?.longitude ?? 140.7197;
+  }
+
+  LocationSource get activityLocationSource {
+    return _qiblaDirection?.locationSource ??
+        _prayerSchedule?.locationSource ??
+        LocationSource.fallback;
+  }
+
+  bool get quranAudioPlaying => playingQuranAudioUrl != null;
+
+  LearningAttempt? get selectedSurahLatestMemorizationAttempt {
+    for (final attempt in learningAttempts) {
+      if (attempt.childId == selectedChildId &&
+          attempt.bookId == quranMemorizationBookId &&
+          attempt.pageNumber == selectedSurahData.id) {
+        return attempt;
+      }
+    }
+    return null;
+  }
+
+  QuranMode get quranMode {
+    if (murottalMode) {
+      return QuranMode.murottal;
+    }
+    if (memorizationMode) {
+      return QuranMode.memorization;
+    }
+    return QuranMode.reading;
+  }
+
+  bool get isQuranMemorizationRecording {
+    return isVoiceRecording &&
+        quranMemorizationRecordingSurahId == selectedSurahData.id;
+  }
+
   int completedPagesForBook(int bookId) {
     return _completedPagesForBook(bookId);
   }
@@ -257,9 +377,63 @@ class IqrokuState extends ChangeNotifier {
     }
   }
 
+  Future<void> loadQuranContent() async {
+    if (quranLoading || _quranSurahs != null) {
+      return;
+    }
+
+    quranLoading = true;
+    quranError = null;
+    notifyListeners();
+
+    try {
+      _quranSurahs = await quranApiService.fetchSurahs();
+      if (quranSurahs.isNotEmpty) {
+        selectedSurahIndex = selectedSurahIndex.clamp(
+          0,
+          quranSurahs.length - 1,
+        );
+      }
+      await _loadSelectedSurahDetail();
+    } catch (error) {
+      quranError =
+          'Al-Quran online belum bisa dimuat. Cek koneksi internet lalu coba lagi.';
+      debugPrint('Quran content load failed: $error');
+    } finally {
+      quranLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadIslamicActivity() async {
+    if (islamicActivityLoading) {
+      return;
+    }
+
+    islamicActivityLoading = true;
+    islamicActivityError = null;
+    notifyListeners();
+
+    try {
+      final results = await Future.wait<Object>([
+        islamicActivityService.fetchPrayerSchedule(),
+        islamicActivityService.fetchQiblaDirection(),
+      ]);
+      _prayerSchedule = results[0] as PrayerSchedule;
+      _qiblaDirection = results[1] as QiblaDirection;
+    } catch (error) {
+      islamicActivityError =
+          'Jadwal sholat dan kiblat online belum bisa dimuat. Cek koneksi internet lalu coba lagi.';
+      debugPrint('Islamic activity load failed: $error');
+    } finally {
+      islamicActivityLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> restoreFromDisk() async {
     final stored = await storage.load();
-    if (stored == null || stored.childProfiles.isEmpty) {
+    if (stored == null) {
       return;
     }
 
@@ -275,18 +449,26 @@ class IqrokuState extends ChangeNotifier {
     _iqroProgress
       ..clear()
       ..addAll(stored.iqroProgress);
-    selectedChildId = stored.selectedChildId.isEmpty
+    selectedChildId = childProfiles.isEmpty
+        ? ''
+        : stored.selectedChildId.isEmpty
         ? childProfiles.first.id
         : stored.selectedChildId;
     familyPlusActive = stored.familyPlusActive;
     subscriptionActivatedAt = stored.subscriptionActivatedAt;
+    parentAccount = stored.parentAccount;
+    authToken = stored.authToken;
     childSetupCompleted = stored.childSetupCompleted;
     selectedIqroBook = stored.selectedIqroBook;
     selectedIqroPage = stored.selectedIqroPage;
-    _ensureSelectedIqroAccess();
+    if (childProfiles.isNotEmpty) {
+      _ensureSelectedIqroAccess();
+    }
 
-    if (childSetupCompleted) {
+    if (authToken != null && childSetupCompleted && childProfiles.isNotEmpty) {
       launchStage = AppLaunchStage.authenticated;
+    } else if (authToken != null) {
+      launchStage = AppLaunchStage.setupChild;
     }
 
     notifyListeners();
@@ -318,21 +500,97 @@ class IqrokuState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void completeSetup({
+  Future<void> registerWithEmail({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    if (name.trim().isEmpty || email.trim().isEmpty || password.isEmpty) {
+      authError = 'Nama, email, dan password wajib diisi.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    notifyListeners();
+
+    try {
+      final result = await authService.register(
+        name: name.trim(),
+        email: email.trim(),
+        password: password,
+      );
+      await _finishAuth(result);
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loginWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    if (email.trim().isEmpty || password.isEmpty) {
+      authError = 'Email dan password wajib diisi.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    notifyListeners();
+
+    try {
+      final result = await authService.login(
+        email: email.trim(),
+        password: password,
+      );
+      await _finishAuth(result);
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> completeSetup({
     String? name,
     int? age,
     String avatarAsset = AppAssets.avatarMale,
-  }) {
+  }) async {
     final cleanName = name?.trim();
-    if (cleanName != null && cleanName.isNotEmpty) {
-      final child = ChildProfile(
-        id: cleanName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
-        name: cleanName,
-        age: age ?? 7,
-        currentLesson: 'Iqro 1 - Halaman 1',
-        progress: 0,
-        avatarAsset: avatarAsset,
-      );
+    if (cleanName == null || cleanName.isEmpty) {
+      authError = 'Isi nama anak dulu untuk mulai belajar.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    notifyListeners();
+
+    try {
+      final parent = parentAccount;
+      final child = parent == null
+          ? ChildProfile(
+              id: _localChildId(cleanName),
+              name: cleanName,
+              age: age ?? 7,
+              currentLesson: 'Iqro 1 - Halaman 1',
+              progress: 0,
+              avatarAsset: avatarAsset,
+            )
+          : await authService.createChild(
+              parentId: parent.id,
+              name: cleanName,
+              age: age ?? 7,
+              avatarAsset: avatarAsset,
+            );
 
       if (childProfiles.isEmpty) {
         childProfiles.add(child);
@@ -342,16 +600,19 @@ class IqrokuState extends ChangeNotifier {
         childProfiles.add(child);
       } else {
         launchStage = AppLaunchStage.authenticated;
-        notifyListeners();
         return;
       }
       selectedChildId = child.id;
       _seedIqroProgressForChild(child.id, currentPage: 1);
+      childSetupCompleted = true;
+      launchStage = AppLaunchStage.authenticated;
+      _persist();
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
     }
-    childSetupCompleted = true;
-    launchStage = AppLaunchStage.authenticated;
-    _persist();
-    notifyListeners();
   }
 
   void startAddChild() {
@@ -369,6 +630,10 @@ class IqrokuState extends ChangeNotifier {
     subscriptionNotice = null;
     _persist();
     notifyListeners();
+    final parent = parentAccount;
+    if (parent != null) {
+      unawaited(_syncSubscription(parent.id));
+    }
   }
 
   void clearSubscriptionNotice() {
@@ -401,6 +666,9 @@ class IqrokuState extends ChangeNotifier {
   void logout() {
     launchStage = AppLaunchStage.welcome;
     selectedTab = 0;
+    parentAccount = null;
+    authToken = null;
+    authError = null;
     _persist();
     notifyListeners();
   }
@@ -412,6 +680,31 @@ class IqrokuState extends ChangeNotifier {
 
   void selectTab(int index) {
     selectedTab = index;
+    if (index == 2) {
+      quranView = QuranView.list;
+      memorizationMode = false;
+      murottalMode = false;
+    }
+    if (index == 3) {
+      activityView = ActivityView.schedule;
+    }
+    notifyListeners();
+  }
+
+  void openPrayerSchedule() {
+    selectedTab = 3;
+    activityView = ActivityView.schedule;
+    notifyListeners();
+  }
+
+  void openQiblaCompass() {
+    selectedTab = 3;
+    activityView = ActivityView.qibla;
+    notifyListeners();
+  }
+
+  void openDailyPrayers() {
+    selectedTab = 5;
     notifyListeners();
   }
 
@@ -454,6 +747,12 @@ class IqrokuState extends ChangeNotifier {
     }
     _syncSelectedChildProgress();
     _persist();
+    _syncProgressToBackend(
+      childId: selectedChildId,
+      bookId: selectedIqroBook,
+      pageNumber: selectedIqroPage,
+      status: status,
+    );
     notifyListeners();
   }
 
@@ -469,6 +768,7 @@ class IqrokuState extends ChangeNotifier {
 
     await audioPlaybackService.stop();
     playingAttemptId = null;
+    playingQuranAudioUrl = null;
     playbackError = null;
     voiceRecordingError = null;
     notifyListeners();
@@ -533,6 +833,7 @@ class IqrokuState extends ChangeNotifier {
 
     _persist();
     notifyListeners();
+    unawaited(_syncLearningAttempt(attempt));
     unawaited(_runAssessment(attempt.id));
   }
 
@@ -547,6 +848,7 @@ class IqrokuState extends ChangeNotifier {
     voiceRecordingSeconds = 0;
     _voiceStartedAt = null;
     _activeVoicePath = null;
+    quranMemorizationRecordingSurahId = null;
     notifyListeners();
   }
 
@@ -569,6 +871,7 @@ class IqrokuState extends ChangeNotifier {
     try {
       await audioPlaybackService.stop();
       playingAttemptId = attempt.id;
+      playingQuranAudioUrl = null;
       playbackError = null;
       notifyListeners();
       await audioPlaybackService.play(audioPath);
@@ -577,6 +880,116 @@ class IqrokuState extends ChangeNotifier {
       playbackError = 'Rekaman belum bisa diputar. Coba rekam ulang.';
       notifyListeners();
     }
+  }
+
+  Future<void> toggleSelectedSurahMurottal() async {
+    var detail = _selectedSurahDetail;
+    if (detail == null || detail.surah.id != selectedSurahData.id) {
+      await _loadSelectedSurahDetail();
+      detail = _selectedSurahDetail;
+    }
+
+    final audioUrl = detail?.audioUrl;
+    if (audioUrl == null || audioUrl.isEmpty) {
+      playbackError = 'Audio murottal surat ini belum tersedia.';
+      notifyListeners();
+      return;
+    }
+
+    if (playingQuranAudioUrl == audioUrl) {
+      await audioPlaybackService.stop();
+      playingQuranAudioUrl = null;
+      playbackError = null;
+      notifyListeners();
+      return;
+    }
+
+    try {
+      await audioPlaybackService.stop();
+      playingAttemptId = null;
+      playingQuranAudioUrl = audioUrl;
+      playbackError = null;
+      notifyListeners();
+      await audioPlaybackService.play(audioUrl);
+    } catch (_) {
+      playingQuranAudioUrl = null;
+      playbackError = 'Murottal belum bisa diputar. Cek koneksi internet.';
+      notifyListeners();
+    }
+  }
+
+  Future<void> startQuranMemorizationPractice() async {
+    if (isVoiceRecording) {
+      return;
+    }
+
+    await audioPlaybackService.stop();
+    playingAttemptId = null;
+    playingQuranAudioUrl = null;
+    playbackError = null;
+    voiceRecordingError = null;
+    notifyListeners();
+
+    try {
+      _activeVoicePath = await voiceRecordingService.start(
+        childId: selectedChildId,
+        bookId: quranMemorizationBookId,
+        pageNumber: selectedSurahData.id,
+      );
+      isVoiceRecording = true;
+      quranMemorizationRecordingSurahId = selectedSurahData.id;
+      voiceRecordingSeconds = 0;
+      _voiceStartedAt = DateTime.now();
+      _voiceTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        voiceRecordingSeconds += 1;
+        notifyListeners();
+      });
+    } on VoiceRecordingPermissionDenied {
+      voiceRecordingError =
+          'Izin microphone belum aktif. Aktifkan izin mic untuk rekam hafalan.';
+    } catch (_) {
+      voiceRecordingError =
+          'Rekaman hafalan belum bisa dimulai. Coba ulang sebentar lagi.';
+    }
+    notifyListeners();
+  }
+
+  Future<void> finishQuranMemorizationPractice() async {
+    if (!isQuranMemorizationRecording) {
+      return;
+    }
+
+    final duration = _effectiveVoiceDuration();
+    _cancelVoiceTimer();
+    isVoiceRecording = false;
+    voiceRecordingSeconds = 0;
+    _voiceStartedAt = null;
+    final audioPath = await voiceRecordingService.stop() ?? _activeVoicePath;
+    _activeVoicePath = null;
+    quranMemorizationRecordingSurahId = null;
+
+    final attempt = LearningAttempt(
+      id: 'quran_${selectedChildId}_${DateTime.now().microsecondsSinceEpoch}',
+      childId: selectedChildId,
+      bookId: quranMemorizationBookId,
+      pageNumber: selectedSurahData.id,
+      date: _todayLabel(),
+      durationSeconds: duration,
+      status: LearningStatus.learning,
+      assessmentStatus: ReadingAssessmentStatus.recorded,
+      audioPath: audioPath,
+      note:
+          'Rekaman hafalan ${selectedSurahData.name} tersimpan. Penilaian AI hafalan akan disambungkan di tahap berikutnya.',
+    );
+    learningAttempts.insert(0, attempt);
+
+    if (learningAttempts.length > 50) {
+      learningAttempts.removeRange(50, learningAttempts.length);
+    }
+
+    _persist();
+    notifyListeners();
+    unawaited(_syncLearningAttempt(attempt));
   }
 
   void goToNextIqroPage() {
@@ -595,16 +1008,74 @@ class IqrokuState extends ChangeNotifier {
     statuses.putIfAbsent(selectedIqroPage, () => LearningStatus.learning);
     _syncSelectedChildProgress();
     _persist();
+    _syncProgressToBackend(
+      childId: selectedChildId,
+      bookId: selectedIqroBook,
+      pageNumber: selectedIqroPage,
+      status: LearningStatus.learning,
+    );
     notifyListeners();
   }
 
-  void selectSurah(int index) {
+  Future<void> selectSurah(int index) async {
     selectedSurahIndex = index;
+    notifyListeners();
+    await _loadSelectedSurahDetail();
+  }
+
+  Future<void> openQuranReader(int index) async {
+    await selectSurah(index);
+    quranView = QuranView.reader;
+    memorizationMode = false;
+    murottalMode = false;
+    notifyListeners();
+  }
+
+  Future<void> openQuranMemorization(int index) async {
+    await selectSurah(index);
+    quranView = QuranView.memorization;
+    memorizationMode = true;
+    murottalMode = false;
+    notifyListeners();
+  }
+
+  void openMurottal() {
+    selectedTab = 2;
+    quranView = QuranView.murottal;
+    memorizationMode = false;
+    murottalMode = true;
+    notifyListeners();
+  }
+
+  void backToQuranList() {
+    quranView = QuranView.list;
+    memorizationMode = false;
+    murottalMode = false;
+    notifyListeners();
+  }
+
+  void goHome() {
+    selectedTab = 0;
+    quranView = QuranView.list;
+    memorizationMode = false;
+    murottalMode = false;
     notifyListeners();
   }
 
   void setMemorizationMode(bool value) {
     memorizationMode = value;
+    if (value) {
+      murottalMode = false;
+    }
+    notifyListeners();
+  }
+
+  void setQuranMode(QuranMode mode) {
+    memorizationMode = mode == QuranMode.memorization;
+    murottalMode = mode == QuranMode.murottal;
+    quranView = mode == QuranMode.murottal
+        ? QuranView.murottal
+        : QuranView.list;
     notifyListeners();
   }
 
@@ -772,6 +1243,12 @@ class IqrokuState extends ChangeNotifier {
     _syncChildProgress(assessed.childId, assessed.bookId);
     _prependAssessmentLearningNote(assessed);
     _persist();
+    _syncProgressToBackend(
+      childId: assessed.childId,
+      bookId: assessed.bookId,
+      pageNumber: assessed.pageNumber,
+      status: assessed.status,
+    );
     notifyListeners();
   }
 
@@ -865,6 +1342,8 @@ class IqrokuState extends ChangeNotifier {
       childSetupCompleted: childSetupCompleted,
       selectedIqroBook: selectedIqroBook,
       selectedIqroPage: selectedIqroPage,
+      parentAccount: parentAccount,
+      authToken: authToken,
       subscriptionActivatedAt: subscriptionActivatedAt,
     );
     _saveQueue = _saveQueue.then((_) => storage.save(snapshot));
@@ -939,6 +1418,141 @@ class IqrokuState extends ChangeNotifier {
     return const [];
   }
 
+  Future<void> _finishAuth(AuthResult result) async {
+    parentAccount = result.parent;
+    authToken = result.sessionToken;
+    authError = null;
+
+    final remoteChildren = await authService.loadChildren(result.parent.id);
+    childProfiles
+      ..clear()
+      ..addAll(remoteChildren);
+    _iqroProgress.clear();
+
+    if (childProfiles.isEmpty) {
+      selectedChildId = '';
+      childSetupCompleted = false;
+      launchStage = AppLaunchStage.setupChild;
+    } else {
+      selectedChildId = childProfiles.first.id;
+      for (final child in childProfiles) {
+        _seedIqroProgressForChild(child.id, currentPage: 1);
+      }
+      childSetupCompleted = true;
+      launchStage = AppLaunchStage.authenticated;
+    }
+    selectedTab = 0;
+    selectedIqroBook = 1;
+    selectedIqroPage = 1;
+    _persist();
+  }
+
+  bool _canSyncRemote(String childId) {
+    return parentAccount != null &&
+        authToken != null &&
+        authToken!.isNotEmpty &&
+        childId.isNotEmpty;
+  }
+
+  void _syncProgressToBackend({
+    required String childId,
+    required int bookId,
+    required int pageNumber,
+    required LearningStatus status,
+  }) {
+    if (!_canSyncRemote(childId)) {
+      return;
+    }
+
+    unawaited(() async {
+      try {
+        await authService.updateProgress(
+          childId: childId,
+          bookId: bookId,
+          pageNumber: pageNumber,
+          status: status,
+        );
+      } catch (error) {
+        debugPrint('Progress sync failed: $error');
+      }
+    }());
+  }
+
+  Future<void> _syncLearningAttempt(LearningAttempt attempt) async {
+    if (!_canSyncRemote(attempt.childId)) {
+      return;
+    }
+
+    try {
+      final remoteAttempt = await authService.createAttempt(
+        childId: attempt.childId,
+        bookId: attempt.bookId,
+        pageNumber: attempt.pageNumber,
+        durationSeconds: attempt.durationSeconds,
+        audioPath: attempt.audioPath,
+      );
+      if (remoteAttempt.id.isNotEmpty) {
+        await authService.assessAttempt(
+          attemptId: remoteAttempt.id,
+          targetLines: _targetLinesFor(attempt.bookId, attempt.pageNumber),
+        );
+      }
+    } catch (error) {
+      debugPrint('Learning attempt sync failed: $error');
+    }
+  }
+
+  Future<void> _syncSubscription(String parentId) async {
+    try {
+      await authService.activateSubscription(parentId);
+    } catch (error) {
+      debugPrint('Subscription sync failed: $error');
+    }
+  }
+
+  Future<void> _loadSelectedSurahDetail() async {
+    final surah = selectedSurahData;
+    if (_selectedSurahDetail?.surah.id == surah.id) {
+      return;
+    }
+
+    surahDetailLoading = true;
+    quranError = null;
+    notifyListeners();
+
+    try {
+      _selectedSurahDetail = await quranApiService.fetchSurahDetail(surah.id);
+    } catch (error) {
+      quranError = 'Detail surat belum bisa dimuat.';
+      debugPrint('Surah detail load failed: $error');
+    } finally {
+      surahDetailLoading = false;
+      notifyListeners();
+    }
+  }
+
+  String _authErrorMessage(Object error) {
+    if (error is AuthApiException) {
+      return switch (error.code) {
+        'email_already_registered' => 'Email ini sudah terdaftar. Coba masuk.',
+        'invalid_email_or_password' => 'Email atau password belum cocok.',
+        'invalid_email' => 'Format email belum benar.',
+        'password_min_6' => 'Password minimal 6 karakter.',
+        'child_limit_requires_plus' =>
+          'Akun Free hanya bisa punya 1 anak. Aktifkan Plus untuk tambah anak.',
+        _ => 'Server belum bisa memproses. Coba ulang sebentar lagi.',
+      };
+    }
+    return 'Belum bisa terhubung ke backend. Pastikan server IqroKu aktif.';
+  }
+
+  String _localChildId(String name) {
+    final slug = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+    return slug.isEmpty
+        ? 'anak-${DateTime.now().millisecondsSinceEpoch}'
+        : slug;
+  }
+
   int _effectiveVoiceDuration() {
     final startedAt = _voiceStartedAt;
     if (startedAt == null) {
@@ -975,3 +1589,9 @@ enum AppLaunchStage {
   setupChild,
   authenticated,
 }
+
+enum QuranMode { reading, memorization, murottal }
+
+enum QuranView { list, reader, memorization, murottal }
+
+enum ActivityView { schedule, qibla }

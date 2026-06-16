@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
@@ -34,6 +36,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isLoading = widget.state.authLoading;
+
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -180,9 +184,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ],
                         ),
                         const SizedBox(height: 16),
+                        if (widget.state.authError != null) ...[
+                          _AuthErrorBanner(message: widget.state.authError!),
+                          const SizedBox(height: 12),
+                        ],
                         FilledButton(
-                          onPressed: agreedToTerms
-                              ? widget.state.loginAsDemoUser
+                          onPressed: agreedToTerms && !isLoading
+                              ? () {
+                                  if (passwordController.text !=
+                                      confirmPasswordController.text) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Konfirmasi password belum sama.',
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  unawaited(
+                                    widget.state.registerWithEmail(
+                                      name: nameController.text,
+                                      email: emailController.text,
+                                      password: passwordController.text,
+                                    ),
+                                  );
+                                }
                               : null,
                           style: FilledButton.styleFrom(
                             minimumSize: const Size(double.infinity, 52),
@@ -191,9 +218,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: const Text(
-                            'Daftar',
-                            style: TextStyle(fontWeight: FontWeight.w800),
+                          child: Text(
+                            isLoading ? 'Mendaftarkan...' : 'Daftar',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -215,14 +242,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         const SizedBox(height: 12),
                         OutlinedButton.icon(
-                          onPressed: widget.state.loginAsDemoUser,
+                          onPressed: null,
                           icon: Image.asset(
                             AppAssets.googleLogo,
                             width: 22,
                             height: 22,
                             fit: BoxFit.contain,
                           ),
-                          label: const Text('Daftar dengan Google'),
+                          label: const Text('Daftar dengan Google (segera)'),
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size(double.infinity, 50),
                             foregroundColor: AppColors.text,
@@ -257,6 +284,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AuthErrorBanner extends StatelessWidget {
+  const _AuthErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.coral.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.coral.withValues(alpha: 0.24)),
+      ),
+      child: Text(
+        message,
+        style: AppText.caption.copyWith(
+          color: AppColors.coral,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

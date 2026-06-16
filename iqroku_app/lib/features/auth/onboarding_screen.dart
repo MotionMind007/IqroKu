@@ -26,9 +26,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     ),
     _OnboardingData(
       asset: AppAssets.onboarding1,
-      title: 'Hafal Juz Amma',
+      title: "Baca, Hafalan, dan Murottal",
       description:
-          'Mode hafalan dengan pengulangan ayat otomatis. Tandai surat yang sudah hafal dan pantau perkembangannya.',
+          "Anak bisa membaca Al-Qur'an, latihan hafalan, dan mendengar murottal sebagai panduan.",
     ),
     _OnboardingData(
       asset: AppAssets.onboarding2,
@@ -145,9 +145,7 @@ class _OnboardingPage extends StatelessWidget {
           Container(
             width: 240,
             height: 240,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(32),
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(32)),
             clipBehavior: Clip.antiAlias,
             child: Image.asset(
               data.asset,
@@ -173,10 +171,7 @@ class _OnboardingPage extends StatelessWidget {
           Text(
             data.description,
             textAlign: TextAlign.center,
-            style: AppText.body.copyWith(
-              color: AppColors.muted,
-              height: 1.6,
-            ),
+            style: AppText.body.copyWith(color: AppColors.muted, height: 1.6),
           ),
         ],
       ),

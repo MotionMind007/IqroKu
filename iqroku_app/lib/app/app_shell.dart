@@ -6,6 +6,7 @@ import '../features/activity/activity_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/learning/learning_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/prayers/daily_prayers_screen.dart';
 import '../features/quran/quran_screen.dart';
 import 'app_state.dart';
 
@@ -25,6 +26,7 @@ class AppShell extends StatelessWidget {
           QuranScreen(state: state),
           ActivityScreen(state: state),
           ProfileScreen(state: state),
+          DailyPrayersScreen(state: state),
         ];
 
         return Scaffold(
@@ -41,7 +43,7 @@ class AppShell extends StatelessWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 430),
               child: NavigationBar(
-                selectedIndex: state.selectedTab,
+                selectedIndex: state.selectedTab > 4 ? 0 : state.selectedTab,
                 height: 72,
                 indicatorColor: const Color(0xFFE7F5EC),
                 backgroundColor: Colors.white,
@@ -82,7 +84,7 @@ class AppShell extends StatelessWidget {
                       size: 34,
                       selected: true,
                     ),
-                    label: 'Aktivitas',
+                    label: 'Jadwal',
                   ),
                   NavigationDestination(
                     icon: AssetIcon(AppAssets.navAccount, size: 30),

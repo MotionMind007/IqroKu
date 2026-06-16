@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../assets/app_assets.dart';
 import '../theme/app_theme.dart';
 
 class AppPage extends StatelessWidget {
@@ -23,24 +24,32 @@ class AppPage extends StatelessWidget {
 }
 
 class AppTopBar extends StatelessWidget {
-  const AppTopBar({super.key, required this.title, this.trailing});
+  const AppTopBar({
+    super.key,
+    required this.title,
+    this.trailing,
+    this.onBack,
+    this.onTrailing,
+  });
 
   final String title;
   final IconData? trailing;
+  final VoidCallback? onBack;
+  final VoidCallback? onTrailing;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         IconButton(
-          onPressed: () {},
+          onPressed: onBack ?? () => Navigator.of(context).maybePop(),
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
         ),
         Expanded(
           child: Text(title, textAlign: TextAlign.center, style: AppText.title),
         ),
         IconButton(
-          onPressed: () {},
+          onPressed: onTrailing,
           icon: Icon(trailing ?? Icons.more_horiz, size: 22),
         ),
       ],
@@ -160,9 +169,16 @@ class AppChip extends StatelessWidget {
 }
 
 class PrayerHeroCard extends StatelessWidget {
-  const PrayerHeroCard({super.key, this.compact = true});
+  const PrayerHeroCard({
+    super.key,
+    this.compact = true,
+    this.prayerName = 'Ashar',
+    this.prayerTime = '15:35',
+  });
 
   final bool compact;
+  final String prayerName;
+  final String prayerTime;
 
   @override
   Widget build(BuildContext context) {
@@ -184,17 +200,17 @@ class PrayerHeroCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  compact ? 'Sholat berikutnya' : 'Menuju Ashar',
+                  compact ? 'Sholat berikutnya' : 'Jadwal aktif',
                   style: AppText.caption.copyWith(color: Colors.white70),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  compact ? 'Ashar' : 'Ashar 15:35',
+                  compact ? prayerName : '$prayerName $prayerTime',
                   style: AppText.hero.copyWith(color: Colors.white),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  compact ? '15:35  (01:24:38 lagi)' : '01:37:25 lagi',
+                  compact ? prayerTime : 'Berdasarkan lokasi aktif',
                   style: AppText.bodyStrong.copyWith(color: Colors.white),
                 ),
               ],
@@ -215,51 +231,7 @@ class MosqueIllustration extends StatelessWidget {
     return SizedBox(
       width: 110,
       height: 86,
-      child: Stack(
-        alignment: Alignment.bottomCenter,
-        children: [
-          const Positioned(
-            right: 6,
-            top: 4,
-            child: Icon(Icons.wb_sunny, color: AppColors.sun, size: 28),
-          ),
-          Positioned(left: 6, bottom: 0, child: _minaret(height: 58)),
-          Positioned(right: 6, bottom: 0, child: _minaret(height: 64)),
-          Positioned(
-            bottom: 0,
-            child: Container(
-              width: 70,
-              height: 44,
-              decoration: const BoxDecoration(
-                color: AppColors.cream,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(34)),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 0,
-            child: Container(
-              width: 78,
-              height: 18,
-              decoration: BoxDecoration(
-                color: AppColors.gold,
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _minaret({required double height}) {
-    return Container(
-      width: 18,
-      height: height,
-      decoration: BoxDecoration(
-        color: AppColors.cream,
-        borderRadius: BorderRadius.circular(9),
-      ),
+      child: Image.asset(AppAssets.homeMosque, fit: BoxFit.contain),
     );
   }
 }

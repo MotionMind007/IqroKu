@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
@@ -14,6 +16,9 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final child = state.selectedChild;
+    final initial = child.name.trim().isEmpty
+        ? 'A'
+        : child.name.trim().substring(0, 1).toUpperCase();
 
     return AppPage(
       child: ListView(
@@ -22,14 +27,14 @@ class HomeScreen extends StatelessWidget {
         children: [
           Row(
             children: [
-              const AppAvatar(initial: 'A', color: AppColors.cream),
+              AppAvatar(initial: initial, color: AppColors.cream),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Assalamu alaikum,', style: AppText.caption),
-                    Text('Aisyah', style: AppText.title),
+                    const Text('Assalamu alaikum,', style: AppText.caption),
+                    Text(child.name, style: AppText.title),
                   ],
                 ),
               ),
@@ -40,7 +45,10 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          const HomePrayerHeroCard(),
+          HomePrayerHeroCard(
+            prayerName: state.activePrayerTime.name,
+            prayerTime: state.activePrayerTime.time,
+          ),
           const SizedBox(height: 20),
           SectionHeader(
             title: 'Menu Utama',
@@ -63,10 +71,10 @@ class HomeScreen extends StatelessWidget {
                 onTap: () => state.selectTab(1),
               ),
               QuickAction(
-                asset: AppAssets.juzAmmaNew,
-                label: 'Juz Amma',
+                asset: AppAssets.murottal,
+                label: 'Murottal',
                 color: AppColors.gold,
-                onTap: () => state.selectTab(2),
+                onTap: state.openMurottal,
               ),
               QuickAction(
                 asset: AppAssets.quranNew,
@@ -76,21 +84,21 @@ class HomeScreen extends StatelessWidget {
               ),
               QuickAction(
                 asset: AppAssets.prayerTime,
-                label: 'Waktu Sholat',
+                label: 'Jadwal Solat',
                 color: AppColors.primary,
-                onTap: () => state.selectTab(3),
+                onTap: state.openPrayerSchedule,
               ),
               QuickAction(
                 asset: AppAssets.qiblaCompass,
                 label: 'Kiblat',
                 color: AppColors.navy,
-                onTap: () => state.selectTab(3),
+                onTap: state.openQiblaCompass,
               ),
               QuickAction(
-                asset: AppAssets.profileChild,
-                label: 'Profil',
+                asset: AppAssets.doaDoa,
+                label: 'Doa-doa',
                 color: AppColors.lavender,
-                onTap: () => state.selectTab(4),
+                onTap: state.openDailyPrayers,
               ),
             ],
           ),
@@ -102,18 +110,15 @@ class HomeScreen extends StatelessWidget {
             title: child.currentLesson,
             subtitle: 'Progress anak ${(child.progress * 100).round()}%',
             progress: child.progress,
+            onTap: () => state.selectTab(1),
           ),
-          const ContinueCard(
-            asset: AppAssets.juzAmma,
-            title: 'QS. Al-Ikhlas - Ayat 2',
-            subtitle: 'Hafalan',
-            progress: 0.40,
-          ),
-          const ContinueCard(
+          ContinueCard(
             asset: AppAssets.quran,
-            title: 'Al-Baqarah - Ayat 25',
-            subtitle: 'Terakhir baca',
+            title: state.selectedSurahData.name,
+            subtitle: "Lanjut baca Al-Qur'an",
             progress: 0.25,
+            onTap: () =>
+                unawaited(state.openQuranReader(state.selectedSurahIndex)),
           ),
         ],
       ),
@@ -122,7 +127,14 @@ class HomeScreen extends StatelessWidget {
 }
 
 class HomePrayerHeroCard extends StatelessWidget {
-  const HomePrayerHeroCard({super.key});
+  const HomePrayerHeroCard({
+    super.key,
+    required this.prayerName,
+    required this.prayerTime,
+  });
+
+  final String prayerName;
+  final String prayerTime;
 
   @override
   Widget build(BuildContext context) {
@@ -176,12 +188,12 @@ class HomePrayerHeroCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Ashar',
+                  prayerName,
                   style: AppText.hero.copyWith(color: Colors.white),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '15:35  (01:24:38 lagi)',
+                  prayerTime,
                   style: AppText.bodyStrong.copyWith(color: Colors.white),
                 ),
               ],
@@ -253,52 +265,62 @@ class ContinueCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.progress,
+    this.onTap,
   });
 
   final String asset;
   final String title;
   final String subtitle;
   final double progress;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: AppColors.mint,
-            child: AssetIcon(asset, size: 34),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: AppText.bodyStrong),
-                const SizedBox(height: 2),
-                Text(subtitle, style: AppText.caption),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 5,
-                    color: AppColors.primary,
-                    backgroundColor: AppColors.line,
-                  ),
+      padding: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: AppColors.mint,
+                child: AssetIcon(asset, size: 34),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: AppText.bodyStrong),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: AppText.caption),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 5,
+                        color: AppColors.primary,
+                        backgroundColor: AppColors.line,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 12),
+              const CircleAvatar(
+                radius: 18,
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                child: Icon(Icons.arrow_forward, size: 18),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          const CircleAvatar(
-            radius: 18,
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-            child: Icon(Icons.arrow_forward, size: 18),
-          ),
-        ],
+        ),
       ),
     );
   }

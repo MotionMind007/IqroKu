@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'auth_api_service.dart';
 import '../models/learning_status.dart';
 import '../models/profile_models.dart';
 
@@ -38,6 +39,8 @@ class StoredIqrokuState {
     required this.childSetupCompleted,
     required this.selectedIqroBook,
     required this.selectedIqroPage,
+    this.parentAccount,
+    this.authToken,
     this.subscriptionActivatedAt,
   });
 
@@ -50,6 +53,8 @@ class StoredIqrokuState {
   final bool childSetupCompleted;
   final int selectedIqroBook;
   final int selectedIqroPage;
+  final ParentAccount? parentAccount;
+  final String? authToken;
   final DateTime? subscriptionActivatedAt;
 
   Map<String, Object?> toJson() {
@@ -65,6 +70,8 @@ class StoredIqrokuState {
       'childSetupCompleted': childSetupCompleted,
       'selectedIqroBook': selectedIqroBook,
       'selectedIqroPage': selectedIqroPage,
+      'parentAccount': parentAccount?.toJson(),
+      'authToken': authToken,
       'subscriptionActivatedAt': subscriptionActivatedAt?.toIso8601String(),
     };
   }
@@ -95,6 +102,8 @@ class StoredIqrokuState {
       childSetupCompleted: json['childSetupCompleted'] as bool? ?? false,
       selectedIqroBook: json['selectedIqroBook'] as int? ?? 1,
       selectedIqroPage: json['selectedIqroPage'] as int? ?? 1,
+      parentAccount: _decodeParent(json['parentAccount']),
+      authToken: json['authToken'] as String?,
       subscriptionActivatedAt: _decodeDateTime(
         json['subscriptionActivatedAt'] as String?,
       ),
@@ -106,6 +115,13 @@ class StoredIqrokuState {
       return null;
     }
     return DateTime.tryParse(value);
+  }
+
+  static ParentAccount? _decodeParent(Object? value) {
+    if (value is! Map<String, Object?>) {
+      return null;
+    }
+    return ParentAccount.fromJson(value);
   }
 
   static Map<String, Object?> _encodeProgress(

@@ -32,7 +32,10 @@ class LocalAudioPlaybackService implements AudioPlaybackService {
       }
     });
     await _player.stop();
-    await _player.play(DeviceFileSource(path));
+    final source = path.startsWith('http://') || path.startsWith('https://')
+        ? UrlSource(path)
+        : DeviceFileSource(path);
+    await _player.play(source);
   }
 
   @override

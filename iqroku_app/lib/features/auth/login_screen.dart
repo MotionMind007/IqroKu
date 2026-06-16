@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
@@ -28,6 +30,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isLoading = widget.state.authLoading;
+
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -117,9 +121,20 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
+                        if (widget.state.authError != null) ...[
+                          _AuthErrorBanner(message: widget.state.authError!),
+                          const SizedBox(height: 12),
+                        ],
                         FilledButton(
                           key: const ValueKey('login_submit_button'),
-                          onPressed: widget.state.loginAsDemoUser,
+                          onPressed: isLoading
+                              ? null
+                              : () => unawaited(
+                                  widget.state.loginWithEmail(
+                                    email: emailController.text,
+                                    password: passwordController.text,
+                                  ),
+                                ),
                           style: FilledButton.styleFrom(
                             minimumSize: const Size(double.infinity, 52),
                             backgroundColor: AppColors.primary,
@@ -127,9 +142,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: const Text(
-                            'Masuk',
-                            style: TextStyle(fontWeight: FontWeight.w800),
+                          child: Text(
+                            isLoading ? 'Masuk...' : 'Masuk',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -151,14 +166,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 16),
                         OutlinedButton.icon(
-                          onPressed: widget.state.loginAsDemoUser,
+                          onPressed: null,
                           icon: Image.asset(
                             AppAssets.googleLogo,
                             width: 22,
                             height: 22,
                             fit: BoxFit.contain,
                           ),
-                          label: const Text('Masuk dengan Google'),
+                          label: const Text('Masuk dengan Google (segera)'),
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size(double.infinity, 50),
                             foregroundColor: AppColors.text,
@@ -193,6 +208,32 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AuthErrorBanner extends StatelessWidget {
+  const _AuthErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.coral.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.coral.withValues(alpha: 0.24)),
+      ),
+      child: Text(
+        message,
+        style: AppText.caption.copyWith(
+          color: AppColors.coral,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

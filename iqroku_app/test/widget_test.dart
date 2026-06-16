@@ -10,10 +10,16 @@ import 'package:iqroku/app/app_state.dart';
 import 'package:iqroku/app/iqroku_app.dart';
 import 'package:iqroku/data/assessment_service.dart';
 import 'package:iqroku/data/audio_playback_service.dart';
+import 'package:iqroku/data/auth_api_service.dart';
 import 'package:iqroku/data/dummy_iqroku_repository.dart';
+import 'package:iqroku/data/islamic_activity_service.dart';
+import 'package:iqroku/data/quran_api_service.dart';
 import 'package:iqroku/data/voice_recording_service.dart';
 import 'package:iqroku/models/iqro_models.dart';
 import 'package:iqroku/models/learning_status.dart';
+import 'package:iqroku/models/prayer_models.dart';
+import 'package:iqroku/models/profile_models.dart';
+import 'package:iqroku/models/quran_models.dart';
 
 void main() {
   testWidgets('IqroKu starts from welcome and reaches learning tab', (
@@ -30,6 +36,9 @@ void main() {
     await tester.pumpWidget(
       IqrokuApp(
         assessmentService: const FakeAssessmentService(),
+        authService: FakeAuthApiService(),
+        quranApiService: const FakeQuranApiService(),
+        islamicActivityService: const FakeIslamicActivityService(),
         voiceRecordingService: FakeVoiceRecordingService(),
         audioPlaybackService: FakeAudioPlaybackService(),
       ),
@@ -51,24 +60,37 @@ void main() {
 
     expect(find.text('Masuk ke IqroKu'), findsOneWidget);
 
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Email'),
+      'parent@iqroku.test',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Password'),
+      'secret123',
+    );
     final loginButton = find.byKey(const ValueKey('login_submit_button'));
     await tester.ensureVisible(loginButton);
     await tester.pump();
     await tester.tap(loginButton);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('Tambah Profil Anak'), findsOneWidget);
 
-    final skipSetupButton = find.text('Lewati, tambah nanti');
+    await tester.enterText(find.widgetWithText(TextField, 'Nama Anak'), 'Nedy');
+    await tester.pump();
+    final saveChildButton = find.widgetWithText(
+      FilledButton,
+      'Simpan & Mulai Belajar',
+    );
     await tester.scrollUntilVisible(
-      skipSetupButton,
+      saveChildButton,
       240,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(skipSetupButton);
-    await tester.pump();
+    await tester.tap(saveChildButton);
+    await tester.pumpAndSettle();
 
-    expect(find.text('Aisyah'), findsOneWidget);
+    expect(find.text('Nedy'), findsOneWidget);
     expect(find.text('Menu Utama'), findsOneWidget);
 
     await tester.tap(find.text('Belajar'));
@@ -226,6 +248,139 @@ void main() {
     state.goToNextIqroPage();
     expect(state.selectedIqroPage, 11);
   });
+}
+
+class FakeQuranApiService extends QuranApiService {
+  const FakeQuranApiService();
+
+  @override
+  Future<List<Surah>> fetchSurahs() async {
+    return const [
+      Surah(
+        id: 1,
+        name: 'Al-Fatihah',
+        meaning: 'Pembuka',
+        arabicName: 'الفاتحة',
+        ayahCount: 7,
+        juz: 1,
+      ),
+      Surah(
+        id: 112,
+        name: 'Al-Ikhlas',
+        meaning: 'Ikhlas',
+        arabicName: 'الإخلاص',
+        ayahCount: 4,
+        juz: 30,
+      ),
+    ];
+  }
+
+  @override
+  Future<SurahDetail> fetchSurahDetail(int surahId) async {
+    return const SurahDetail(
+      surah: Surah(
+        id: 1,
+        name: 'Al-Fatihah',
+        meaning: 'Pembuka',
+        arabicName: 'الفاتحة',
+        ayahCount: 7,
+        juz: 1,
+      ),
+      audioUrl: 'https://example.test/fatihah.mp3',
+      ayahs: [
+        QuranAyah(
+          number: 1,
+          arabic: 'بسم الله الرحمن الرحيم',
+          translation: 'Dengan nama Allah Yang Maha Pengasih.',
+        ),
+      ],
+    );
+  }
+}
+
+class FakeIslamicActivityService extends IslamicActivityService {
+  const FakeIslamicActivityService();
+
+  @override
+  Future<PrayerSchedule> fetchPrayerSchedule() async {
+    return const PrayerSchedule(
+      locationLabel: 'Jakarta, Indonesia',
+      dateLabel: '16 Jun 2026 / 01 Muharram 1448 H',
+      latitude: -6.2088,
+      longitude: 106.8456,
+      locationSource: LocationSource.device,
+      times: [
+        PrayerTime(name: 'Subuh', time: '04:37'),
+        PrayerTime(name: 'Dzuhur', time: '11:53', active: true),
+        PrayerTime(name: 'Ashar', time: '15:35'),
+        PrayerTime(name: 'Maghrib', time: '17:48'),
+        PrayerTime(name: 'Isya', time: '19:01'),
+      ],
+    );
+  }
+
+  @override
+  Future<QiblaDirection> fetchQiblaDirection() async {
+    return const QiblaDirection(
+      degrees: 295,
+      latitude: -6.2088,
+      longitude: 106.8456,
+      locationLabel: 'Jakarta, Indonesia',
+      locationSource: LocationSource.device,
+    );
+  }
+}
+
+class FakeAuthApiService extends AuthApiService {
+  FakeAuthApiService();
+
+  final parent = const ParentAccount(
+    id: 'parent-test',
+    name: 'Parent Test',
+    email: 'parent@iqroku.test',
+  );
+  final children = <ChildProfile>[];
+
+  @override
+  Future<AuthResult> login({
+    required String email,
+    required String password,
+  }) async {
+    return AuthResult(parent: parent, sessionToken: 'session-test');
+  }
+
+  @override
+  Future<AuthResult> register({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    return AuthResult(parent: parent, sessionToken: 'session-test');
+  }
+
+  @override
+  Future<List<ChildProfile>> loadChildren(String parentId) async {
+    return List.of(children);
+  }
+
+  @override
+  Future<ChildProfile> createChild({
+    required String parentId,
+    required String name,
+    required int age,
+    required String avatarAsset,
+  }) async {
+    final child = ChildProfile(
+      id: 'child-${children.length + 1}',
+      name: name,
+      age: age,
+      currentLesson: 'Iqro 1 - Halaman 1',
+      progress: 0,
+      avatarAsset: avatarAsset,
+    );
+    children.add(child);
+    return child;
+  }
 }
 
 class FakeAssessmentService implements AssessmentService {

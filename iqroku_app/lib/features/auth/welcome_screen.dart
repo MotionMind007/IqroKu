@@ -50,7 +50,7 @@ class WelcomeScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          "IqroKu membantu anak belajar Iqro, hafalan Juz Amma, membaca Qur'an, dan membangun kebiasaan ibadah harian.",
+                          "IqroKu membantu anak belajar Iqro, membaca dan menghafal Al-Qur'an, mendengar murottal, dan membangun kebiasaan ibadah harian.",
                           textAlign: TextAlign.center,
                           style: AppText.body.copyWith(
                             color: AppColors.text,

@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../data/assessment_service.dart';
 import '../data/audio_playback_service.dart';
+import '../data/auth_api_service.dart';
 import '../data/dummy_iqroku_repository.dart';
+import '../data/islamic_activity_service.dart';
+import '../data/quran_api_service.dart';
 import '../data/voice_recording_service.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/onboarding_screen.dart';
@@ -18,12 +21,18 @@ class IqrokuApp extends StatefulWidget {
     super.key,
     this.repository = const DummyIqrokuRepository(),
     this.assessmentService = const MockAssessmentService(),
+    this.authService = const AuthApiService(),
+    this.quranApiService = const QuranApiService(),
+    this.islamicActivityService = const IslamicActivityService(),
     this.voiceRecordingService,
     this.audioPlaybackService,
   });
 
   final DummyIqrokuRepository repository;
   final AssessmentService assessmentService;
+  final AuthApiService authService;
+  final QuranApiService quranApiService;
+  final IslamicActivityService islamicActivityService;
   final VoiceRecordingService? voiceRecordingService;
   final AudioPlaybackService? audioPlaybackService;
 
@@ -40,11 +49,16 @@ class _IqrokuAppState extends State<IqrokuApp> {
     state = IqrokuState(
       repository: widget.repository,
       assessmentService: widget.assessmentService,
+      authService: widget.authService,
+      quranApiService: widget.quranApiService,
+      islamicActivityService: widget.islamicActivityService,
       voiceRecordingService: widget.voiceRecordingService,
       audioPlaybackService: widget.audioPlaybackService,
     );
     state.restoreFromDisk();
     state.loadIqroContent();
+    state.loadQuranContent();
+    state.loadIslamicActivity();
   }
 
   @override

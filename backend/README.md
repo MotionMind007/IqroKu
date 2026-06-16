@@ -17,10 +17,30 @@ npm start
 
 Default URL: `http://localhost:8787`
 
+## Admin Dashboard
+
+Open:
+
+```text
+http://localhost:8787/admin
+```
+
+The dashboard shows parent users, child profiles, Free vs Plus users, active subscriptions, estimated monthly revenue, reading attempts, assessment counts, and recent activity.
+
+Raw metrics are available at:
+
+```text
+http://localhost:8787/admin/metrics
+```
+
 ## Endpoints
 
 - `GET /health`
+- `GET /admin`
+- `GET /admin/metrics`
 - `POST /auth/demo-login`
+- `POST /auth/register`
+- `POST /auth/login`
 - `GET /children?parentId=...`
 - `POST /children`
 - `GET /progress?childId=...`

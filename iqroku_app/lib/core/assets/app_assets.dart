@@ -19,6 +19,9 @@ class AppAssets {
   static const iqroBook = 'assets/icons/iqro_book.png';
   static const juzAmma = 'assets/icons/juz_amma.png';
   static const juzAmmaNew = 'assets/icons/juz_amma_new.png';
+  static const murottal = 'assets/icons/murottal.png';
+  static const kabah = 'assets/icons/kabah.png';
+  static const doaDoa = 'assets/icons/doa_doa.png';
   static const quran = 'assets/icons/quran.png';
   static const quranNew = 'assets/icons/quran_new.png';
   static const prayer = 'assets/icons/prayer.png';

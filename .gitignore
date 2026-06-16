@@ -27,3 +27,4 @@ Thumbs.db
 
 # Local backend development data
 backend/data/dev-store.json
+data/

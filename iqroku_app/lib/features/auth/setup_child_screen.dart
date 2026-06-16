@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
@@ -42,6 +44,7 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
   @override
   Widget build(BuildContext context) {
     final selectedAvatarOption = _avatars[selectedAvatar];
+    final isLoading = widget.state.authLoading;
 
     return Scaffold(
       body: SafeArea(
@@ -194,12 +197,19 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
                   const SizedBox(height: 28),
 
                   // Action buttons
+                  if (widget.state.authError != null) ...[
+                    _SetupErrorBanner(message: widget.state.authError!),
+                    const SizedBox(height: 12),
+                  ],
                   FilledButton(
-                    onPressed: nameController.text.trim().isNotEmpty
-                        ? () => widget.state.completeSetup(
-                            name: nameController.text,
-                            age: int.tryParse(ageController.text),
-                            avatarAsset: selectedAvatarOption.asset,
+                    onPressed:
+                        nameController.text.trim().isNotEmpty && !isLoading
+                        ? () => unawaited(
+                            widget.state.completeSetup(
+                              name: nameController.text,
+                              age: int.tryParse(ageController.text),
+                              avatarAsset: selectedAvatarOption.asset,
+                            ),
                           )
                         : null,
                     style: FilledButton.styleFrom(
@@ -209,9 +219,9 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
                         borderRadius: BorderRadius.circular(18),
                       ),
                     ),
-                    child: const Text(
-                      'Simpan & Mulai Belajar',
-                      style: TextStyle(
+                    child: Text(
+                      isLoading ? 'Menyimpan...' : 'Simpan & Mulai Belajar',
+                      style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 16,
                       ),
@@ -220,9 +230,11 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
                   const SizedBox(height: 12),
                   Center(
                     child: TextButton(
-                      onPressed: widget.state.completeSetup,
+                      onPressed: isLoading
+                          ? null
+                          : () => unawaited(widget.state.completeSetup()),
                       child: Text(
-                        'Lewati, tambah nanti',
+                        'Tambah profil dulu untuk mulai',
                         style: AppText.bodyStrong.copyWith(
                           color: AppColors.muted,
                         ),
@@ -234,6 +246,32 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SetupErrorBanner extends StatelessWidget {
+  const _SetupErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.coral.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.coral.withValues(alpha: 0.24)),
+      ),
+      child: Text(
+        message,
+        style: AppText.caption.copyWith(
+          color: AppColors.coral,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );
