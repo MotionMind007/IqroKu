@@ -142,10 +142,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
                               ),
-                              child: Text(
-                                'atau',
-                                style: AppText.caption,
-                              ),
+                              child: Text('atau', style: AppText.caption),
                             ),
                             const Expanded(
                               child: Divider(color: AppColors.line),
@@ -175,13 +172,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      const Text(
-                        'Belum punya akun? ',
-                        style: AppText.body,
-                      ),
+                      const Text('Belum punya akun? ', style: AppText.body),
                       GestureDetector(
                         onTap: widget.state.goToRegister,
                         child: Text(

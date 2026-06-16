@@ -16,13 +16,11 @@ class LearningScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final books = state.repository.iqroBooks;
-    final pages = state.repository.pagesForBook(
-      state.selectedIqroBook,
-      state.selectedIqroStatus,
-    );
+    final pages = state.selectedIqroPages;
 
     return AppPage(
       child: ListView(
+        key: const ValueKey('learning_scroll_view'),
         padding: AppInsets.page,
         children: [
           const AppTopBar(title: 'Belajar Iqro', trailing: Icons.help_outline),
@@ -72,7 +70,10 @@ class LearningScreen extends StatelessWidget {
             bookId: state.selectedIqroBook,
             page: state.selectedIqroPage,
             status: state.selectedIqroStatus,
+            completedPages: state.selectedIqroCompletedPages,
+            totalPages: state.selectedIqroTotalPages,
             onStatusChanged: state.setIqroStatus,
+            onNextPage: state.goToNextIqroPage,
           ),
         ],
       ),
@@ -166,13 +167,19 @@ class ReadingPracticeCard extends StatelessWidget {
     required this.bookId,
     required this.page,
     required this.status,
+    required this.completedPages,
+    required this.totalPages,
     required this.onStatusChanged,
+    required this.onNextPage,
   });
 
   final int bookId;
   final int page;
   final LearningStatus status;
+  final int completedPages;
+  final int totalPages;
   final ValueChanged<LearningStatus> onStatusChanged;
+  final VoidCallback onNextPage;
 
   @override
   Widget build(BuildContext context) {
@@ -193,6 +200,22 @@ class ReadingPracticeCard extends StatelessWidget {
               ),
             ],
           ),
+          if (status == LearningStatus.fluent && page < totalPages) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onNextPage,
+              icon: const Icon(Icons.arrow_forward),
+              label: Text('Halaman Berikutnya (${page + 1})'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Container(
             width: double.infinity,
@@ -220,7 +243,7 @@ class ReadingPracticeCard extends StatelessWidget {
           const AudioScrubber(),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: () {},
+            onPressed: () => onStatusChanged(LearningStatus.learning),
             icon: const Icon(Icons.play_arrow),
             label: Text('Mulai Belajar Halaman $page'),
             style: FilledButton.styleFrom(
@@ -263,12 +286,15 @@ class ReadingPracticeCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Text('8 / 28 halaman', style: AppText.caption),
+          Text(
+            '$completedPages / $totalPages halaman lancar',
+            style: AppText.caption,
+          ),
           const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: const LinearProgressIndicator(
-              value: 8 / 28,
+            child: LinearProgressIndicator(
+              value: completedPages / totalPages,
               minHeight: 6,
               color: AppColors.primary,
               backgroundColor: AppColors.line,

@@ -20,8 +20,16 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
   int selectedAvatar = 0;
 
   static const _avatars = [
-    _AvatarOption(asset: AppAssets.avatarMale, label: 'Putra', color: AppColors.blue),
-    _AvatarOption(asset: AppAssets.avatarFemale, label: 'Putri', color: AppColors.coral),
+    _AvatarOption(
+      asset: AppAssets.avatarMale,
+      label: 'Putra',
+      color: AppColors.blue,
+    ),
+    _AvatarOption(
+      asset: AppAssets.avatarFemale,
+      label: 'Putri',
+      color: AppColors.coral,
+    ),
   ];
 
   @override
@@ -33,6 +41,8 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedAvatarOption = _avatars[selectedAvatar];
+
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -49,16 +59,16 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
                       width: 120,
                       height: 120,
                       decoration: BoxDecoration(
-                        color: _avatars[selectedAvatar]
-                            .color
-                            .withValues(alpha: 0.12),
+                        color: selectedAvatarOption.color.withValues(
+                          alpha: 0.12,
+                        ),
                         shape: BoxShape.circle,
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: Padding(
                         padding: const EdgeInsets.all(8),
                         child: Image.asset(
-                          _avatars[selectedAvatar].asset,
+                          selectedAvatarOption.asset,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -186,7 +196,11 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
                   // Action buttons
                   FilledButton(
                     onPressed: nameController.text.trim().isNotEmpty
-                        ? widget.state.completeSetup
+                        ? () => widget.state.completeSetup(
+                            name: nameController.text,
+                            age: int.tryParse(ageController.text),
+                            avatarAsset: selectedAvatarOption.asset,
+                          )
                         : null,
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 54),

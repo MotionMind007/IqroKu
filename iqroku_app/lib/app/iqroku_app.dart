@@ -26,6 +26,7 @@ class _IqrokuAppState extends State<IqrokuApp> {
   void initState() {
     super.initState();
     state = IqrokuState(repository: widget.repository);
+    state.restoreFromDisk();
   }
 
   @override

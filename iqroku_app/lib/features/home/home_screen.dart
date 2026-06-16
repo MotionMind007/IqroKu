@@ -13,8 +13,11 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final child = state.selectedChild;
+
     return AppPage(
       child: ListView(
+        key: const ValueKey('home_scroll_view'),
         padding: AppInsets.page,
         children: [
           Row(
@@ -92,13 +95,13 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 22),
-          const SectionHeader(title: 'Lanjutkan Belajar'),
+          SectionHeader(title: 'Progress ${child.name}'),
           const SizedBox(height: 12),
-          const ContinueCard(
+          ContinueCard(
             asset: AppAssets.iqroBook,
-            title: 'Iqro 1 - Halaman 8',
-            subtitle: 'Belum selesai',
-            progress: 0.60,
+            title: child.currentLesson,
+            subtitle: 'Progress anak ${(child.progress * 100).round()}%',
+            progress: child.progress,
           ),
           const ContinueCard(
             asset: AppAssets.juzAmma,

@@ -3,6 +3,7 @@ import '../models/learning_status.dart';
 import '../models/prayer_models.dart';
 import '../models/profile_models.dart';
 import '../models/quran_models.dart';
+import '../core/assets/app_assets.dart';
 
 class DummyIqrokuRepository {
   const DummyIqrokuRepository();
@@ -105,6 +106,7 @@ class DummyIqrokuRepository {
       age: 7,
       currentLesson: 'Iqro 1 - Halaman 8',
       progress: 0.60,
+      avatarAsset: AppAssets.avatarMale,
     ),
     ChildProfile(
       id: 'aisyah',
@@ -112,6 +114,7 @@ class DummyIqrokuRepository {
       age: 8,
       currentLesson: 'Iqro 2 - Halaman 12',
       progress: 0.40,
+      avatarAsset: AppAssets.avatarFemale,
     ),
     ChildProfile(
       id: 'yusuf',
@@ -119,6 +122,7 @@ class DummyIqrokuRepository {
       age: 9,
       currentLesson: 'Hafal 8 surat',
       progress: 0.75,
+      avatarAsset: AppAssets.avatarMale,
     ),
   ];
 
