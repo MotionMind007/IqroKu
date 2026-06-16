@@ -72,7 +72,7 @@ class QuranSurahListScreen extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _QuranModeCard(
-                  asset: AppAssets.quran,
+                  asset: AppAssets.bookmark,
                   title: 'Hafalan',
                   subtitle: 'Rekam suara',
                   selected: state.memorizationMode,
@@ -216,6 +216,7 @@ class QuranReaderScreen extends StatelessWidget {
                 _ReaderHeader(
                   surah: surah,
                   targetLabel: 'Target membaca: 0/5 mnt',
+                  asset: AppAssets.quranNew,
                 ),
                 const SizedBox(height: 12),
                 if (ayahs.isEmpty)
@@ -425,10 +426,15 @@ class SurahRow extends StatelessWidget {
 }
 
 class _ReaderHeader extends StatelessWidget {
-  const _ReaderHeader({required this.surah, required this.targetLabel});
+  const _ReaderHeader({
+    required this.surah,
+    required this.targetLabel,
+    this.asset = AppAssets.bookmark,
+  });
 
   final Surah surah;
   final String targetLabel;
+  final String asset;
 
   @override
   Widget build(BuildContext context) {
@@ -440,7 +446,7 @@ class _ReaderHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          AssetIcon(AppAssets.quran, size: 42),
+          AssetIcon(asset, size: 46),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

@@ -250,6 +250,56 @@ void main() {
     state.goToNextIqroPage();
     expect(state.selectedIqroPage, 11);
   });
+
+  test('Remote progress is restored after login', () async {
+    SharedPreferences.setMockInitialValues({});
+    final authService = FakeAuthApiService();
+    authService.children.add(
+      const ChildProfile(
+        id: 'child-remote',
+        name: 'Nedy',
+        age: 7,
+        currentLesson: 'Iqro 1 - Halaman 1',
+        progress: 0,
+        avatarAsset: 'assets/brand/male-avatar.png',
+      ),
+    );
+    authService.progress['child-remote'] = const [
+      RemoteIqroProgress(
+        childId: 'child-remote',
+        bookId: 1,
+        pageNumber: 1,
+        status: LearningStatus.fluent,
+      ),
+      RemoteIqroProgress(
+        childId: 'child-remote',
+        bookId: 1,
+        pageNumber: 2,
+        status: LearningStatus.fluent,
+      ),
+      RemoteIqroProgress(
+        childId: 'child-remote',
+        bookId: 1,
+        pageNumber: 3,
+        status: LearningStatus.learning,
+      ),
+    ];
+
+    final state = IqrokuState(
+      repository: const DummyIqrokuRepository(),
+      assessmentService: const FakeAssessmentService(),
+      authService: authService,
+      voiceRecordingService: FakeVoiceRecordingService(),
+      audioPlaybackService: FakeAudioPlaybackService(),
+    );
+
+    await state.loginWithEmail(email: 'parent@iqroku.test', password: 'secret');
+
+    expect(state.launchStage, AppLaunchStage.authenticated);
+    expect(state.selectedIqroPage, 3);
+    expect(state.selectedIqroCompletedPages, 2);
+    expect(state.selectedChild.currentLesson, 'Iqro 1 - Halaman 3');
+  });
 }
 
 class FakeQuranApiService extends QuranApiService {
@@ -342,6 +392,7 @@ class FakeAuthApiService extends AuthApiService {
     email: 'parent@iqroku.test',
   );
   final children = <ChildProfile>[];
+  final progress = <String, List<RemoteIqroProgress>>{};
 
   @override
   Future<AuthResult> login({
@@ -363,6 +414,11 @@ class FakeAuthApiService extends AuthApiService {
   @override
   Future<List<ChildProfile>> loadChildren(String parentId) async {
     return List.of(children);
+  }
+
+  @override
+  Future<List<RemoteIqroProgress>> loadProgress(String childId) async {
+    return progress[childId] ?? const [];
   }
 
   @override

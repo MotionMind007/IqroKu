@@ -1473,14 +1473,39 @@ class IqrokuState extends ChangeNotifier {
       selectedChildId = childProfiles.first.id;
       for (final child in childProfiles) {
         _seedIqroProgressForChild(child.id, currentPage: 1);
+        await _loadRemoteProgressForChild(child.id);
+        _syncChildProgress(child.id, 1);
       }
       childSetupCompleted = true;
       launchStage = AppLaunchStage.authenticated;
     }
     selectedTab = 0;
     selectedIqroBook = 1;
-    selectedIqroPage = 1;
+    selectedIqroPage = childProfiles.isEmpty ? 1 : _firstActivePageForBook(1);
     _persist();
+  }
+
+  Future<void> _loadRemoteProgressForChild(String childId) async {
+    try {
+      final records = await authService.loadProgress(childId);
+      if (records.isEmpty) {
+        return;
+      }
+      final childProgress = _iqroProgress.putIfAbsent(childId, () => {});
+      for (final record in records) {
+        if (record.childId != childId ||
+            record.bookId < 1 ||
+            record.pageNumber < 1) {
+          continue;
+        }
+        childProgress.putIfAbsent(
+          record.bookId,
+          () => <int, LearningStatus>{},
+        )[record.pageNumber] = record.status;
+      }
+    } catch (error) {
+      debugPrint('Remote progress load failed: $error');
+    }
   }
 
   bool _canSyncRemote(String childId) {
