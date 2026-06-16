@@ -71,7 +71,7 @@ class WelcomeScreen extends StatelessWidget {
                 Align(
                   alignment: Alignment.bottomCenter,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 140),
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 118),
                     child: FilledButton(
                       key: const ValueKey('welcome_continue_button'),
                       onPressed: state.continueFromWelcome,

@@ -1,10 +1,18 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:iqroku/app/app_state.dart';
 import 'package:iqroku/app/iqroku_app.dart';
+import 'package:iqroku/data/assessment_service.dart';
+import 'package:iqroku/data/audio_playback_service.dart';
 import 'package:iqroku/data/dummy_iqroku_repository.dart';
+import 'package:iqroku/data/voice_recording_service.dart';
+import 'package:iqroku/models/iqro_models.dart';
 import 'package:iqroku/models/learning_status.dart';
 
 void main() {
@@ -19,7 +27,13 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    await tester.pumpWidget(const IqrokuApp());
+    await tester.pumpWidget(
+      IqrokuApp(
+        assessmentService: const FakeAssessmentService(),
+        voiceRecordingService: FakeVoiceRecordingService(),
+        audioPlaybackService: FakeAudioPlaybackService(),
+      ),
+    );
 
     expect(find.text('Belajar Iqro Bertahap'), findsOneWidget);
 
@@ -66,7 +80,12 @@ void main() {
 
   test('Iqro progress, notes, and local storage are updated', () async {
     SharedPreferences.setMockInitialValues({});
-    final state = IqrokuState(repository: const DummyIqrokuRepository());
+    final state = IqrokuState(
+      repository: const DummyIqrokuRepository(),
+      assessmentService: const FakeAssessmentService(),
+      voiceRecordingService: FakeVoiceRecordingService(),
+      audioPlaybackService: FakeAudioPlaybackService(),
+    );
 
     state.updateIqroPageStatus(LearningStatus.fluent);
 
@@ -83,11 +102,199 @@ void main() {
 
     await state.flushLocalStorageForTests();
 
-    final restored = IqrokuState(repository: const DummyIqrokuRepository());
+    final restored = IqrokuState(
+      repository: const DummyIqrokuRepository(),
+      assessmentService: const FakeAssessmentService(),
+      voiceRecordingService: FakeVoiceRecordingService(),
+      audioPlaybackService: FakeAudioPlaybackService(),
+    );
     await restored.restoreFromDisk();
 
     expect(restored.selectedIqroCompletedPages, 8);
     expect(restored.selectedIqroPage, 9);
     expect(restored.learningNotes.first.title, 'Iqro 1 - Halaman 8');
   });
+
+  test('Iqro JSON material is loaded from app assets', () async {
+    final payload = await File(
+      'assets/content/iqro_complete_jilid_1-6.json',
+    ).readAsString();
+    final content = IqroContent.fromJson(
+      jsonDecode(payload) as Map<String, Object?>,
+    );
+
+    expect(content.books, hasLength(6));
+    expect(content.books.first.totalPages, 32);
+    expect(content.books.first.pages.first.lines.first, ['أ', '=', 'ا', 'ب']);
+  });
+
+  test('Voice practice attempts are stored locally', () async {
+    SharedPreferences.setMockInitialValues({});
+    final state = IqrokuState(
+      repository: const DummyIqrokuRepository(),
+      assessmentService: const FakeAssessmentService(),
+      voiceRecordingService: FakeVoiceRecordingService(),
+      audioPlaybackService: FakeAudioPlaybackService(),
+    );
+
+    await state.startVoicePractice();
+    expect(state.isVoiceRecording, isTrue);
+
+    await state.finishVoicePractice();
+    expect(state.isVoiceRecording, isFalse);
+    expect(state.learningAttempts, hasLength(1));
+    expect(state.learningAttempts.first.bookId, 1);
+    expect(state.learningAttempts.first.pageNumber, 8);
+    expect(
+      state.learningAttempts.first.durationSeconds,
+      greaterThanOrEqualTo(1),
+    );
+    expect(state.learningAttempts.first.audioPath, endsWith('.m4a'));
+    expect(state.learningAttempts.first.assessmentStatus.name, 'recorded');
+
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    expect(state.learningAttempts.first.score, isNotNull);
+    expect(state.learningAttempts.first.status, LearningStatus.fluent);
+    expect(state.learningNotes.first.title, 'Iqro 1 - Halaman 8');
+    expect(state.learningNotes.first.note, contains('Skor'));
+
+    await state.toggleAttemptPlayback(state.learningAttempts.first);
+    expect(state.playingAttemptId, state.learningAttempts.first.id);
+
+    await state.toggleAttemptPlayback(state.learningAttempts.first);
+    expect(state.playingAttemptId, isNull);
+
+    await state.flushLocalStorageForTests();
+
+    final restored = IqrokuState(
+      repository: const DummyIqrokuRepository(),
+      assessmentService: const FakeAssessmentService(),
+      voiceRecordingService: FakeVoiceRecordingService(),
+      audioPlaybackService: FakeAudioPlaybackService(),
+    );
+    await restored.restoreFromDisk();
+
+    expect(restored.learningAttempts, hasLength(1));
+    expect(restored.selectedPageLatestAttempt?.pageNumber, 8);
+  });
+
+  test('Parent settings can reset progress and logout', () async {
+    SharedPreferences.setMockInitialValues({});
+    final state = IqrokuState(
+      repository: const DummyIqrokuRepository(),
+      assessmentService: const FakeAssessmentService(),
+      voiceRecordingService: FakeVoiceRecordingService(),
+      audioPlaybackService: FakeAudioPlaybackService(),
+    );
+
+    state.updateIqroPageStatus(LearningStatus.fluent);
+    state.resetSelectedChildProgress();
+
+    expect(state.selectedIqroCompletedPages, 0);
+    expect(state.selectedIqroPage, 1);
+    expect(state.selectedChild.currentLesson, 'Iqro 1 - Halaman 1');
+
+    state.logout();
+
+    expect(state.launchStage, AppLaunchStage.welcome);
+    expect(state.selectedTab, 0);
+  });
+
+  test('Free plan locks learning after Iqro 1 page 10', () async {
+    SharedPreferences.setMockInitialValues({});
+    final state = IqrokuState(
+      repository: const DummyIqrokuRepository(),
+      assessmentService: const FakeAssessmentService(),
+      voiceRecordingService: FakeVoiceRecordingService(),
+      audioPlaybackService: FakeAudioPlaybackService(),
+    );
+
+    state.selectIqroPage(10);
+    expect(state.selectedIqroPage, 10);
+
+    state.goToNextIqroPage();
+    expect(state.selectedIqroPage, 10);
+    expect(state.subscriptionNotice, contains('halaman 10'));
+
+    state.selectIqroBook(2);
+    expect(state.selectedIqroBook, 1);
+
+    state.activateFamilyPlus();
+    expect(state.subscriptionActivatedAt, isNotNull);
+    expect(state.subscriptionRenewalLabel, isNot('Belum aktif'));
+
+    state.goToNextIqroPage();
+    expect(state.selectedIqroPage, 11);
+  });
+}
+
+class FakeAssessmentService implements AssessmentService {
+  const FakeAssessmentService();
+
+  @override
+  Future<AssessmentResult> assess(AssessmentRequest request) async {
+    return const AssessmentResult(
+      score: 88,
+      status: LearningStatus.fluent,
+      feedback: 'Bacaan sudah lancar untuk latihan.',
+      note: 'Hasil penilaian: lancar.',
+    );
+  }
+}
+
+class FakeVoiceRecordingService implements VoiceRecordingService {
+  String? _activePath;
+
+  @override
+  Future<String> start({
+    required String childId,
+    required int bookId,
+    required int pageNumber,
+  }) async {
+    _activePath = '/tmp/${childId}_j${bookId}_p$pageNumber.m4a';
+    return _activePath!;
+  }
+
+  @override
+  Future<String?> stop() async {
+    final path = _activePath;
+    _activePath = null;
+    return path;
+  }
+
+  @override
+  Future<void> cancel() async {
+    _activePath = null;
+  }
+
+  @override
+  void dispose() {}
+}
+
+class FakeAudioPlaybackService implements AudioPlaybackService {
+  final StreamController<void> _completeController =
+      StreamController<void>.broadcast();
+  String? playingPath;
+
+  @override
+  Stream<void> get onComplete => _completeController.stream;
+
+  @override
+  Future<void> play(String path) async {
+    playingPath = path;
+  }
+
+  @override
+  Future<void> stop() async {
+    playingPath = null;
+  }
+
+  @override
+  void dispose() {
+    _completeController.close();
+  }
+
+  void complete() {
+    _completeController.add(null);
+  }
 }

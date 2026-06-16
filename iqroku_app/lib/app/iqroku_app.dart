@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
+import '../data/assessment_service.dart';
+import '../data/audio_playback_service.dart';
 import '../data/dummy_iqroku_repository.dart';
+import '../data/voice_recording_service.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/onboarding_screen.dart';
 import '../features/auth/register_screen.dart';
@@ -11,9 +14,18 @@ import 'app_shell.dart';
 import 'app_state.dart';
 
 class IqrokuApp extends StatefulWidget {
-  const IqrokuApp({super.key, this.repository = const DummyIqrokuRepository()});
+  const IqrokuApp({
+    super.key,
+    this.repository = const DummyIqrokuRepository(),
+    this.assessmentService = const MockAssessmentService(),
+    this.voiceRecordingService,
+    this.audioPlaybackService,
+  });
 
   final DummyIqrokuRepository repository;
+  final AssessmentService assessmentService;
+  final VoiceRecordingService? voiceRecordingService;
+  final AudioPlaybackService? audioPlaybackService;
 
   @override
   State<IqrokuApp> createState() => _IqrokuAppState();
@@ -25,8 +37,14 @@ class _IqrokuAppState extends State<IqrokuApp> {
   @override
   void initState() {
     super.initState();
-    state = IqrokuState(repository: widget.repository);
+    state = IqrokuState(
+      repository: widget.repository,
+      assessmentService: widget.assessmentService,
+      voiceRecordingService: widget.voiceRecordingService,
+      audioPlaybackService: widget.audioPlaybackService,
+    );
     state.restoreFromDisk();
+    state.loadIqroContent();
   }
 
   @override

@@ -49,46 +49,46 @@ class AppShell extends StatelessWidget {
                 onDestinationSelected: state.selectTab,
                 destinations: const [
                   NavigationDestination(
-                    icon: AssetIcon(AppAssets.home, size: 28),
+                    icon: AssetIcon(AppAssets.navHome, size: 30),
                     selectedIcon: AssetIcon(
-                      AppAssets.home,
-                      size: 32,
+                      AppAssets.navHome,
+                      size: 34,
                       selected: true,
                     ),
                     label: 'Home',
                   ),
                   NavigationDestination(
-                    icon: AssetIcon(AppAssets.iqroBook, size: 28),
+                    icon: AssetIcon(AppAssets.navLearning, size: 30),
                     selectedIcon: AssetIcon(
-                      AppAssets.iqroBook,
-                      size: 32,
+                      AppAssets.navLearning,
+                      size: 34,
                       selected: true,
                     ),
                     label: 'Belajar',
                   ),
                   NavigationDestination(
-                    icon: AssetIcon(AppAssets.quran, size: 28),
+                    icon: AssetIcon(AppAssets.navQuran, size: 30),
                     selectedIcon: AssetIcon(
-                      AppAssets.quran,
-                      size: 32,
+                      AppAssets.navQuran,
+                      size: 34,
                       selected: true,
                     ),
                     label: "Qur'an",
                   ),
                   NavigationDestination(
-                    icon: AssetIcon(AppAssets.prayer, size: 28),
+                    icon: AssetIcon(AppAssets.navActivity, size: 30),
                     selectedIcon: AssetIcon(
-                      AppAssets.prayer,
-                      size: 32,
+                      AppAssets.navActivity,
+                      size: 34,
                       selected: true,
                     ),
                     label: 'Aktivitas',
                   ),
                   NavigationDestination(
-                    icon: AssetIcon(AppAssets.profile, size: 28),
+                    icon: AssetIcon(AppAssets.navAccount, size: 30),
                     selectedIcon: AssetIcon(
-                      AppAssets.profile,
-                      size: 32,
+                      AppAssets.navAccount,
+                      size: 34,
                       selected: true,
                     ),
                     label: 'Akun',

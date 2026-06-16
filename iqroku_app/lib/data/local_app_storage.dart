@@ -32,32 +32,40 @@ class StoredIqrokuState {
     required this.childProfiles,
     required this.iqroProgress,
     required this.learningNotes,
+    required this.learningAttempts,
     required this.selectedChildId,
     required this.familyPlusActive,
     required this.childSetupCompleted,
     required this.selectedIqroBook,
     required this.selectedIqroPage,
+    this.subscriptionActivatedAt,
   });
 
   final List<ChildProfile> childProfiles;
   final Map<String, Map<int, Map<int, LearningStatus>>> iqroProgress;
   final List<LearningNote> learningNotes;
+  final List<LearningAttempt> learningAttempts;
   final String selectedChildId;
   final bool familyPlusActive;
   final bool childSetupCompleted;
   final int selectedIqroBook;
   final int selectedIqroPage;
+  final DateTime? subscriptionActivatedAt;
 
   Map<String, Object?> toJson() {
     return {
       'childProfiles': childProfiles.map((child) => child.toJson()).toList(),
       'iqroProgress': _encodeProgress(iqroProgress),
       'learningNotes': learningNotes.map((note) => note.toJson()).toList(),
+      'learningAttempts': learningAttempts
+          .map((attempt) => attempt.toJson())
+          .toList(),
       'selectedChildId': selectedChildId,
       'familyPlusActive': familyPlusActive,
       'childSetupCompleted': childSetupCompleted,
       'selectedIqroBook': selectedIqroBook,
       'selectedIqroPage': selectedIqroPage,
+      'subscriptionActivatedAt': subscriptionActivatedAt?.toIso8601String(),
     };
   }
 
@@ -70,6 +78,10 @@ class StoredIqrokuState {
         .cast<Map<String, Object?>>()
         .map(LearningNote.fromJson)
         .toList();
+    final attempts = (json['learningAttempts'] as List<Object?>? ?? [])
+        .cast<Map<String, Object?>>()
+        .map(LearningAttempt.fromJson)
+        .toList();
 
     return StoredIqrokuState(
       childProfiles: children,
@@ -77,12 +89,23 @@ class StoredIqrokuState {
         json['iqroProgress'] as Map<String, Object?>? ?? {},
       ),
       learningNotes: notes,
+      learningAttempts: attempts,
       selectedChildId: json['selectedChildId'] as String? ?? '',
       familyPlusActive: json['familyPlusActive'] as bool? ?? false,
       childSetupCompleted: json['childSetupCompleted'] as bool? ?? false,
       selectedIqroBook: json['selectedIqroBook'] as int? ?? 1,
       selectedIqroPage: json['selectedIqroPage'] as int? ?? 1,
+      subscriptionActivatedAt: _decodeDateTime(
+        json['subscriptionActivatedAt'] as String?,
+      ),
     );
+  }
+
+  static DateTime? _decodeDateTime(String? value) {
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return DateTime.tryParse(value);
   }
 
   static Map<String, Object?> _encodeProgress(

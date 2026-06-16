@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_chrome.dart';
+import '../../core/widgets/subscription_sheet.dart';
+import '../../models/learning_status.dart';
 import '../../models/profile_models.dart' as profile;
 
 class ProfileScreen extends StatelessWidget {
@@ -28,6 +30,7 @@ class ProfileScreen extends StatelessWidget {
             childCount: state.childProfiles.length,
             childLimit: state.childLimit,
             familyPlusActive: state.familyPlusActive,
+            renewalLabel: state.subscriptionRenewalLabel,
             onUpgrade: () => _showUpgradeSheet(context),
           ),
           const SizedBox(height: 18),
@@ -41,11 +44,32 @@ class ProfileScreen extends StatelessWidget {
             );
           }),
           const SizedBox(height: 22),
-          ProgressSummaryCard(child: selectedChild),
+          ProgressSummaryCard(
+            child: selectedChild,
+            onTap: () => _openProgressDetail(context),
+          ),
+          const SizedBox(height: 18),
+          const SectionHeader(title: 'Riwayat Rekaman Bacaan'),
+          const SizedBox(height: 12),
+          if (state.selectedChildLearningAttempts.isEmpty)
+            const EmptyAttemptHistoryCard()
+          else
+            ...state.selectedChildLearningAttempts.map((attempt) {
+              return LearningAttemptHistoryCard(attempt: attempt);
+            }),
           const SizedBox(height: 18),
           const SectionHeader(title: 'Catatan Belajar Terbaru'),
           const SizedBox(height: 12),
           ...state.learningNotes.map((note) => LearningNoteCard(note: note)),
+          const SizedBox(height: 18),
+          ParentSettingsCard(
+            familyPlusActive: state.familyPlusActive,
+            renewalLabel: state.subscriptionRenewalLabel,
+            onManagePlan: () => _showUpgradeSheet(context),
+            onResetProgress: () => _confirmResetProgress(context),
+            onLogout: () => _confirmLogout(context),
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -60,15 +84,71 @@ class ProfileScreen extends StatelessWidget {
     _showUpgradeSheet(context);
   }
 
+  void _openProgressDetail(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (context) => ChildProgressDetailScreen(state: state),
+      ),
+    );
+  }
+
   void _showUpgradeSheet(BuildContext context) {
-    showModalBottomSheet<void>(
+    showIqrokuPlusSheet(
       context: context,
-      showDragHandle: true,
-      builder: (context) => _UpgradeChildLimitSheet(
-        onUpgrade: () {
-          state.activateFamilyPlus();
-          Navigator.pop(context);
-        },
+      onConfirm: state.activateFamilyPlus,
+      active: state.subscriptionActive,
+      renewalLabel: state.subscriptionRenewalLabel,
+    );
+  }
+
+  void _confirmResetProgress(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset progress anak?'),
+        content: Text(
+          'Progress ${state.selectedChild.name} akan kembali ke Iqro 1 Halaman 1. Catatan belajar Iqro juga akan dibersihkan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () {
+              state.resetSelectedChildProgress();
+              Navigator.pop(context);
+            },
+            style: FilledButton.styleFrom(backgroundColor: AppColors.coral),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmLogout(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Keluar dari akun?'),
+        content: const Text(
+          'Untuk prototype ini, data lokal tetap tersimpan. Kamu bisa masuk lagi dan melanjutkan progress.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              state.logout();
+            },
+            child: const Text('Keluar'),
+          ),
+        ],
       ),
     );
   }
@@ -148,12 +228,14 @@ class _PlanNoticeCard extends StatelessWidget {
     required this.childCount,
     required this.childLimit,
     required this.familyPlusActive,
+    required this.renewalLabel,
     required this.onUpgrade,
   });
 
   final int childCount;
   final int childLimit;
   final bool familyPlusActive;
+  final String renewalLabel;
   final VoidCallback onUpgrade;
 
   @override
@@ -172,17 +254,24 @@ class _PlanNoticeCard extends StatelessWidget {
               children: [
                 Text(
                   familyPlusActive
-                      ? 'Paket Family Plus aktif'
-                      : 'Akun Free: 1 profil anak',
+                      ? 'IqroKu Plus aktif'
+                      : 'Akun Free: 1 anak + Iqro 1 halaman 1-10',
                   style: AppText.bodyStrong,
                 ),
                 const SizedBox(height: 4),
                 Text(
                   familyPlusActive
-                      ? 'Kamu bisa menambahkan beberapa anak dalam satu akun orang tua.'
-                      : 'Kuota terpakai $childCount/$childLimit. Tambah anak berikutnya perlu upgrade.',
+                      ? 'Semua materi Iqro terbuka dan kamu bisa memantau beberapa anak.'
+                      : 'Kuota anak $childCount/$childLimit. Lanjut setelah halaman 10 perlu subscription Rp49.000/bulan.',
                   style: AppText.caption,
                 ),
+                if (familyPlusActive) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Aktif sampai $renewalLabel',
+                    style: AppText.caption.copyWith(color: AppColors.text),
+                  ),
+                ],
               ],
             ),
           ),
@@ -263,9 +352,14 @@ class ChildProfileCard extends StatelessWidget {
 }
 
 class ProgressSummaryCard extends StatelessWidget {
-  const ProgressSummaryCard({super.key, required this.child});
+  const ProgressSummaryCard({
+    super.key,
+    required this.child,
+    required this.onTap,
+  });
 
   final profile.ChildProfile child;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -275,68 +369,306 @@ class ProgressSummaryCard extends StatelessWidget {
     final remainingPages = (28 - completedPages - learningPages - reviewPages)
         .clamp(0, 28);
 
+    return GestureDetector(
+      onTap: onTap,
+      child: AppCard(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 80,
+                  height: 80,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        value: child.progress,
+                        strokeWidth: 7,
+                        color: AppColors.primary,
+                        backgroundColor: AppColors.line,
+                      ),
+                      Text(
+                        '${(child.progress * 100).round()}%',
+                        style: AppText.bodyStrong.copyWith(
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Progress ${child.name}',
+                        style: AppText.sectionTitle,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(child.currentLesson, style: AppText.caption),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Tap untuk lihat status per halaman dan rekaman terakhir.',
+                        style: AppText.caption.copyWith(color: AppColors.text),
+                      ),
+                    ],
+                  ),
+                ),
+                const CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  child: Icon(Icons.chevron_right, size: 22),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: MiniMetric(
+                    label: 'Halaman Lancar',
+                    value: '$completedPages',
+                    icon: Icons.check_circle,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: MiniMetric(
+                    label: 'Sedang Belajar',
+                    value: '$learningPages',
+                    icon: Icons.hourglass_bottom,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: MiniMetric(
+                    label: 'Perlu Ulang',
+                    value: '$reviewPages',
+                    icon: Icons.replay_circle_filled,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: MiniMetric(
+                    label: 'Belum Dipelajari',
+                    value: '$remainingPages',
+                    icon: Icons.radio_button_unchecked,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ChildProgressDetailScreen extends StatefulWidget {
+  const ChildProgressDetailScreen({super.key, required this.state});
+
+  final IqrokuState state;
+
+  @override
+  State<ChildProgressDetailScreen> createState() =>
+      _ChildProgressDetailScreenState();
+}
+
+class _ChildProgressDetailScreenState extends State<ChildProgressDetailScreen> {
+  late int selectedBookId = widget.state.selectedIqroBook;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: AppPage(
+              child: AnimatedBuilder(
+                animation: widget.state,
+                builder: (context, _) {
+                  final child = widget.state.selectedChild;
+                  final books = widget.state.iqroBooks;
+                  final selectedBook = books.firstWhere(
+                    (book) => book.id == selectedBookId,
+                    orElse: () => books.first,
+                  );
+                  final pages = widget.state.iqroPagesForBook(selectedBook.id);
+                  final completed = widget.state.completedPagesForBook(
+                    selectedBook.id,
+                  );
+                  final learning = widget.state.learningPagesForBook(
+                    selectedBook.id,
+                  );
+                  final review = widget.state.reviewPagesForBook(
+                    selectedBook.id,
+                  );
+                  final remaining =
+                      selectedBook.totalPages - completed - learning - review;
+
+                  return ListView(
+                    padding: AppInsets.page,
+                    children: [
+                      _ProgressDetailTopBar(childName: child.name),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 44,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: books.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 8),
+                          itemBuilder: (context, index) {
+                            final book = books[index];
+                            return AppChip(
+                              label: book.title,
+                              selected: selectedBook.id == book.id,
+                              onTap: () {
+                                setState(() => selectedBookId = book.id);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _ProgressDetailSummary(
+                        bookTitle: selectedBook.title,
+                        completed: completed,
+                        learning: learning,
+                        review: review,
+                        remaining: remaining.clamp(0, selectedBook.totalPages),
+                        total: selectedBook.totalPages,
+                      ),
+                      const SizedBox(height: 18),
+                      const SectionHeader(title: 'Detail Halaman'),
+                      const SizedBox(height: 12),
+                      ...pages.map((page) {
+                        return ProgressPageCard(
+                          pageNumber: page.pageNumber,
+                          status: page.status,
+                          attempt: widget.state.latestAttemptForIqroPage(
+                            selectedBook.id,
+                            page.pageNumber,
+                          ),
+                          onTap: () {
+                            widget.state.openIqroPage(
+                              selectedBook.id,
+                              page.pageNumber,
+                            );
+                            Navigator.pop(context);
+                          },
+                        );
+                      }),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressDetailTopBar extends StatelessWidget {
+  const _ProgressDetailTopBar({required this.childName});
+
+  final String childName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+        ),
+        Expanded(
+          child: Column(
+            children: [
+              Text('Progress Anak', style: AppText.title),
+              const SizedBox(height: 2),
+              Text(childName, style: AppText.caption),
+            ],
+          ),
+        ),
+        const SizedBox(width: 48),
+      ],
+    );
+  }
+}
+
+class _ProgressDetailSummary extends StatelessWidget {
+  const _ProgressDetailSummary({
+    required this.bookTitle,
+    required this.completed,
+    required this.learning,
+    required this.review,
+    required this.remaining,
+    required this.total,
+  });
+
+  final String bookTitle;
+  final int completed;
+  final int learning;
+  final int review;
+  final int remaining;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = total == 0 ? 0.0 : completed / total;
+
     return AppCard(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               SizedBox(
-                width: 80,
-                height: 80,
+                width: 68,
+                height: 68,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     CircularProgressIndicator(
-                      value: child.progress,
+                      value: progress,
                       strokeWidth: 7,
                       color: AppColors.primary,
                       backgroundColor: AppColors.line,
                     ),
                     Text(
-                      '${(child.progress * 100).round()}%',
-                      style: AppText.bodyStrong.copyWith(
+                      '${(progress * 100).round()}%',
+                      style: AppText.smallStrong.copyWith(
                         color: AppColors.primary,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Progress ${child.name}', style: AppText.sectionTitle),
+                    Text(bookTitle, style: AppText.sectionTitle),
                     const SizedBox(height: 4),
-                    Text(child.currentLesson, style: AppText.caption),
-                    const SizedBox(height: 6),
                     Text(
-                      'Orang tua bisa cek posisi belajar dan catatan terakhir anak di sini.',
-                      style: AppText.caption.copyWith(color: AppColors.text),
+                      '$completed dari $total halaman sudah lancar',
+                      style: AppText.caption,
                     ),
                   ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: MiniMetric(
-                  label: 'Halaman Lancar',
-                  value: '$completedPages',
-                  icon: Icons.check_circle,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: MiniMetric(
-                  label: 'Sedang Belajar',
-                  value: '$learningPages',
-                  icon: Icons.hourglass_bottom,
                 ),
               ),
             ],
@@ -346,16 +678,36 @@ class ProgressSummaryCard extends StatelessWidget {
             children: [
               Expanded(
                 child: MiniMetric(
+                  label: 'Lancar',
+                  value: '$completed',
+                  icon: Icons.check_circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: MiniMetric(
                   label: 'Perlu Ulang',
-                  value: '$reviewPages',
+                  value: '$review',
                   icon: Icons.replay_circle_filled,
                 ),
               ),
-              const SizedBox(width: 10),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
               Expanded(
                 child: MiniMetric(
-                  label: 'Belum Dipelajari',
-                  value: '$remainingPages',
+                  label: 'Belajar',
+                  value: '$learning',
+                  icon: Icons.hourglass_bottom,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: MiniMetric(
+                  label: 'Belum',
+                  value: '$remaining',
                   icon: Icons.radio_button_unchecked,
                 ),
               ),
@@ -364,6 +716,93 @@ class ProgressSummaryCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class ProgressPageCard extends StatelessWidget {
+  const ProgressPageCard({
+    super.key,
+    required this.pageNumber,
+    required this.status,
+    required this.attempt,
+    required this.onTap,
+  });
+
+  final int pageNumber;
+  final LearningStatus status;
+  final profile.LearningAttempt? attempt;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final latestAttempt = attempt;
+    final score = latestAttempt?.score;
+
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: status.color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text('$pageNumber', style: AppText.bodyStrong),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Halaman $pageNumber', style: AppText.bodyStrong),
+                  const SizedBox(height: 3),
+                  Text(
+                    latestAttempt == null
+                        ? 'Belum ada rekaman bacaan'
+                        : 'Rekaman ${_formatDuration(latestAttempt.durationSeconds)} - ${latestAttempt.date}',
+                    style: AppText.caption,
+                  ),
+                  if (latestAttempt?.feedback != null) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      latestAttempt!.feedback!,
+                      style: AppText.caption.copyWith(color: AppColors.text),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _AttemptStatusPill(
+                  label: status.shortLabel,
+                  color: status.color,
+                ),
+                if (score != null) ...[
+                  const SizedBox(height: 6),
+                  Text('$score/100', style: AppText.smallStrong),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatDuration(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remainingSeconds = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 }
 
@@ -441,47 +880,174 @@ class LearningNoteCard extends StatelessWidget {
   }
 }
 
-class _UpgradeChildLimitSheet extends StatelessWidget {
-  const _UpgradeChildLimitSheet({required this.onUpgrade});
-
-  final VoidCallback onUpgrade;
+class EmptyAttemptHistoryCard extends StatelessWidget {
+  const EmptyAttemptHistoryCard({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+    return const AppCard(
+      margin: EdgeInsets.only(bottom: 12),
+      child: Text(
+        'Belum ada rekaman bacaan. Setelah anak merekam, hasilnya muncul di sini.',
+        style: AppText.caption,
+      ),
+    );
+  }
+}
+
+class LearningAttemptHistoryCard extends StatelessWidget {
+  const LearningAttemptHistoryCard({super.key, required this.attempt});
+
+  final profile.LearningAttempt attempt;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _assessmentColor(attempt.assessmentStatus);
+    final score = attempt.score;
+
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Tambah Anak dengan Family Plus', style: AppText.title),
-          const SizedBox(height: 8),
-          const Text(
-            'Akun free mendapat 1 profil anak. Untuk memantau lebih dari satu anak, aktifkan paket berbayar.',
-            style: AppText.body,
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: color.withValues(alpha: 0.12),
+            foregroundColor: color,
+            child: Icon(_assessmentIcon(attempt.assessmentStatus), size: 22),
           ),
-          const SizedBox(height: 18),
-          const _UpgradeBenefit(text: 'Tambah hingga 5 profil anak'),
-          const _UpgradeBenefit(text: 'Dashboard progress per anak'),
-          const _UpgradeBenefit(text: 'Catatan belajar dan riwayat hafalan'),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: onUpgrade,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(double.infinity, 52),
-              backgroundColor: AppColors.primary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Iqro ${attempt.bookId} - Halaman ${attempt.pageNumber}',
+                  style: AppText.bodyStrong,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${attempt.date} - ${_formatDuration(attempt.durationSeconds)}',
+                  style: AppText.caption,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  attempt.feedback ?? attempt.note ?? 'Belum ada saran.',
+                  style: AppText.body,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _AttemptStatusPill(
+                label: attempt.assessmentStatus.label,
+                color: color,
               ),
-            ),
-            child: const Text('Upgrade Rp29.000/bulan'),
+              if (score != null) ...[
+                const SizedBox(height: 7),
+                Text('$score/100', style: AppText.bodyStrong),
+              ],
+            ],
           ),
-          const SizedBox(height: 8),
-          Center(
-            child: TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Nanti dulu'),
-            ),
+        ],
+      ),
+    );
+  }
+
+  static Color _assessmentColor(profile.ReadingAssessmentStatus status) {
+    return switch (status) {
+      profile.ReadingAssessmentStatus.recorded => AppColors.gold,
+      profile.ReadingAssessmentStatus.assessing => AppColors.blue,
+      profile.ReadingAssessmentStatus.fluent => AppColors.primary,
+      profile.ReadingAssessmentStatus.needsReview => AppColors.coral,
+    };
+  }
+
+  static IconData _assessmentIcon(profile.ReadingAssessmentStatus status) {
+    return switch (status) {
+      profile.ReadingAssessmentStatus.recorded => Icons.schedule,
+      profile.ReadingAssessmentStatus.assessing => Icons.graphic_eq,
+      profile.ReadingAssessmentStatus.fluent => Icons.check_circle,
+      profile.ReadingAssessmentStatus.needsReview => Icons.replay_circle_filled,
+    };
+  }
+
+  static String _formatDuration(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remainingSeconds = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
+  }
+}
+
+class _AttemptStatusPill extends StatelessWidget {
+  const _AttemptStatusPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label, style: AppText.mini.copyWith(color: color)),
+    );
+  }
+}
+
+class ParentSettingsCard extends StatelessWidget {
+  const ParentSettingsCard({
+    super.key,
+    required this.familyPlusActive,
+    required this.renewalLabel,
+    required this.onManagePlan,
+    required this.onResetProgress,
+    required this.onLogout,
+  });
+
+  final bool familyPlusActive;
+  final String renewalLabel;
+  final VoidCallback onManagePlan;
+  final VoidCallback onResetProgress;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Pengaturan Akun', style: AppText.sectionTitle),
+          const SizedBox(height: 12),
+          _SettingsAction(
+            icon: Icons.workspace_premium_outlined,
+            title: familyPlusActive ? 'IqroKu Plus aktif' : 'Kelola paket',
+            subtitle: familyPlusActive
+                ? 'Subscription aktif sampai $renewalLabel.'
+                : 'Subscription Rp49.000/bulan untuk buka semua Iqro dan tambah anak.',
+            onTap: onManagePlan,
+          ),
+          const Divider(color: AppColors.line),
+          _SettingsAction(
+            icon: Icons.restart_alt,
+            title: 'Reset progress anak',
+            subtitle: 'Kembalikan progress anak terpilih ke awal.',
+            color: AppColors.coral,
+            onTap: onResetProgress,
+          ),
+          const Divider(color: AppColors.line),
+          _SettingsAction(
+            icon: Icons.logout,
+            title: 'Keluar',
+            subtitle: 'Kembali ke welcome page. Data lokal tetap tersimpan.',
+            onTap: onLogout,
           ),
         ],
       ),
@@ -489,21 +1055,50 @@ class _UpgradeChildLimitSheet extends StatelessWidget {
   }
 }
 
-class _UpgradeBenefit extends StatelessWidget {
-  const _UpgradeBenefit({required this.text});
+class _SettingsAction extends StatelessWidget {
+  const _SettingsAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.color = AppColors.primary,
+  });
 
-  final String text;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          const Icon(Icons.check_circle, color: AppColors.primary, size: 20),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text, style: AppText.bodyStrong)),
-        ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: color.withValues(alpha: 0.12),
+              foregroundColor: color,
+              child: Icon(icon, size: 21),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: AppText.bodyStrong),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: AppText.caption),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.muted),
+          ],
+        ),
       ),
     );
   }

@@ -40,7 +40,7 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          const PrayerHeroCard(),
+          const HomePrayerHeroCard(),
           const SizedBox(height: 20),
           SectionHeader(
             title: 'Menu Utama',
@@ -54,7 +54,7 @@ class HomeScreen extends StatelessWidget {
             physics: const NeverScrollableScrollPhysics(),
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            childAspectRatio: 1.05,
+            childAspectRatio: 0.96,
             children: [
               QuickAction(
                 asset: AppAssets.iqroBasic,
@@ -63,31 +63,31 @@ class HomeScreen extends StatelessWidget {
                 onTap: () => state.selectTab(1),
               ),
               QuickAction(
-                asset: AppAssets.juzAmma,
+                asset: AppAssets.juzAmmaNew,
                 label: 'Juz Amma',
                 color: AppColors.gold,
                 onTap: () => state.selectTab(2),
               ),
               QuickAction(
-                asset: AppAssets.quran,
+                asset: AppAssets.quranNew,
                 label: "Al-Qur'an",
                 color: AppColors.blue,
                 onTap: () => state.selectTab(2),
               ),
               QuickAction(
-                asset: AppAssets.prayer,
+                asset: AppAssets.prayerTime,
                 label: 'Waktu Sholat',
                 color: AppColors.primary,
                 onTap: () => state.selectTab(3),
               ),
               QuickAction(
-                asset: AppAssets.qibla,
+                asset: AppAssets.qiblaCompass,
                 label: 'Kiblat',
                 color: AppColors.navy,
                 onTap: () => state.selectTab(3),
               ),
               QuickAction(
-                asset: AppAssets.profile,
+                asset: AppAssets.profileChild,
                 label: 'Profil',
                 color: AppColors.lavender,
                 onTap: () => state.selectTab(4),
@@ -121,6 +121,78 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+class HomePrayerHeroCard extends StatelessWidget {
+  const HomePrayerHeroCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 164,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          colors: [AppColors.primaryDark, AppColors.primary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: AppShadows.soft,
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -22,
+            bottom: -24,
+            child: Image.asset(
+              AppAssets.homeMosque,
+              width: 190,
+              height: 190,
+              fit: BoxFit.contain,
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.primaryDark,
+                    AppColors.primary.withValues(alpha: 0.72),
+                    AppColors.primary.withValues(alpha: 0.08),
+                  ],
+                  stops: const [0, 0.55, 1],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Sholat berikutnya',
+                  style: AppText.caption.copyWith(color: Colors.white70),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Ashar',
+                  style: AppText.hero.copyWith(color: Colors.white),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '15:35  (01:24:38 lagi)',
+                  style: AppText.bodyStrong.copyWith(color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class QuickAction extends StatelessWidget {
   const QuickAction({
     super.key,
@@ -144,16 +216,23 @@ class QuickAction extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: color.withValues(alpha: 0.12),
-                child: AssetIcon(asset, size: 30),
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(5),
+                  child: Image.asset(asset, fit: BoxFit.contain),
+                ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 7),
               Text(
                 label,
                 textAlign: TextAlign.center,

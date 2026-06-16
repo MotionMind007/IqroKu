@@ -84,3 +84,130 @@ class LearningNote {
     );
   }
 }
+
+class LearningAttempt {
+  const LearningAttempt({
+    required this.id,
+    required this.childId,
+    required this.bookId,
+    required this.pageNumber,
+    required this.date,
+    required this.durationSeconds,
+    required this.status,
+    this.assessmentStatus = ReadingAssessmentStatus.recorded,
+    this.audioPath,
+    this.score,
+    this.feedback,
+    this.note,
+  });
+
+  final String id;
+  final String childId;
+  final int bookId;
+  final int pageNumber;
+  final String date;
+  final int durationSeconds;
+  final LearningStatus status;
+  final ReadingAssessmentStatus assessmentStatus;
+  final String? audioPath;
+  final int? score;
+  final String? feedback;
+  final String? note;
+
+  LearningAttempt copyWith({
+    String? id,
+    String? childId,
+    int? bookId,
+    int? pageNumber,
+    String? date,
+    int? durationSeconds,
+    LearningStatus? status,
+    ReadingAssessmentStatus? assessmentStatus,
+    String? audioPath,
+    int? score,
+    String? feedback,
+    String? note,
+  }) {
+    return LearningAttempt(
+      id: id ?? this.id,
+      childId: childId ?? this.childId,
+      bookId: bookId ?? this.bookId,
+      pageNumber: pageNumber ?? this.pageNumber,
+      date: date ?? this.date,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      status: status ?? this.status,
+      assessmentStatus: assessmentStatus ?? this.assessmentStatus,
+      audioPath: audioPath ?? this.audioPath,
+      score: score ?? this.score,
+      feedback: feedback ?? this.feedback,
+      note: note ?? this.note,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return {
+      'id': id,
+      'childId': childId,
+      'bookId': bookId,
+      'pageNumber': pageNumber,
+      'date': date,
+      'durationSeconds': durationSeconds,
+      'status': status.name,
+      'assessmentStatus': assessmentStatus.name,
+      'audioPath': audioPath,
+      'score': score,
+      'feedback': feedback,
+      'note': note,
+    };
+  }
+
+  static LearningAttempt fromJson(Map<String, Object?> json) {
+    final status = LearningStatus.values.byName(json['status'] as String);
+    return LearningAttempt(
+      id: json['id'] as String,
+      childId: json['childId'] as String,
+      bookId: json['bookId'] as int,
+      pageNumber: json['pageNumber'] as int,
+      date: json['date'] as String,
+      durationSeconds: json['durationSeconds'] as int,
+      status: status,
+      assessmentStatus: _assessmentStatusFromJson(
+        json['assessmentStatus'] as String?,
+        status,
+        json['score'] as int?,
+      ),
+      audioPath: json['audioPath'] as String?,
+      score: json['score'] as int?,
+      feedback: json['feedback'] as String?,
+      note: json['note'] as String?,
+    );
+  }
+
+  static ReadingAssessmentStatus _assessmentStatusFromJson(
+    String? value,
+    LearningStatus status,
+    int? score,
+  ) {
+    if (value != null) {
+      return ReadingAssessmentStatus.values.byName(value);
+    }
+
+    if (score == null) {
+      return ReadingAssessmentStatus.recorded;
+    }
+    return status == LearningStatus.review
+        ? ReadingAssessmentStatus.needsReview
+        : ReadingAssessmentStatus.fluent;
+  }
+}
+
+enum ReadingAssessmentStatus {
+  recorded('Menunggu Penilaian'),
+  assessing('Menilai Bacaan'),
+  fluent('Lancar'),
+  needsReview('Perlu Ulang');
+
+  const ReadingAssessmentStatus(this.label);
+
+  final String label;
+}
