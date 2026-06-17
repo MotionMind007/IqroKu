@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../app/app_state.dart';
 import '../../core/assets/app_assets.dart';
@@ -26,6 +27,38 @@ class _LoginScreenState extends State<LoginScreen> {
     emailController.dispose();
     passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _signInWithGoogle() async {
+    try {
+      final googleUser = await GoogleSignIn(scopes: ['email']).signIn();
+      if (googleUser == null) return; // User cancelled
+
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+
+      if (idToken == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Gagal mendapatkan token Google')),
+          );
+        }
+        return;
+      }
+
+      await widget.state.loginWithGoogle(
+        idToken: idToken,
+        email: googleUser.email,
+        name: googleUser.displayName ?? 'User',
+        googleId: googleUser.id,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google Sign-In gagal: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -182,14 +215,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 16),
                         OutlinedButton.icon(
-                          onPressed: null,
+                          onPressed: isLoading ? null : () => unawaited(_signInWithGoogle()),
                           icon: Image.asset(
                             AppAssets.googleLogo,
                             width: 22,
                             height: 22,
                             fit: BoxFit.contain,
                           ),
-                          label: const Text('Masuk dengan Google (segera)'),
+                          label: const Text('Masuk dengan Google'),
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size(double.infinity, 50),
                             foregroundColor: AppColors.text,

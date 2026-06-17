@@ -9,10 +9,12 @@ CREATE TABLE IF NOT EXISTS parents (
   email VARCHAR(254) UNIQUE NOT NULL,
   name VARCHAR(200) NOT NULL,
   password_hash TEXT,
+  google_id VARCHAR(100),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_parents_email ON parents(email);
+CREATE INDEX idx_parents_google_id ON parents(google_id);
 
 -- Sessions
 CREATE TABLE IF NOT EXISTS sessions (

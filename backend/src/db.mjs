@@ -67,14 +67,41 @@ export async function findParentById(id) {
   return row ? rowToParent(row) : null;
 }
 
-export async function createParent({ id, email, name, passwordHash }) {
+export async function createParent({ id, email, name, passwordHash, googleId }) {
   const row = await queryOne(
-    `INSERT INTO parents (id, email, name, password_hash)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO parents (id, email, name, password_hash, google_id)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
-    [id, email, name, passwordHash ?? null],
+    [id, email, name, passwordHash ?? null, googleId ?? null],
   );
   return rowToParent(row);
+}
+
+export async function updateParent(id, updates) {
+  const allowedFields = ['name', 'google_id'];
+  const setClauses = [];
+  const values = [];
+  let paramIndex = 1;
+
+  for (const [key, value] of Object.entries(updates)) {
+    const dbKey = key === 'googleId' ? 'google_id' : key;
+    if (allowedFields.includes(dbKey)) {
+      setClauses.push(`${dbKey} = $${paramIndex}`);
+      values.push(value);
+      paramIndex++;
+    }
+  }
+
+  if (setClauses.length === 0) {
+    return findParentById(id);
+  }
+
+  values.push(id);
+  const row = await queryOne(
+    `UPDATE parents SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+    values,
+  );
+  return row ? rowToParent(row) : null;
 }
 
 export async function getAllParents() {
@@ -88,6 +115,7 @@ function rowToParent(row) {
     email: row.email,
     name: row.name,
     passwordHash: row.password_hash ?? undefined,
+    googleId: row.google_id ?? undefined,
     createdAt: row.created_at?.toISOString(),
   };
 }

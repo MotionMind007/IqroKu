@@ -51,6 +51,21 @@ class AuthApiService {
     return AuthResult.fromJson(json);
   }
 
+  Future<AuthResult> loginWithGoogle({
+    required String idToken,
+    required String email,
+    required String name,
+    required String googleId,
+  }) async {
+    final json = await _post('/auth/google', {
+      'idToken': idToken,
+      'email': email,
+      'name': name,
+      'googleId': googleId,
+    }, authenticated: false);
+    return AuthResult.fromJson(json);
+  }
+
   Future<List<ChildProfile>> loadChildren(String parentId) async {
     final response = await http.get(
       _uri('/children', {'parentId': parentId}),

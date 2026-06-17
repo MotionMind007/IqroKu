@@ -638,6 +638,32 @@ class IqrokuState extends ChangeNotifier {
     }
   }
 
+  Future<void> loginWithGoogle({
+    required String idToken,
+    required String email,
+    required String name,
+    required String googleId,
+  }) async {
+    authLoading = true;
+    authError = null;
+    notifyListeners();
+
+    try {
+      final result = await authService.loginWithGoogle(
+        idToken: idToken,
+        email: email,
+        name: name,
+        googleId: googleId,
+      );
+      await _finishAuth(result);
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> completeSetup({
     String? name,
     int? age,

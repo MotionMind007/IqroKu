@@ -351,6 +351,42 @@ async function route(method, url, body, request) {
     };
   }
 
+  if (method === 'POST' && path === '/auth/google') {
+    const idToken = cleanString(requiredBody(body, 'idToken'));
+    const email = normalizeEmail(requiredBody(body, 'email'));
+    const name = truncateString(cleanString(body.name) || 'User');
+    const googleId = cleanString(body.googleId);
+
+    if (!googleId) {
+      throw httpError(400, 'missing_google_id');
+    }
+
+    // Try to find existing user by email
+    let parent = await db.findParentByEmail(email);
+
+    if (parent) {
+      // Update Google ID if not set
+      if (!parent.googleId) {
+        await db.updateParent(parent.id, { googleId });
+      }
+    } else {
+      // Create new user
+      parent = await db.createParent({
+        id: randomUUID(),
+        email,
+        name,
+        googleId,
+      });
+    }
+
+    const token = createSessionToken(parent.id);
+    await storeSession(token, parent.id);
+    return {
+      parent: publicParent(parent),
+      session: { token, type: 'google' },
+    };
+  }
+
   // --- Protected routes (require user auth) ---
   if (method === 'GET' && path === '/children') {
     const authedParent = await authenticateRequest(request);
