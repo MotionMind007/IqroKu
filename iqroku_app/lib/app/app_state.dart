@@ -11,6 +11,7 @@ import '../data/dummy_iqroku_repository.dart';
 import '../data/islamic_activity_service.dart';
 import '../data/iqro_content_repository.dart';
 import '../data/local_app_storage.dart';
+import '../data/mimo_assessment_service.dart';
 import '../data/quran_api_service.dart';
 import '../data/voice_recording_service.dart';
 import '../models/iqro_models.dart';
@@ -86,6 +87,13 @@ class IqrokuState extends ChangeNotifier {
 
   AppLaunchStage launchStage = AppLaunchStage.onboarding;
   int selectedTab = 0;
+
+  AssessmentService get _activeAssessmentService {
+    if (authToken != null && authToken!.isNotEmpty) {
+      return MiMoAssessmentService(authService: authService);
+    }
+    return assessmentService;
+  }
   int selectedIqroBook = 1;
   int selectedIqroPage = 8;
   int selectedSurahIndex = 3;
@@ -1282,7 +1290,7 @@ class IqrokuState extends ChangeNotifier {
       (attempt) => attempt.id == attemptId,
       orElse: () => assessing,
     );
-    final result = await assessmentService.assess(
+    final result = await _activeAssessmentService.assess(
       AssessmentRequest(
         childId: currentAttempt.childId,
         bookId: currentAttempt.bookId,
@@ -1293,6 +1301,7 @@ class IqrokuState extends ChangeNotifier {
         ),
         audioPath: currentAttempt.audioPath,
         durationSeconds: currentAttempt.durationSeconds,
+        attemptId: attemptId,
       ),
     );
     final assessed = _replaceLearningAttempt(attemptId, (attempt) {

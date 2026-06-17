@@ -13,6 +13,12 @@ if (!DATABASE_URL) {
 }
 db.initDb(DATABASE_URL);
 
+// MiMo AI Configuration
+const MIMO_API_URL = process.env.MIMO_API_URL || 'https://api.xiaomimimo.com/v1';
+const MIMO_API_KEY = process.env.MIMO_API_KEY || '';
+const MIMO_ASR_MODEL = process.env.MIMO_ASR_MODEL || 'mimo-v2.5-asr';
+const MIMO_PRO_MODEL = process.env.MIMO_PRO_MODEL || 'mimo-v2.5-pro';
+
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://iqroku.motionmind.store';
 
 const port = Number(process.env.PORT ?? 8787);
@@ -466,6 +472,51 @@ async function route(method, url, body, request) {
     });
   }
 
+  if (method === 'POST' && path === '/assessments/ai') {
+    const authedParent = await authenticateRequest(request);
+    const attemptId = requiredBody(body, 'attemptId');
+    const attempt = await db.findAttemptById(attemptId);
+    if (!attempt) {
+      throw httpError(404, 'attempt_not_found');
+    }
+    await enforceChildOwnership(authedParent.id, attempt.childId);
+
+    // Get audio file
+    const audioPath = attempt.audioPath;
+    if (!audioPath) {
+      throw httpError(400, 'no_audio_recorded');
+    }
+
+    // Read audio file
+    const audioFullPath = resolve('uploads/audio', audioPath.split('/').pop());
+    let audioBuffer;
+    try {
+      audioBuffer = await readFile(audioFullPath);
+    } catch (_) {
+      throw httpError(404, 'audio_file_not_found');
+    }
+
+    // Get target lines
+    const targetLines = Array.isArray(body.targetLines) ? body.targetLines : [];
+
+    // Call MiMo AI for assessment
+    const result = await assessWithMiMo({
+      audioBuffer,
+      targetLines,
+      pageNumber: attempt.pageNumber,
+      bookId: attempt.bookId,
+    });
+
+    return db.updateAttempt(attempt.id, {
+      score: result.score,
+      status: result.status,
+      feedback: result.feedback,
+      note: result.note,
+      assessmentStatus: result.status === 'fluent' ? 'fluent' : 'needsReview',
+      assessedAt: now(),
+    });
+  }
+
   if (method === 'POST' && path === '/subscriptions/activate') {
     authenticateAdmin(request);
     const parentId = requiredBody(body, 'parentId');
@@ -674,6 +725,156 @@ function scoreAttempt({ pageNumber, durationSeconds, targetLines }) {
       ? 'Hasil penilaian: lancar dengan toleransi latihan anak.'
       : 'Hasil penilaian: perlu ulang agar bacaan makin mantap.',
   };
+}
+
+async function assessWithMiMo({ audioBuffer, targetLines, pageNumber, bookId }) {
+  if (!MIMO_API_KEY) {
+    console.warn('MIMO_API_KEY not set, falling back to mock scoring');
+    return scoreAttempt({ pageNumber, durationSeconds: 10, targetLines });
+  }
+
+  try {
+    // Step 1: Transcribe audio using MiMo ASR
+    const transcribedText = await transcribeWithMiMoASR(audioBuffer);
+
+    // Step 2: Compare and generate feedback using MiMo Pro
+    const targetText = targetLines.map(line => line.join(' ')).join('\n');
+    const feedback = await generateFeedbackWithMiMo(transcribedText, targetText, pageNumber, bookId);
+
+    // Calculate score based on comparison
+    const similarity = calculateSimilarity(transcribedText, targetText);
+    const score = Math.round(60 + (similarity * 36)); // Scale 0-1 to 60-96
+    const passed = score >= 80;
+
+    return {
+      score,
+      status: passed ? 'fluent' : 'review',
+      feedback: feedback.feedback,
+      note: feedback.note,
+    };
+  } catch (error) {
+    console.error('MiMo AI assessment failed:', error);
+    // Fallback to mock scoring
+    return scoreAttempt({ pageNumber, durationSeconds: 10, targetLines });
+  }
+}
+
+async function transcribeWithMiMoASR(audioBuffer) {
+  const base64Audio = audioBuffer.toString('base64');
+
+  const response = await fetch(`${MIMO_API_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${MIMO_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MIMO_ASR_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'audio',
+              audio: {
+                data: base64Audio,
+                format: 'm4a',
+              },
+            },
+            {
+              type: 'text',
+              text: 'Transkripsikan audio ini ke teks Arab. Hanya tulis teks Arab yang terdengar, tanpa penjelasan.',
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`MiMo ASR failed: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+async function generateFeedbackWithMiMo(transcribed, target, pageNumber, bookId) {
+  const response = await fetch(`${MIMO_API_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${MIMO_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MIMO_PRO_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: `Kamu adalah guru ngaji yang sabar dan mendukung untuk anak-anak. Berikan penilaian bacaan Iqro dalam Bahasa Indonesia.
+
+Tugasan: Iqro ${bookId}, Halaman ${pageNumber}
+
+Berikan response dalam format JSON:
+{
+  "feedback": "Umpan balik untuk anak (2-3 kalimat, positif dan memotivasi)",
+  "note": "Catatan teknis untuk orang tua (detail kesalahan dan saran perbaikan)"
+}`,
+        },
+        {
+          role: 'user',
+          content: `Teks yang seharusnya dibaca:\n${target}\n\nTeks yang dibaca anak (hasil transkripsi):\n${transcribed}\n\nBerikan penilaian dan umpan balik.`,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`MiMo Pro failed: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content || '';
+
+  try {
+    // Try to parse JSON response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+  } catch (_) {
+    // Fallback if JSON parsing fails
+  }
+
+  return {
+    feedback: 'Bacaan sudah bagus. Terus berlatih ya!',
+    note: 'Perlu evaluasi lebih lanjut.',
+  };
+}
+
+function calculateSimilarity(text1, text2) {
+  if (!text1 || !text2) return 0;
+
+  // Normalize Arabic text
+  const normalize = (t) => t.replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]/g, '').trim();
+  const a = normalize(text1);
+  const b = normalize(text2);
+
+  if (a === b) return 1;
+  if (!a || !b) return 0;
+
+  // Simple character-based similarity
+  let matches = 0;
+  const maxLen = Math.max(a.length, b.length);
+  const minLen = Math.min(a.length, b.length);
+
+  for (let i = 0; i < minLen; i++) {
+    if (a[i] === b[i]) matches++;
+  }
+
+  return matches / maxLen;
 }
 
 function publicPrayer(prayer) {

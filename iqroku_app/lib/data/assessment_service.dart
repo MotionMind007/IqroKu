@@ -8,6 +8,7 @@ class AssessmentRequest {
     required this.targetLines,
     required this.audioPath,
     required this.durationSeconds,
+    this.attemptId,
   });
 
   final String childId;
@@ -16,6 +17,7 @@ class AssessmentRequest {
   final List<List<String>> targetLines;
   final String? audioPath;
   final int durationSeconds;
+  final String? attemptId;
 
   Map<String, Object?> toJson() {
     return {
@@ -25,6 +27,7 @@ class AssessmentRequest {
       'targetLines': targetLines,
       'audioPath': audioPath,
       'durationSeconds': durationSeconds,
+      'attemptId': attemptId,
     };
   }
 }

@@ -131,6 +131,41 @@ class AuthApiService {
     });
   }
 
+  Future<Map<String, Object?>> assessAttemptWithAI({
+    required String attemptId,
+    required List<List<String>> targetLines,
+  }) async {
+    return await _post('/assessments/ai', {
+      'attemptId': attemptId,
+      'targetLines': targetLines,
+    });
+  }
+
+  Future<void> uploadAudio({
+    required String attemptId,
+    required String audioPath,
+  }) async {
+    final uri = _uri('/attempts/$attemptId/audio');
+    final request = http.MultipartRequest('POST', uri);
+
+    // Add auth header
+    final token = authToken;
+    if (token != null && token.isNotEmpty) {
+      request.headers['authorization'] = 'Bearer $token';
+    }
+
+    // Add audio file
+    request.files.add(await http.MultipartFile.fromPath('audio', audioPath));
+
+    final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final error = response.body.isEmpty ? 'upload_failed' : jsonDecode(response.body)['error'] ?? 'upload_failed';
+      throw AuthApiException(response.statusCode, error is String ? error : 'upload_failed');
+    }
+  }
+
   Future<void> activateSubscription(String parentId) async {
     await _post('/subscriptions/activate', {'parentId': parentId});
   }
