@@ -28,3 +28,8 @@ Thumbs.db
 # Local backend development data
 backend/data/dev-store.json
 /data/
+/uploads/
+
+# Production secrets (template is committed, actual .env is not)
+backend/.env
+deploy/backups/
