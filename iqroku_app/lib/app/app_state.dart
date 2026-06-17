@@ -22,7 +22,7 @@ import '../models/quran_models.dart';
 class IqrokuState extends ChangeNotifier {
   IqrokuState({
     required this.repository,
-    this.storage = const LocalAppStorage(),
+    LocalAppStorage? storage,
     this.iqroContentRepository = const IqroContentRepository(),
     this.assessmentService = const MockAssessmentService(),
     AuthApiService? authService,
@@ -31,7 +31,8 @@ class IqrokuState extends ChangeNotifier {
     this.islamicActivityService = const IslamicActivityService(),
     VoiceRecordingService? voiceRecordingService,
     AudioPlaybackService? audioPlaybackService,
-  }) : authService = authService ?? AuthApiService(),
+  }) : storage = storage ?? LocalAppStorage(),
+       authService = authService ?? AuthApiService(),
        childProfiles = List.of(repository.children.take(freeChildLimit)),
        learningNotes = List.of(repository.learningNotes),
        learningAttempts = <LearningAttempt>[],
@@ -39,6 +40,9 @@ class IqrokuState extends ChangeNotifier {
            voiceRecordingService ?? LocalVoiceRecordingService(),
        audioPlaybackService =
            audioPlaybackService ?? LocalAudioPlaybackService() {
+    if (childProfiles.isNotEmpty && selectedChildId.isEmpty) {
+      selectedChildId = childProfiles.first.id;
+    }
     _playbackCompleteSubscription = this.audioPlaybackService.onComplete.listen(
       (_) {
         playingAttemptId = null;
@@ -90,7 +94,7 @@ class IqrokuState extends ChangeNotifier {
   bool memorizationMode = false;
   bool murottalMode = false;
   int? quranMemorizationRecordingSurahId;
-  String selectedChildId = 'nedy';
+  String selectedChildId = '';
   bool familyPlusActive = false;
   bool childSetupCompleted = false;
   bool iqroContentLoading = false;
@@ -116,6 +120,19 @@ class IqrokuState extends ChangeNotifier {
   String? subscriptionNotice;
 
   ChildProfile get selectedChild {
+    if (childProfiles.isEmpty) {
+      return const ChildProfile(
+        id: '',
+        name: 'Anak',
+        age: 7,
+        currentLesson: 'Iqro 1 - Halaman 1',
+        progress: 0,
+        avatarAsset: 'assets/brand/male-avatar.png',
+      );
+    }
+    if (selectedChildId.isEmpty) {
+      return childProfiles.first;
+    }
     return childProfiles.firstWhere(
       (child) => child.id == selectedChildId,
       orElse: () => childProfiles.first,
@@ -713,6 +730,14 @@ class IqrokuState extends ChangeNotifier {
     authToken = null;
     authService.authToken = null;
     authError = null;
+    childProfiles.clear();
+    learningNotes.clear();
+    learningAttempts.clear();
+    _iqroProgress.clear();
+    familyPlusActive = false;
+    subscriptionActivatedAt = null;
+    childSetupCompleted = false;
+    selectedChildId = '';
     _persist();
     notifyListeners();
   }
@@ -1515,6 +1540,11 @@ class IqrokuState extends ChangeNotifier {
           () => <int, LearningStatus>{},
         )[record.pageNumber] = record.status;
       }
+    } on AuthApiException catch (error) {
+      if (error.statusCode == 401) {
+        _handleTokenExpired();
+      }
+      debugPrint('Remote progress load failed: ${error.code}');
     } catch (error) {
       debugPrint('Remote progress load failed: $error');
     }
@@ -1545,6 +1575,11 @@ class IqrokuState extends ChangeNotifier {
           pageNumber: pageNumber,
           status: status,
         );
+      } on AuthApiException catch (error) {
+        if (error.statusCode == 401) {
+          _handleTokenExpired();
+        }
+        debugPrint('Progress sync failed: ${error.code}');
       } catch (error) {
         debugPrint('Progress sync failed: $error');
       }
@@ -1570,6 +1605,11 @@ class IqrokuState extends ChangeNotifier {
           targetLines: _targetLinesFor(attempt.bookId, attempt.pageNumber),
         );
       }
+    } on AuthApiException catch (error) {
+      if (error.statusCode == 401) {
+        _handleTokenExpired();
+      }
+      debugPrint('Learning attempt sync failed: ${error.code}');
     } catch (error) {
       debugPrint('Learning attempt sync failed: $error');
     }
@@ -1578,9 +1618,22 @@ class IqrokuState extends ChangeNotifier {
   Future<void> _syncSubscription(String parentId) async {
     try {
       await authService.activateSubscription(parentId);
+    } on AuthApiException catch (error) {
+      if (error.statusCode == 401) {
+        _handleTokenExpired();
+      }
+      debugPrint('Subscription sync failed: ${error.code}');
     } catch (error) {
       debugPrint('Subscription sync failed: $error');
     }
+  }
+
+  void _handleTokenExpired() {
+    authToken = null;
+    authService.authToken = null;
+    authError = 'Sesi telah berakhir, silakan masuk kembali';
+    launchStage = AppLaunchStage.welcome;
+    notifyListeners();
   }
 
   Future<void> _loadSelectedSurahDetail() async {

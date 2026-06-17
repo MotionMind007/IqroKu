@@ -7,9 +7,8 @@ module.exports = {
       name: 'iqroku',
       script: './backend/src/server.mjs',
       cwd: '/opt/iqroku',
-      instances: 1, // single instance (JSON store is not cluster-safe, switch to 2 after PostgreSQL migration)
+      instances: 1,
       exec_mode: 'fork',
-      node_args: '--experimental-vm-modules',
       env_file: '/opt/iqroku/backend/.env',
       env: {
         NODE_ENV: 'production',

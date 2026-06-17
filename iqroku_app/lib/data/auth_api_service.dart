@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:http/http.dart' as http;
 
@@ -9,9 +10,17 @@ class AuthApiService {
   AuthApiService({
     this.baseUrl = const String.fromEnvironment(
       'IQROKU_API_BASE',
-      defaultValue: 'http://127.0.0.1:8787',
+      defaultValue: 'https://iqroku.motionmind.store',
     ),
-  });
+  }) {
+    if (baseUrl.startsWith('http://')) {
+      developer.log(
+        'WARNING: Using insecure HTTP connection to $baseUrl. '
+        'Use HTTPS in production builds.',
+        name: 'AuthApiService',
+      );
+    }
+  }
 
   final String baseUrl;
 
@@ -46,7 +55,7 @@ class AuthApiService {
     final response = await http.get(
       _uri('/children', {'parentId': parentId}),
       headers: _authHeaders(),
-    );
+    ).timeout(const Duration(seconds: 15));
     final json = _decodeResponse(response);
     return (json as List<Object?>)
         .cast<Map<String, Object?>>()
@@ -58,7 +67,7 @@ class AuthApiService {
     final response = await http.get(
       _uri('/progress', {'childId': childId}),
       headers: _authHeaders(),
-    );
+    ).timeout(const Duration(seconds: 15));
     final json = _decodeResponse(response);
     return (json as List<Object?>)
         .cast<Map<String, Object?>>()
@@ -146,7 +155,7 @@ class AuthApiService {
       _uri(path),
       headers: authenticated ? _authHeaders() : const {'content-type': 'application/json; charset=utf-8'},
       body: jsonEncode(body),
-    );
+    ).timeout(const Duration(seconds: 15));
     return _decodeResponse(response) as Map<String, Object?>;
   }
 
@@ -158,7 +167,7 @@ class AuthApiService {
       _uri(path),
       headers: _authHeaders(),
       body: jsonEncode(body),
-    );
+    ).timeout(const Duration(seconds: 15));
     return _decodeResponse(response) as Map<String, Object?>;
   }
 

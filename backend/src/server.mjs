@@ -2,19 +2,34 @@ import { createServer } from 'node:http';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
-import { JsonStore } from './store.mjs';
+import * as db from './db.mjs';
 
-const store = new JsonStore();
+// Initialize PostgreSQL connection
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error('ERROR: DATABASE_URL environment variable is required.');
+  console.error('Example: DATABASE_URL=postgresql://iqroku:pass@localhost:5432/iqroku_db');
+  process.exit(1);
+}
+db.initDb(DATABASE_URL);
+
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://iqroku.motionmind.store';
+
 const port = Number(process.env.PORT ?? 8787);
 const ADMIN_TOKEN = process.env.IQROKU_ADMIN_TOKEN || 'admin-dev-token';
-const MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB max request body
+if (ADMIN_TOKEN === 'admin-dev-token' && process.env.NODE_ENV === 'production') {
+  console.error('FATAL: IQROKU_ADMIN_TOKEN must be set in production. Refusing to start with default token.');
+  process.exit(1);
+}
+const MAX_BODY_SIZE = Number(process.env.MAX_BODY_SIZE) || 5 * 1024 * 1024; // 5MB max request body
 const MAX_STRING_LENGTH = 500; // max string field length
 
 // --- Rate Limiter ---
 const rateLimits = new Map();
-const RATE_WINDOW_MS = 60_000; // 1 minute
-const RATE_MAX_AUTH = 10; // max auth attempts per IP per minute
-const RATE_MAX_GENERAL = 120; // max general requests per IP per minute
+const RATE_WINDOW_MS = Number(process.env.RATE_WINDOW_MS) || 60_000; // 1 minute
+const RATE_MAX_AUTH = Number(process.env.RATE_MAX_AUTH) || 10; // max auth attempts per IP per minute
+const RATE_MAX_DEMO = 5; // max demo-login attempts per IP per minute
+const RATE_MAX_GENERAL = Number(process.env.RATE_MAX_GENERAL) || 120; // max general requests per IP per minute
 
 function getRateLimitKey(ip, bucket) {
   return `${ip}:${bucket}`;
@@ -44,42 +59,22 @@ setInterval(() => {
   }
 }, 300_000).unref();
 
-// --- Session Store ---
-const sessions = new Map();
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+// --- Session Store (PostgreSQL-backed) ---
 
-function storeSession(token, parentId) {
-  sessions.set(token, { parentId, createdAt: Date.now() });
+async function storeSession(token, parentId) {
+  await db.createSession(token, parentId);
 }
 
-function resolveSession(token) {
-  const session = sessions.get(token);
-  if (!session) {
-    return null;
-  }
-  if (Date.now() - session.createdAt > SESSION_TTL_MS) {
-    sessions.delete(token);
-    return null;
-  }
-  return session.parentId;
+async function resolveSessionToken(token) {
+  return db.resolveSession(token);
 }
 
-function revokeSession(token) {
-  sessions.delete(token);
+async function revokeSession(token) {
+  await db.deleteSession(token);
 }
-
-// Cleanup expired sessions every 30 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, session] of sessions) {
-    if (now - session.createdAt > SESSION_TTL_MS) {
-      sessions.delete(token);
-    }
-  }
-}, 1_800_000).unref();
 
 // --- Auth Middleware ---
-function authenticateRequest(request, state) {
+async function authenticateRequest(request) {
   const authHeader = request.headers?.['authorization'] ?? '';
   const token = authHeader.startsWith('Bearer ')
     ? authHeader.slice(7).trim()
@@ -89,19 +84,10 @@ function authenticateRequest(request, state) {
     throw httpError(401, 'missing_auth_token');
   }
 
-  // Check session store first
-  const parentId = resolveSession(token);
+  // Check session store (PostgreSQL)
+  const parentId = await resolveSessionToken(token);
   if (parentId) {
-    const parent = state.parents.find((p) => p.id === parentId);
-    if (parent) {
-      return parent;
-    }
-  }
-
-  // Fallback: parse legacy token format (session_<parentId>_<random> or demo_<parentId>)
-  const legacyMatch = /^(?:session|demo)_([^_]+)/.exec(token);
-  if (legacyMatch) {
-    const parent = state.parents.find((p) => p.id === legacyMatch[1]);
+    const parent = await db.findParentById(parentId);
     if (parent) {
       return parent;
     }
@@ -116,42 +102,46 @@ function authenticateAdmin(request) {
     ? authHeader.slice(7).trim()
     : '';
 
-  // Also check query param for browser-based admin access
-  const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
-  const queryToken = url.searchParams.get('token') ?? '';
-
-  if (token !== ADMIN_TOKEN && queryToken !== ADMIN_TOKEN) {
+  if (token !== ADMIN_TOKEN) {
     throw httpError(403, 'admin_access_denied');
   }
 }
 
 const server = createServer(async (request, response) => {
   const clientIp = request.socket?.remoteAddress ?? 'unknown';
+  const startTime = Date.now();
   try {
     const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
     const path = url.pathname;
 
     // Rate limit: stricter for auth endpoints
     const isAuthEndpoint = path.startsWith('/auth/');
-    checkRateLimit(clientIp, isAuthEndpoint ? 'auth' : 'general', isAuthEndpoint ? RATE_MAX_AUTH : RATE_MAX_GENERAL);
+    const isDemoLogin = path === '/auth/demo-login';
+    const rateBucket = isDemoLogin ? 'demo' : isAuthEndpoint ? 'auth' : 'general';
+    const rateMax = isDemoLogin ? RATE_MAX_DEMO : isAuthEndpoint ? RATE_MAX_AUTH : RATE_MAX_GENERAL;
+    checkRateLimit(clientIp, rateBucket, rateMax);
 
     const body = await readJson(request);
     const result = await route(request.method ?? 'GET', url, body, request);
     const responseStatus = typeof result.status === 'number' ? result.status : 200;
     if (result.html) {
       sendHtml(response, responseStatus, result.html);
+      logRequest(request.method ?? 'GET', path, responseStatus, Date.now() - startTime, clientIp);
       return;
     }
     if (result.filePath) {
       await sendFile(response, result.filePath, result.contentType);
+      logRequest(request.method ?? 'GET', path, 200, Date.now() - startTime, clientIp);
       return;
     }
     sendJson(response, responseStatus, result.body ?? result);
+    logRequest(request.method ?? 'GET', path, responseStatus, Date.now() - startTime, clientIp);
   } catch (error) {
     const status = error.statusCode ?? 500;
     sendJson(response, status, {
       error: status === 500 ? 'internal_error' : error.message,
     });
+    logRequest(request.method ?? 'GET', request.url ?? '/', status, Date.now() - startTime, clientIp);
     if (status === 500) {
       console.error(error);
     }
@@ -167,9 +157,9 @@ function gracefulShutdown(signal) {
   console.log(`\n${signal} received. Shutting down gracefully...`);
   server.close(async () => {
     try {
-      await store.save();
+      await db.closeDb();
     } catch (_) {
-      // best-effort save
+      // best-effort close
     }
     console.log('Server closed.');
     process.exit(0);
@@ -182,7 +172,6 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 async function route(method, url, body, request) {
-  const state = await store.load();
   const path = url.pathname;
 
   if (method === 'OPTIONS') {
@@ -190,27 +179,35 @@ async function route(method, url, body, request) {
   }
 
   if (method === 'GET' && path === '/health') {
-    return { ok: true, service: 'iqroku-backend', timestamp: new Date().toISOString() };
+    try {
+      const dbOk = await db.pingDb();
+      return { ok: dbOk, service: 'iqroku-backend', store: 'postgresql', timestamp: new Date().toISOString() };
+    } catch (_) {
+      return { ok: false, service: 'iqroku-backend', store: 'postgresql', error: 'db_unreachable', timestamp: new Date().toISOString() };
+    }
   }
 
   // --- Admin routes (require admin token) ---
   if (method === 'GET' && path === '/admin') {
     authenticateAdmin(request);
-    return { html: renderAdminDashboard(buildAdminMetrics(state)) };
+    const metrics = await db.getAdminMetrics();
+    return { html: renderAdminDashboard(metrics) };
   }
 
   if (method === 'GET' && path === '/admin/metrics') {
     authenticateAdmin(request);
-    return buildAdminMetrics(state);
+    return db.getAdminMetrics();
   }
 
   if (method === 'GET' && path === '/admin/prayers') {
     authenticateAdmin(request);
-    return { html: renderAdminPrayers(prayersForAdmin(state)) };
+    const prayers = await db.getAllPrayers();
+    return { html: renderAdminPrayers(prayers) };
   }
 
   if (method === 'GET' && path === '/daily-prayers') {
-    return publicPrayers(state);
+    const prayers = await db.getActivePrayers();
+    return prayers.map(publicPrayer);
   }
 
   if (method === 'GET' && path.startsWith('/uploads/audio/')) {
@@ -223,84 +220,67 @@ async function route(method, url, body, request) {
 
   if (method === 'POST' && path === '/admin/prayers') {
     authenticateAdmin(request);
-    const prayer = prayerFromBody(body);
-    state.dailyPrayers.unshift({
+    const fields = prayerFromBody(body);
+    await db.createPrayer({
       id: randomUUID(),
-      ...prayer,
+      ...fields,
       active: parseBoolean(body.active, true),
-      createdAt: now(),
-      updatedAt: now(),
     });
-    await store.save();
-    return {
-      html: renderAdminPrayers(prayersForAdmin(state), 'Doa baru sudah tersimpan.'),
-    };
+    const prayers = await db.getAllPrayers();
+    return { html: renderAdminPrayers(prayers, 'Doa baru sudah tersimpan.') };
   }
 
   const prayerAction = adminPrayerAction(path);
   if (method === 'POST' && prayerAction) {
     authenticateAdmin(request);
-    const prayer = state.dailyPrayers.find((item) => item.id === prayerAction.id);
+    const prayer = await db.findPrayerById(prayerAction.id);
     if (!prayer) {
       throw httpError(404, 'prayer_not_found');
     }
     if (prayerAction.action === 'delete') {
-      state.dailyPrayers = state.dailyPrayers.filter((item) => item.id !== prayer.id);
-      await store.save();
-      return {
-        html: renderAdminPrayers(prayersForAdmin(state), 'Doa sudah dihapus.'),
-      };
+      await db.deletePrayer(prayerAction.id);
+      const prayers = await db.getAllPrayers();
+      return { html: renderAdminPrayers(prayers, 'Doa sudah dihapus.') };
     }
-    Object.assign(prayer, {
+    await db.updatePrayer(prayerAction.id, {
       ...prayerFromBody(body),
       active: parseBoolean(body.active, false),
-      updatedAt: now(),
     });
-    await store.save();
-    return {
-      html: renderAdminPrayers(prayersForAdmin(state), 'Perubahan doa sudah tersimpan.'),
-    };
+    const prayers = await db.getAllPrayers();
+    return { html: renderAdminPrayers(prayers, 'Perubahan doa sudah tersimpan.') };
   }
 
   if (method === 'POST' && path === '/auth/demo-login') {
     const email = cleanString(body.email) || 'parent@iqroku.local';
     const name = cleanString(body.name) || 'Orang Tua';
-    let parent = state.parents.find((item) => item.email === email);
+    let parent = await db.findParentByEmail(email);
     if (!parent) {
-      parent = {
-        id: randomUUID(),
-        email,
-        name,
-        createdAt: now(),
-      };
-      state.parents.push(parent);
-      await store.save();
+      parent = await db.createParent({ id: randomUUID(), email, name });
     }
-    return { parent: publicParent(parent), session: { token: `demo_${parent.id}`, type: 'demo' } };
+    const token = `demo_${parent.id}`;
+    await storeSession(token, parent.id);
+    return { parent: publicParent(parent), session: { token, type: 'demo' } };
   }
 
   if (method === 'POST' && path === '/auth/register') {
-    const name = cleanString(requiredBody(body, 'name'));
+    const name = truncateString(cleanString(requiredBody(body, 'name')));
     const email = normalizeEmail(requiredBody(body, 'email'));
     const password = cleanString(requiredBody(body, 'password'));
     validatePassword(password);
 
-    const existing = state.parents.find((item) => item.email === email);
+    const existing = await db.findParentByEmail(email);
     if (existing) {
       throw httpError(409, 'email_already_registered');
     }
 
-    const parent = {
+    const parent = await db.createParent({
       id: randomUUID(),
       email,
       name,
       passwordHash: hashPassword(password),
-      createdAt: now(),
-    };
-    state.parents.push(parent);
-    await store.save();
+    });
     const token = createSessionToken(parent.id);
-    storeSession(token, parent.id);
+    await storeSession(token, parent.id);
     return {
       status: 201,
       body: {
@@ -313,13 +293,13 @@ async function route(method, url, body, request) {
   if (method === 'POST' && path === '/auth/login') {
     const email = normalizeEmail(requiredBody(body, 'email'));
     const password = cleanString(requiredBody(body, 'password'));
-    const parent = state.parents.find((item) => item.email === email);
+    const parent = await db.findParentByEmail(email);
     if (!parent || !parent.passwordHash || !verifyPassword(password, parent.passwordHash)) {
       throw httpError(401, 'invalid_email_or_password');
     }
 
     const token = createSessionToken(parent.id);
-    storeSession(token, parent.id);
+    await storeSession(token, parent.id);
     return {
       parent: publicParent(parent),
       session: { token, type: 'password' },
@@ -328,102 +308,82 @@ async function route(method, url, body, request) {
 
   // --- Protected routes (require user auth) ---
   if (method === 'GET' && path === '/children') {
-    const authedParent = authenticateRequest(request, state);
+    const authedParent = await authenticateRequest(request);
     const parentId = requiredQuery(url, 'parentId');
-    // Users can only access their own children
     if (parentId !== authedParent.id) {
       throw httpError(403, 'access_denied');
     }
-    return state.children.filter((child) => child.parentId === parentId);
+    return db.findChildrenByParent(parentId);
   }
 
   if (method === 'POST' && path === '/children') {
-    const authedParent = authenticateRequest(request, state);
+    const authedParent = await authenticateRequest(request);
     const parentId = requiredBody(body, 'parentId');
     if (parentId !== authedParent.id) {
       throw httpError(403, 'access_denied');
     }
-    enforceChildLimit(state, parentId);
-    const child = {
+    await enforceChildLimit(authedParent.id);
+    const child = await db.createChild({
       id: randomUUID(),
       parentId,
       name: truncateString(cleanString(body.name) || 'Anak'),
       age: clampNumber(Number(body.age ?? 7), 1, 18),
       avatarAsset: cleanString(body.avatarAsset) || 'assets/brand/male-avatar.png',
-      createdAt: now(),
-    };
-    state.children.push(child);
-    await store.save();
+    });
     return { status: 201, body: child };
   }
 
   if (method === 'GET' && path === '/progress') {
-    const authedParent = authenticateRequest(request, state);
+    const authedParent = await authenticateRequest(request);
     const childId = requiredQuery(url, 'childId');
-    enforceChildOwnership(state, authedParent.id, childId);
-    return state.progress.filter((item) => item.childId === childId);
+    await enforceChildOwnership(authedParent.id, childId);
+    return db.findProgressByChild(childId);
   }
 
   if (method === 'PUT' && path === '/progress') {
-    const authedParent = authenticateRequest(request, state);
+    const authedParent = await authenticateRequest(request);
     const childId = requiredBody(body, 'childId');
-    enforceChildOwnership(state, authedParent.id, childId);
+    await enforceChildOwnership(authedParent.id, childId);
     const bookId = clampNumber(Number(requiredBody(body, 'bookId')), 1, 99);
     const pageNumber = clampNumber(Number(requiredBody(body, 'pageNumber')), 1, 999);
     const status = cleanString(requiredBody(body, 'status'));
-    const existing = state.progress.find((item) => {
-      return item.childId === childId && item.bookId === bookId && item.pageNumber === pageNumber;
-    });
-    const record = {
-      childId,
-      bookId,
-      pageNumber,
-      status,
-      updatedAt: now(),
-    };
-    if (existing) {
-      Object.assign(existing, record);
-    } else {
-      state.progress.push(record);
+    const VALID_STATUSES = ['notStarted', 'learning', 'fluent', 'review'];
+    if (!VALID_STATUSES.includes(status)) {
+      throw httpError(400, 'invalid_status');
     }
-    await store.save();
-    return record;
+    return db.upsertProgress({ childId, bookId, pageNumber, status });
   }
 
   if (method === 'GET' && path === '/attempts') {
-    const authedParent = authenticateRequest(request, state);
+    const authedParent = await authenticateRequest(request);
     const childId = requiredQuery(url, 'childId');
-    enforceChildOwnership(state, authedParent.id, childId);
-    return state.attempts.filter((attempt) => attempt.childId === childId);
+    await enforceChildOwnership(authedParent.id, childId);
+    return db.findAttemptsByChild(childId);
   }
 
   if (method === 'POST' && path === '/attempts') {
-    const authedParent = authenticateRequest(request, state);
+    const authedParent = await authenticateRequest(request);
     const childId = requiredBody(body, 'childId');
-    enforceChildOwnership(state, authedParent.id, childId);
-    const attempt = {
+    await enforceChildOwnership(authedParent.id, childId);
+    const attempt = await db.createAttempt({
       id: randomUUID(),
       childId,
       bookId: clampNumber(Number(requiredBody(body, 'bookId')), 1, 99),
-      pageNumber: Number(requiredBody(body, 'pageNumber')),
-      durationSeconds: Number(body.durationSeconds ?? 1),
-      audioPath: cleanString(body.audioPath),
-      assessmentStatus: 'recorded',
-      createdAt: now(),
-    };
-    state.attempts.unshift(attempt);
-    await store.save();
+      pageNumber: clampNumber(Number(requiredBody(body, 'pageNumber')), 1, 999),
+      durationSeconds: clampNumber(Number(body.durationSeconds ?? 1), 1, 3600),
+      audioPath: cleanString(body.audioPath) || null,
+    });
     return { status: 201, body: attempt };
   }
 
   const audioUpload = attemptAudioUpload(path);
   if (method === 'POST' && audioUpload) {
-    const authedParent = authenticateRequest(request, state);
-    const attempt = state.attempts.find((item) => item.id === audioUpload.attemptId);
+    const authedParent = await authenticateRequest(request);
+    const attempt = await db.findAttemptById(audioUpload.attemptId);
     if (!attempt) {
       throw httpError(404, 'attempt_not_found');
     }
-    enforceChildOwnership(state, authedParent.id, attempt.childId);
+    await enforceChildOwnership(authedParent.id, attempt.childId);
     const audio = body.__multipart?.files?.audio;
     if (!audio?.content?.length) {
       throw httpError(400, 'missing_audio');
@@ -434,7 +394,7 @@ async function route(method, url, body, request) {
       contentType: audio.contentType,
       content: audio.content,
     });
-    Object.assign(attempt, {
+    return db.updateAttempt(attempt.id, {
       audioPath: stored.url,
       audioUrl: stored.url,
       audioFileName: stored.fileName,
@@ -442,53 +402,48 @@ async function route(method, url, body, request) {
       audioSizeBytes: stored.sizeBytes,
       audioUploadedAt: now(),
     });
-    await store.save();
-    return attempt;
   }
 
   if (method === 'POST' && path === '/assessments/mock') {
-    const authedParent = authenticateRequest(request, state);
+    const authedParent = await authenticateRequest(request);
     const attemptId = requiredBody(body, 'attemptId');
-    const attempt = state.attempts.find((item) => item.id === attemptId);
+    const attempt = await db.findAttemptById(attemptId);
     if (!attempt) {
       throw httpError(404, 'attempt_not_found');
     }
-    enforceChildOwnership(state, authedParent.id, attempt.childId);
+    await enforceChildOwnership(authedParent.id, attempt.childId);
     const result = scoreAttempt({
       pageNumber: attempt.pageNumber,
       durationSeconds: attempt.durationSeconds,
       targetLines: Array.isArray(body.targetLines) ? body.targetLines : [],
     });
-    Object.assign(attempt, {
-      ...result,
+    return db.updateAttempt(attempt.id, {
+      score: result.score,
+      status: result.status,
+      feedback: result.feedback,
+      note: result.note,
       assessmentStatus: result.status === 'fluent' ? 'fluent' : 'needsReview',
       assessedAt: now(),
     });
-    await store.save();
-    return attempt;
   }
 
   if (method === 'POST' && path === '/subscriptions/activate') {
-    const authedParent = authenticateRequest(request, state);
+    authenticateAdmin(request);
     const parentId = requiredBody(body, 'parentId');
-    if (parentId !== authedParent.id) {
-      throw httpError(403, 'access_denied');
+    const parent = await db.findParentById(parentId);
+    if (!parent) {
+      throw httpError(404, 'parent_not_found');
     }
     const activeUntil = addDays(new Date(), 30).toISOString();
-    let subscription = state.subscriptions.find((item) => item.parentId === parentId);
-    if (!subscription) {
-      subscription = { id: randomUUID(), parentId };
-      state.subscriptions.push(subscription);
-    }
-    Object.assign(subscription, {
+    return db.upsertSubscription({
+      id: randomUUID(),
+      parentId,
       plan: 'plus',
       priceId: 'iqroku_plus_49000_monthly',
       active: true,
       activatedAt: now(),
       activeUntil,
     });
-    await store.save();
-    return subscription;
   }
 
   throw httpError(404, 'not_found');
@@ -521,13 +476,17 @@ async function readJson(request) {
   if (contentType.includes('application/x-www-form-urlencoded')) {
     return Object.fromEntries(new URLSearchParams(raw));
   }
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    throw httpError(400, 'invalid_json');
+  }
 }
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-origin': '*',
+    'access-control-allow-origin': ALLOWED_ORIGIN,
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
     'access-control-allow-headers': 'content-type,authorization',
   });
@@ -538,6 +497,9 @@ function sendHtml(response, status, html) {
   response.writeHead(status, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
+    'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';",
+    'x-frame-options': 'DENY',
+    'x-content-type-options': 'nosniff',
   });
   response.end(html);
 }
@@ -548,7 +510,7 @@ async function sendFile(response, filePath, contentType = 'application/octet-str
     response.writeHead(200, {
       'content-type': contentType,
       'cache-control': 'public, max-age=3600',
-      'access-control-allow-origin': '*',
+      'access-control-allow-origin': ALLOWED_ORIGIN,
     });
     response.end(content);
   } catch (error) {
@@ -574,8 +536,8 @@ function clampNumber(value, min, max) {
   return Math.max(min, Math.min(max, num));
 }
 
-function enforceChildOwnership(state, parentId, childId) {
-  const child = state.children.find((c) => c.id === childId);
+async function enforceChildOwnership(parentId, childId) {
+  const child = await db.findChildById(childId);
   if (!child || child.parentId !== parentId) {
     throw httpError(403, 'access_denied');
   }
@@ -642,10 +604,10 @@ function requiredQuery(url, key) {
   return value;
 }
 
-function enforceChildLimit(state, parentId) {
-  const subscription = state.subscriptions.find((item) => item.parentId === parentId && item.active);
-  const limit = subscription ? 5 : 1;
-  const count = state.children.filter((child) => child.parentId === parentId).length;
+async function enforceChildLimit(parentId) {
+  const subscription = await db.findSubscriptionByParent(parentId);
+  const limit = subscription?.active ? 5 : 1;
+  const count = await db.countChildrenByParent(parentId);
   if (count >= limit) {
     throw httpError(402, 'child_limit_requires_plus');
   }
@@ -667,23 +629,6 @@ function scoreAttempt({ pageNumber, durationSeconds, targetLines }) {
       ? 'Hasil penilaian: lancar dengan toleransi latihan anak.'
       : 'Hasil penilaian: perlu ulang agar bacaan makin mantap.',
   };
-}
-
-function publicPrayers(state) {
-  return sortPrayers(state.dailyPrayers)
-    .filter((prayer) => prayer.active !== false)
-    .map(publicPrayer);
-}
-
-function prayersForAdmin(state) {
-  return sortPrayers(state.dailyPrayers);
-}
-
-function sortPrayers(prayers = []) {
-  return [...prayers].sort((a, b) => {
-    const sort = Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0);
-    return sort === 0 ? String(a.title ?? '').localeCompare(String(b.title ?? '')) : sort;
-  });
 }
 
 function publicPrayer(prayer) {
@@ -856,63 +801,6 @@ function parseBoolean(value, fallback = false) {
     return fallback;
   }
   return ['true', '1', 'yes', 'on'].includes(String(value).toLowerCase());
-}
-
-function buildAdminMetrics(state) {
-  const activeSubscriptions = state.subscriptions.filter((item) => item.active);
-  const activeParentIds = new Set(activeSubscriptions.map((item) => item.parentId));
-  const assessedAttempts = state.attempts.filter((attempt) => {
-    return attempt.assessedAt || ['fluent', 'needsReview'].includes(attempt.assessmentStatus);
-  });
-  const fluentPages = state.progress.filter((item) => item.status === 'fluent');
-  const reviewPages = state.progress.filter((item) => item.status === 'review');
-  const today = new Date().toISOString().slice(0, 10);
-  const activeToday = new Set([
-    ...state.attempts
-      .filter((attempt) => sameDay(attempt.createdAt ?? attempt.assessedAt, today))
-      .map((attempt) => childParentId(state, attempt.childId))
-      .filter(Boolean),
-    ...state.progress
-      .filter((item) => sameDay(item.updatedAt, today))
-      .map((item) => childParentId(state, item.childId))
-      .filter(Boolean),
-  ]);
-
-  return {
-    generatedAt: now(),
-    totals: {
-      parents: state.parents.length,
-      children: state.children.length,
-      freeParents: state.parents.length - activeParentIds.size,
-      plusParents: activeParentIds.size,
-      activeSubscriptions: activeSubscriptions.length,
-      monthlyRevenue: activeSubscriptions.length * 49000,
-      attempts: state.attempts.length,
-      assessedAttempts: assessedAttempts.length,
-      pendingAttempts: Math.max(state.attempts.length - assessedAttempts.length, 0),
-      progressRecords: state.progress.length,
-      fluentPages: fluentPages.length,
-      reviewPages: reviewPages.length,
-      activeParentsToday: activeToday.size,
-    },
-    parents: state.parents
-      .toSorted((a, b) => compareDateDesc(a.createdAt, b.createdAt))
-      .map((parent) => ({
-        ...publicParent(parent),
-        plan: activeParentIds.has(parent.id) ? 'IqroKu Plus' : 'Free',
-        childrenCount: state.children.filter((child) => child.parentId === parent.id).length,
-      })),
-    children: state.children.toSorted((a, b) => compareDateDesc(a.createdAt, b.createdAt)),
-    subscriptions: state.subscriptions.toSorted((a, b) => compareDateDesc(a.activatedAt, b.activatedAt)),
-    attempts: state.attempts
-      .toSorted((a, b) => compareDateDesc(a.createdAt ?? a.assessedAt, b.createdAt ?? b.assessedAt))
-      .slice(0, 25)
-      .map((attempt) => ({
-        ...attempt,
-        childName: childName(state, attempt.childId),
-        parentEmail: childParentEmail(state, attempt.childId),
-      })),
-  };
 }
 
 function renderAdminDashboard(metrics) {
@@ -1529,4 +1417,15 @@ function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
+}
+
+function logRequest(method, path, status, ms, ip) {
+  console.log(JSON.stringify({
+    ts: new Date().toISOString(),
+    method,
+    path,
+    status,
+    ms,
+    ip,
+  }));
 }

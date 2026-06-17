@@ -191,22 +191,39 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         FilledButton(
                           onPressed: agreedToTerms && !isLoading
                               ? () {
-                                  if (passwordController.text !=
-                                      confirmPasswordController.text) {
+                                  final email = emailController.text.trim();
+                                  final password = passwordController.text;
+                                  final confirmPassword = confirmPasswordController.text;
+
+                                  if (nameController.text.trim().isEmpty) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Konfirmasi password belum sama.',
-                                        ),
-                                      ),
+                                      const SnackBar(content: Text('Nama wajib diisi.')),
+                                    );
+                                    return;
+                                  }
+                                  if (email.isEmpty || !email.contains('@') || !email.contains('.')) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Email tidak valid.')),
+                                    );
+                                    return;
+                                  }
+                                  if (password.length < 6) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Password minimal 6 karakter.')),
+                                    );
+                                    return;
+                                  }
+                                  if (password != confirmPassword) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Konfirmasi password belum sama.')),
                                     );
                                     return;
                                   }
                                   unawaited(
                                     widget.state.registerWithEmail(
-                                      name: nameController.text,
-                                      email: emailController.text,
-                                      password: passwordController.text,
+                                      name: nameController.text.trim(),
+                                      email: email,
+                                      password: password,
                                     ),
                                   );
                                 }

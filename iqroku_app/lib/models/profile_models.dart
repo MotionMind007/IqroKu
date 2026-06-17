@@ -48,12 +48,12 @@ class ChildProfile {
 
   static ChildProfile fromJson(Map<String, Object?> json) {
     return ChildProfile(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      age: json['age'] as int,
-      currentLesson: json['currentLesson'] as String,
-      progress: (json['progress'] as num).toDouble(),
-      avatarAsset: json['avatarAsset'] as String,
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? 'Anak',
+      age: (json['age'] as num?)?.toInt() ?? 7,
+      currentLesson: json['currentLesson'] as String? ?? 'Iqro 1 - Halaman 1',
+      progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
+      avatarAsset: json['avatarAsset'] as String? ?? 'assets/brand/male-avatar.png',
     );
   }
 }
@@ -77,11 +77,21 @@ class LearningNote {
 
   static LearningNote fromJson(Map<String, Object?> json) {
     return LearningNote(
-      title: json['title'] as String,
-      date: json['date'] as String,
-      status: LearningStatus.values.byName(json['status'] as String),
-      note: json['note'] as String,
+      title: json['title'] as String? ?? '',
+      date: json['date'] as String? ?? '',
+      status: _learningStatusFromJson(json['status']),
+      note: json['note'] as String? ?? '',
     );
+  }
+
+  static LearningStatus _learningStatusFromJson(Object? value) {
+    final name = value as String? ?? '';
+    for (final status in LearningStatus.values) {
+      if (status.name == name) {
+        return status;
+      }
+    }
+    return LearningStatus.learning;
   }
 }
 
@@ -162,14 +172,14 @@ class LearningAttempt {
   }
 
   static LearningAttempt fromJson(Map<String, Object?> json) {
-    final status = LearningStatus.values.byName(json['status'] as String);
+    final status = _learningStatusFromJson(json['status']);
     return LearningAttempt(
-      id: json['id'] as String,
-      childId: json['childId'] as String,
-      bookId: json['bookId'] as int,
-      pageNumber: json['pageNumber'] as int,
-      date: json['date'] as String,
-      durationSeconds: json['durationSeconds'] as int,
+      id: json['id'] as String? ?? '',
+      childId: json['childId'] as String? ?? '',
+      bookId: (json['bookId'] as num?)?.toInt() ?? 1,
+      pageNumber: (json['pageNumber'] as num?)?.toInt() ?? 1,
+      date: json['date'] as String? ?? '',
+      durationSeconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
       status: status,
       assessmentStatus: _assessmentStatusFromJson(
         json['assessmentStatus'] as String?,
@@ -181,6 +191,16 @@ class LearningAttempt {
       feedback: json['feedback'] as String?,
       note: json['note'] as String?,
     );
+  }
+
+  static LearningStatus _learningStatusFromJson(Object? value) {
+    final name = value as String? ?? '';
+    for (final status in LearningStatus.values) {
+      if (status.name == name) {
+        return status;
+      }
+    }
+    return LearningStatus.learning;
   }
 
   static ReadingAssessmentStatus _assessmentStatusFromJson(

@@ -8,14 +8,15 @@ class DailyPrayerApiService {
   const DailyPrayerApiService({
     this.baseUrl = const String.fromEnvironment(
       'IQROKU_API_BASE',
-      defaultValue: 'http://127.0.0.1:8787',
+      defaultValue: 'https://iqroku.motionmind.store',
     ),
   });
 
   final String baseUrl;
 
   Future<List<DailyPrayer>> fetchDailyPrayers() async {
-    final response = await http.get(_uri('/daily-prayers'));
+    final response = await http.get(_uri('/daily-prayers'))
+        .timeout(const Duration(seconds: 15));
     final body = response.body.isEmpty ? null : jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw DailyPrayerApiException(response.statusCode);

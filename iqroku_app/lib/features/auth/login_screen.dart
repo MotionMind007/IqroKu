@@ -129,12 +129,28 @@ class _LoginScreenState extends State<LoginScreen> {
                           key: const ValueKey('login_submit_button'),
                           onPressed: isLoading
                               ? null
-                              : () => unawaited(
-                                  widget.state.loginWithEmail(
-                                    email: emailController.text,
-                                    password: passwordController.text,
-                                  ),
-                                ),
+                              : () {
+                                  final email = emailController.text.trim();
+                                  final password = passwordController.text;
+                                  if (email.isEmpty || !email.contains('@') || !email.contains('.')) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Email tidak valid')),
+                                    );
+                                    return;
+                                  }
+                                  if (password.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Password wajib diisi')),
+                                    );
+                                    return;
+                                  }
+                                  unawaited(
+                                    widget.state.loginWithEmail(
+                                      email: email,
+                                      password: password,
+                                    ),
+                                  );
+                                },
                           style: FilledButton.styleFrom(
                             minimumSize: const Size(double.infinity, 52),
                             backgroundColor: AppColors.primary,

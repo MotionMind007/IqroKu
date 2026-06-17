@@ -27,7 +27,7 @@ class IslamicActivityService {
         'longitude': '${location.longitude}',
         'method': '20',
       }),
-    );
+    ).timeout(const Duration(seconds: 15));
     final data = _decodeData(response) as Map<String, Object?>;
     final timings = data['timings'] as Map<String, Object?>? ?? {};
     final date = data['date'] as Map<String, Object?>? ?? {};
@@ -60,7 +60,7 @@ class IslamicActivityService {
     final location = await _resolveLocation();
     final response = await http.get(
       _uri('/qibla/${location.latitude}/${location.longitude}'),
-    );
+    ).timeout(const Duration(seconds: 15));
     final data = _decodeData(response) as Map<String, Object?>;
     return QiblaDirection(
       degrees: _doubleValue(data['direction']),

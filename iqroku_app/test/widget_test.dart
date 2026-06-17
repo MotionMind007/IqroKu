@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:iqroku/app/app_state.dart';
@@ -22,7 +23,32 @@ import 'package:iqroku/models/prayer_models.dart';
 import 'package:iqroku/models/profile_models.dart';
 import 'package:iqroku/models/quran_models.dart';
 
+class TestFlutterSecureStoragePlatform extends FlutterSecureStoragePlatform {
+  TestFlutterSecureStoragePlatform(this.data);
+  final Map<String, String> data;
+
+  @override
+  Future<bool> containsKey({required String key, required Map<String, String> options}) async => data.containsKey(key);
+  @override
+  Future<void> delete({required String key, required Map<String, String> options}) async => data.remove(key);
+  @override
+  Future<void> deleteAll({required Map<String, String> options}) async => data.clear();
+  @override
+  Future<String?> read({required String key, required Map<String, String> options}) async => data[key];
+  @override
+  Future<Map<String, String>> readAll({required Map<String, String> options}) async => data;
+  @override
+  Future<void> write({required String key, required String value, required Map<String, String> options}) async => data[key] = value;
+}
+
 void main() {
+  late Map<String, String> secureData;
+
+  setUp(() {
+    secureData = {};
+    FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(secureData);
+  });
+
   testWidgets('IqroKu starts from welcome and reaches learning tab', (
     tester,
   ) async {

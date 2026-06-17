@@ -1,14 +1,17 @@
 {
   "name": "iqroku-backend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Local prototype API for IqroKu auth, child profiles, progress, attempts, subscriptions, and assessment.",
+  "description": "Production API for IqroKu with PostgreSQL storage.",
   "scripts": {
     "start": "node src/server.mjs",
-    "check": "node --check src/server.mjs && node --check src/store.mjs"
+    "check": "node --check src/server.mjs && node --check src/store.mjs && node --check src/db.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "pg": "8.13.1"
   }
 }

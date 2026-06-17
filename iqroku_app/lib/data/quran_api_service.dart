@@ -14,7 +14,8 @@ class QuranApiService {
   final String reciterCode;
 
   Future<List<Surah>> fetchSurahs() async {
-    final response = await http.get(_uri('/surat'));
+    final response = await http.get(_uri('/surat'))
+        .timeout(const Duration(seconds: 15));
     final data = _decodeData(response) as List<Object?>;
     return data
         .cast<Map<String, Object?>>()
@@ -23,7 +24,8 @@ class QuranApiService {
   }
 
   Future<SurahDetail> fetchSurahDetail(int surahId) async {
-    final response = await http.get(_uri('/surat/$surahId'));
+    final response = await http.get(_uri('/surat/$surahId'))
+        .timeout(const Duration(seconds: 15));
     final data = _decodeData(response) as Map<String, Object?>;
     final surah = _surahFromJson(data);
     final ayahs = (data['ayat'] as List<Object?>? ?? [])
@@ -103,20 +105,16 @@ class QuranApiService {
   }
 
   int _estimatedJuz(int surahId) {
-    if (surahId >= 78) {
-      return 30;
-    }
-    if (surahId >= 67) {
-      return 29;
-    }
-    if (surahId >= 58) {
-      return 28;
-    }
-    if (surahId >= 51) {
-      return 27;
-    }
-    if (surahId >= 46) {
-      return 26;
+    // Accurate mapping of first surah in each Juz
+    const juzStarts = [
+      1, 2, 2, 3, 4, 4, 5, 6, 7, 8,
+      9, 11, 12, 15, 17, 18, 21, 23, 25, 27,
+      29, 33, 36, 39, 41, 46, 51, 58, 67, 78,
+    ];
+    for (int i = juzStarts.length - 1; i >= 0; i--) {
+      if (surahId >= juzStarts[i]) {
+        return i + 1;
+      }
     }
     return 1;
   }
