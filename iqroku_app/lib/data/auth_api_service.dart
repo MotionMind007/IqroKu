@@ -120,19 +120,24 @@ class AuthApiService {
   }
 
   Future<RemoteAttempt> createAttempt({
+    String? id,
     required String childId,
     required int bookId,
     required int pageNumber,
     required int durationSeconds,
     String? audioPath,
   }) async {
-    final json = await _post('/attempts', {
+    final body = <String, Object?>{
       'childId': childId,
       'bookId': bookId,
       'pageNumber': pageNumber,
       'durationSeconds': durationSeconds,
       'audioPath': audioPath,
-    });
+    };
+    if (id != null && id.isNotEmpty) {
+      body['id'] = id;
+    }
+    final json = await _post('/attempts', body);
     return RemoteAttempt.fromJson(json);
   }
 

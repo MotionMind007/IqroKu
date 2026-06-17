@@ -1640,6 +1640,7 @@ class IqrokuState extends ChangeNotifier {
 
     try {
       final remoteAttempt = await authService.createAttempt(
+        id: attempt.id,
         childId: attempt.childId,
         bookId: attempt.bookId,
         pageNumber: attempt.pageNumber,
@@ -1648,10 +1649,11 @@ class IqrokuState extends ChangeNotifier {
       );
 
       // Upload audio if available
-      if (attempt.audioPath != null && attempt.audioPath!.isNotEmpty && remoteAttempt.id.isNotEmpty) {
+      if (attempt.audioPath != null && attempt.audioPath!.isNotEmpty) {
+        final uploadId = remoteAttempt.id.isNotEmpty ? remoteAttempt.id : attempt.id;
         try {
           await authService.uploadAudio(
-            attemptId: remoteAttempt.id,
+            attemptId: uploadId,
             audioPath: attempt.audioPath!,
           );
         } catch (e) {

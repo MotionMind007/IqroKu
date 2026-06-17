@@ -446,8 +446,9 @@ async function route(method, url, body, request) {
     const authedParent = await authenticateRequest(request);
     const childId = requiredBody(body, 'childId');
     await enforceChildOwnership(authedParent.id, childId);
+    const attemptId = cleanString(body.id) || randomUUID();
     const attempt = await db.createAttempt({
-      id: randomUUID(),
+      id: attemptId,
       childId,
       bookId: clampNumber(Number(requiredBody(body, 'bookId')), 1, 99),
       pageNumber: clampNumber(Number(requiredBody(body, 'pageNumber')), 1, 999),
