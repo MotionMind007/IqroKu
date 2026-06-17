@@ -116,6 +116,7 @@ function rowToParent(row) {
     name: row.name,
     passwordHash: row.password_hash ?? undefined,
     googleId: row.google_id ?? undefined,
+    pinHash: row.pin_hash ?? undefined,
     createdAt: row.created_at?.toISOString(),
   };
 }
@@ -195,6 +196,12 @@ function rowToChild(row) {
     name: row.name,
     age: row.age,
     avatarAsset: row.avatar_asset,
+    pinHash: row.pin_hash ?? undefined,
+    studyStartTime: row.study_start_time ?? undefined,
+    studyEndTime: row.study_end_time ?? undefined,
+    studyDays: row.study_days ?? [1, 2, 3, 4, 5],
+    repeatFromPage: row.repeat_from_page ?? 1,
+    repeatFromBook: row.repeat_from_book ?? 1,
     createdAt: row.created_at?.toISOString(),
   };
 }
@@ -527,4 +534,183 @@ export async function getAdminMetrics() {
       };
     }),
   };
+}
+
+// =============================================================================
+// PIN MANAGEMENT
+// =============================================================================
+
+export async function setParentPin(parentId, pinHash) {
+  const row = await queryOne(
+    'UPDATE parents SET pin_hash = $1 WHERE id = $2 RETURNING *',
+    [pinHash, parentId],
+  );
+  return row ? rowToParent(row) : null;
+}
+
+export async function verifyParentPin(parentId, pinHash) {
+  const row = await queryOne(
+    'SELECT id FROM parents WHERE id = $1 AND pin_hash = $2',
+    [parentId, pinHash],
+  );
+  return row !== null;
+}
+
+export async function setChildPin(childId, pinHash) {
+  const row = await queryOne(
+    'UPDATE children SET pin_hash = $1 WHERE id = $2 RETURNING *',
+    [pinHash, childId],
+  );
+  return row ? rowToChild(row) : null;
+}
+
+export async function verifyChildPin(childId, pinHash) {
+  const row = await queryOne(
+    'SELECT id FROM children WHERE id = $1 AND pin_hash = $2',
+    [childId, pinHash],
+  );
+  return row !== null;
+}
+
+export async function findChildByPin(parentId, pinHash) {
+  const row = await queryOne(
+    'SELECT * FROM children WHERE parent_id = $1 AND pin_hash = $2',
+    [parentId, pinHash],
+  );
+  return row ? rowToChild(row) : null;
+}
+
+// =============================================================================
+// STUDY SCHEDULE
+// =============================================================================
+
+export async function updateChildSchedule(childId, startTime, endTime, days) {
+  const row = await queryOne(
+    `UPDATE children SET study_start_time = $1, study_end_time = $2, study_days = $3
+     WHERE id = $4 RETURNING *`,
+    [startTime, endTime, days, childId],
+  );
+  return row ? rowToChild(row) : null;
+}
+
+// =============================================================================
+// REVIEW STATUS
+// =============================================================================
+
+export async function updateProgressReview(childId, bookId, pageNumber, reviewStatus, reviewedBy) {
+  const row = await queryOne(
+    `UPDATE progress SET review_status = $1, reviewed_at = NOW(), reviewed_by = $2
+     WHERE child_id = $3 AND book_id = $4 AND page_number = $5 RETURNING *`,
+    [reviewStatus, reviewedBy, childId, bookId, pageNumber],
+  );
+  return row;
+}
+
+export async function updateAttemptReview(attemptId, reviewStatus, reviewedBy) {
+  const row = await queryOne(
+    `UPDATE attempts SET review_status = $1, reviewed_at = NOW()
+     WHERE id = $2 RETURNING *`,
+    [reviewStatus, attemptId],
+  );
+  return row;
+}
+
+export async function setRepeatFromPage(childId, bookId, pageNumber) {
+  const row = await queryOne(
+    'UPDATE children SET repeat_from_page = $1, repeat_from_book = $2 WHERE id = $3 RETURNING *',
+    [pageNumber, bookId, childId],
+  );
+  return row ? rowToChild(row) : null;
+}
+
+export async function getPendingReviews(parentId) {
+  const rows = await queryAll(
+    `SELECT a.*, c.name as child_name, c.parent_id
+     FROM attempts a
+     JOIN children c ON a.child_id = c.id
+     WHERE c.parent_id = $1 AND a.review_status = 'pending'
+     ORDER BY a.created_at DESC`,
+    [parentId],
+  );
+  return rows;
+}
+
+// =============================================================================
+// NOTIFICATIONS
+// =============================================================================
+
+export async function createNotification({ userId, userType, type, title, message, data }) {
+  const row = await queryOne(
+    `INSERT INTO notifications (id, user_id, user_type, type, title, message, data)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [userId, userType, type, title, message, data ? JSON.stringify(data) : null],
+  );
+  return row;
+}
+
+export async function getNotifications(userId, userType, limit = 20) {
+  const rows = await queryAll(
+    `SELECT * FROM notifications
+     WHERE user_id = $1 AND user_type = $2
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [userId, userType, limit],
+  );
+  return rows;
+}
+
+export async function getUnreadNotifications(userId, userType) {
+  const rows = await queryAll(
+    `SELECT * FROM notifications
+     WHERE user_id = $1 AND user_type = $2 AND read = FALSE
+     ORDER BY created_at DESC`,
+    [userId, userType],
+  );
+  return rows;
+}
+
+export async function markNotificationRead(notificationId) {
+  await query(
+    'UPDATE notifications SET read = TRUE WHERE id = $1',
+    [notificationId],
+  );
+}
+
+export async function markAllNotificationsRead(userId, userType) {
+  await query(
+    'UPDATE notifications SET read = TRUE WHERE user_id = $1 AND user_type = $2',
+    [userId, userType],
+  );
+}
+
+export async function countUnreadNotifications(userId, userType) {
+  const row = await queryOne(
+    'SELECT COUNT(*)::int AS count FROM notifications WHERE user_id = $1 AND user_type = $2 AND read = FALSE',
+    [userId, userType],
+  );
+  return row?.count ?? 0;
+}
+
+// =============================================================================
+// CHILDREN SCHEDULE CHECK
+// =============================================================================
+
+export async function getChildrenWithoutPracticeToday() {
+  const today = new Date().toISOString().slice(0, 10);
+  const dayOfWeek = new Date().getDay(); // 0=Sun, 1=Mon, ...
+  const dbDay = dayOfWeek === 0 ? 7 : dayOfWeek; // Convert to 1=Mon, 7=Sun
+
+  const rows = await queryAll(
+    `SELECT c.* FROM children c
+     WHERE $1 = ANY(c.study_days)
+     AND c.id NOT IN (
+       SELECT DISTINCT child_id FROM attempts WHERE created_at::date = $2
+     )
+     AND c.id NOT IN (
+       SELECT DISTINCT child_id FROM progress WHERE updated_at::date = $2
+     )`,
+    [dbDay, today],
+  );
+  return rows.map(rowToChild);
 }

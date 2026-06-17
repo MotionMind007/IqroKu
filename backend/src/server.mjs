@@ -448,14 +448,35 @@ async function route(method, url, body, request) {
     const childId = requiredBody(body, 'childId');
     await enforceChildOwnership(authedParent.id, childId);
     const attemptId = cleanString(body.id) || randomUUID();
+    const bookId = clampNumber(Number(requiredBody(body, 'bookId')), 1, 99);
+    const pageNumber = clampNumber(Number(requiredBody(body, 'pageNumber')), 1, 999);
+
     const attempt = await db.createAttempt({
       id: attemptId,
       childId,
-      bookId: clampNumber(Number(requiredBody(body, 'bookId')), 1, 99),
-      pageNumber: clampNumber(Number(requiredBody(body, 'pageNumber')), 1, 999),
+      bookId,
+      pageNumber,
       durationSeconds: clampNumber(Number(body.durationSeconds ?? 1), 1, 3600),
       audioPath: cleanString(body.audioPath) || null,
     });
+
+    // Notify parent about new recording
+    try {
+      const child = await db.findChildById(childId);
+      if (child) {
+        await db.createNotification({
+          userId: child.parentId,
+          userType: 'parent',
+          type: 'new_recording',
+          title: `${child.name} sudah merekam`,
+          message: `${child.name} telah membaca Iqro ${bookId} halaman ${pageNumber}`,
+          data: { childId, bookId, pageNumber, attemptId },
+        });
+      }
+    } catch (err) {
+      console.error('Failed to create notification:', err);
+    }
+
     return { status: 201, body: attempt };
   }
 
@@ -584,6 +605,192 @@ async function route(method, url, body, request) {
       activatedAt: now(),
       activeUntil,
     });
+  }
+
+  // --- PIN Management ---
+  if (method === 'POST' && path === '/auth/set-parent-pin') {
+    const authedParent = await authenticateRequest(request);
+    const pin = cleanString(body.pin);
+    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+      throw httpError(400, 'invalid_pin');
+    }
+    const pinHash = hashPassword(pin);
+    await db.setParentPin(authedParent.id, pinHash);
+    return { ok: true, message: 'PIN berhasil diset' };
+  }
+
+  if (method === 'POST' && path === '/auth/verify-parent-pin') {
+    const authedParent = await authenticateRequest(request);
+    const pin = cleanString(body.pin);
+    if (!pin) {
+      throw httpError(400, 'missing_pin');
+    }
+    const parent = await db.findParentById(authedParent.id);
+    if (!parent?.pinHash) {
+      throw httpError(400, 'pin_not_set');
+    }
+    const valid = verifyPassword(pin, parent.pinHash);
+    return { valid };
+  }
+
+  if (method === 'POST' && path === '/auth/child-login') {
+    const authedParent = await authenticateRequest(request);
+    const childId = cleanString(body.childId);
+    const pin = cleanString(body.pin);
+    if (!childId || !pin) {
+      throw httpError(400, 'missing_child_id_or_pin');
+    }
+    await enforceChildOwnership(authedParent.id, childId);
+    const child = await db.findChildById(childId);
+    if (!child?.pinHash) {
+      throw httpError(400, 'child_pin_not_set');
+    }
+    const valid = verifyPassword(pin, child.pinHash);
+    if (!valid) {
+      throw httpError(401, 'invalid_pin');
+    }
+    return { valid: true, child };
+  }
+
+  if (method === 'POST' && path === '/children/:id/set-pin') {
+    const authedParent = await authenticateRequest(request);
+    const childId = path.split('/')[2];
+    await enforceChildOwnership(authedParent.id, childId);
+    const pin = cleanString(body.pin);
+    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+      throw httpError(400, 'invalid_pin');
+    }
+    const pinHash = hashPassword(pin);
+    const child = await db.setChildPin(childId, pinHash);
+    return { ok: true, child };
+  }
+
+  if (method === 'POST' && path === '/children/:id/schedule') {
+    const authedParent = await authenticateRequest(request);
+    const childId = path.split('/')[2];
+    await enforceChildOwnership(authedParent.id, childId);
+    const startTime = cleanString(body.startTime);
+    const endTime = cleanString(body.endTime);
+    const days = Array.isArray(body.days) ? body.days : [1, 2, 3, 4, 5];
+    const child = await db.updateChildSchedule(childId, startTime, endTime, days);
+    return { ok: true, child };
+  }
+
+  // --- Review System ---
+  if (method === 'GET' && path === '/reviews/pending') {
+    const authedParent = await authenticateRequest(request);
+    return db.getPendingReviews(authedParent.id);
+  }
+
+  if (method === 'POST' && path === '/reviews/approve') {
+    const authedParent = await authenticateRequest(request);
+    const attemptId = requiredBody(body, 'attemptId');
+    const attempt = await db.findAttemptById(attemptId);
+    if (!attempt) {
+      throw httpError(404, 'attempt_not_found');
+    }
+    await enforceChildOwnership(authedParent.id, attempt.childId);
+
+    // Mark attempt as approved
+    await db.updateAttemptReview(attemptId, 'approved', authedParent.id);
+
+    // Update progress status
+    await db.updateProgressReview(
+      attempt.childId, attempt.bookId, attempt.pageNumber,
+      'approved', authedParent.id,
+    );
+
+    // Notify child
+    await db.createNotification({
+      userId: attempt.childId,
+      userType: 'child',
+      type: 'review_result',
+      title: 'Bacaan Direview',
+      message: `Bacaan halaman ${attempt.pageNumber} sudah direview. Kamu bisa lanjut! ✅`,
+      data: { attemptId, bookId: attempt.bookId, pageNumber: attempt.pageNumber, result: 'approved' },
+    });
+
+    return { ok: true, status: 'approved' };
+  }
+
+  if (method === 'POST' && path === '/reviews/repeat') {
+    const authedParent = await authenticateRequest(request);
+    const attemptId = requiredBody(body, 'attemptId');
+    const fromPage = Number(body.fromPage);
+    const attempt = await db.findAttemptById(attemptId);
+    if (!attempt) {
+      throw httpError(404, 'attempt_not_found');
+    }
+    await enforceChildOwnership(authedParent.id, attempt.childId);
+
+    // Mark attempt as needs repeat
+    await db.updateAttemptReview(attemptId, 'needs_repeat', authedParent.id);
+
+    // Set repeat from page
+    await db.setRepeatFromPage(attempt.childId, attempt.bookId, fromPage);
+
+    // Update progress status
+    await db.updateProgressReview(
+      attempt.childId, attempt.bookId, attempt.pageNumber,
+      'needs_repeat', authedParent.id,
+    );
+
+    // Notify child
+    await db.createNotification({
+      userId: attempt.childId,
+      userType: 'child',
+      type: 'review_result',
+      title: 'Perlu Mengulang',
+      message: `Bacaan perlu diulang dari halaman ${fromPage}. Semangat! 🔄`,
+      data: { attemptId, bookId: attempt.bookId, pageNumber: attempt.pageNumber, fromPage, result: 'needs_repeat' },
+    });
+
+    return { ok: true, status: 'needs_repeat', fromPage };
+  }
+
+  // --- Notifications ---
+  if (method === 'GET' && path === '/notifications') {
+    const authedParent = await authenticateRequest(request);
+    const userType = url.searchParams.get('type') || 'parent';
+    const childId = url.searchParams.get('childId');
+
+    if (userType === 'child' && childId) {
+      await enforceChildOwnership(authedParent.id, childId);
+      return db.getNotifications(childId, 'child');
+    }
+    return db.getNotifications(authedParent.id, 'parent');
+  }
+
+  if (method === 'GET' && path === '/notifications/unread-count') {
+    const authedParent = await authenticateRequest(request);
+    const userType = url.searchParams.get('type') || 'parent';
+    const childId = url.searchParams.get('childId');
+
+    if (userType === 'child' && childId) {
+      await enforceChildOwnership(authedParent.id, childId);
+      return { count: await db.countUnreadNotifications(childId, 'child') };
+    }
+    return { count: await db.countUnreadNotifications(authedParent.id, 'parent') };
+  }
+
+  if (method === 'POST' && path === '/notifications/:id/read') {
+    const notificationId = path.split('/')[2];
+    await db.markNotificationRead(notificationId);
+    return { ok: true };
+  }
+
+  if (method === 'POST' && path === '/notifications/read-all') {
+    const authedParent = await authenticateRequest(request);
+    const userType = cleanString(body.type) || 'parent';
+    const childId = cleanString(body.childId);
+
+    if (userType === 'child' && childId) {
+      await enforceChildOwnership(authedParent.id, childId);
+      await db.markAllNotificationsRead(childId, 'child');
+    } else {
+      await db.markAllNotificationsRead(authedParent.id, 'parent');
+    }
+    return { ok: true };
   }
 
   throw httpError(404, 'not_found');
