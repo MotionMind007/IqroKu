@@ -510,26 +510,38 @@ async function route(method, url, body, request) {
   }
 
   if (method === 'POST' && path === '/assessments/ai') {
+    console.log('[API] AI Assessment requested');
     const authedParent = await authenticateRequest(request);
     const attemptId = requiredBody(body, 'attemptId');
+    console.log('[API] Attempt ID:', attemptId);
+
     const attempt = await db.findAttemptById(attemptId);
     if (!attempt) {
+      console.log('[API] Attempt not found:', attemptId);
       throw httpError(404, 'attempt_not_found');
     }
     await enforceChildOwnership(authedParent.id, attempt.childId);
 
     // Get audio file
     const audioPath = attempt.audioPath;
+    console.log('[API] Audio path from DB:', audioPath);
+
     if (!audioPath) {
+      console.log('[API] No audio recorded for attempt:', attemptId);
       throw httpError(400, 'no_audio_recorded');
     }
 
     // Read audio file
-    const audioFullPath = resolve('uploads/audio', audioPath.split('/').pop());
+    const audioFileName = audioPath.split('/').pop();
+    const audioFullPath = resolve('uploads/audio', audioFileName);
+    console.log('[API] Looking for audio at:', audioFullPath);
+
     let audioBuffer;
     try {
       audioBuffer = await readFile(audioFullPath);
-    } catch (_) {
+      console.log('[API] Audio file read successfully, size:', audioBuffer.length);
+    } catch (err) {
+      console.log('[API] Audio file not found:', audioFullPath, err.message);
       throw httpError(404, 'audio_file_not_found');
     }
 
@@ -747,11 +759,16 @@ async function enforceChildLimit(parentId) {
 }
 
 function scoreAttempt({ pageNumber, durationSeconds, targetLines }) {
-  const durationScore = Math.min(Math.max(durationSeconds, 1), 12) * 2;
-  const pageScore = pageNumber % 5;
-  const materialBonus = targetLines.length ? 0 : -5;
-  const score = Math.min(Math.max(80 + durationScore + pageScore + materialBonus, 72), 96);
-  const passed = score >= 80;
+  // More realistic mock scoring with randomness
+  const baseScore = 50;
+  const durationScore = Math.min(Math.max(durationSeconds, 1), 30) * 0.5;
+  const pageScore = (pageNumber % 3) * 2;
+  const materialBonus = targetLines.length > 0 ? 5 : 0;
+  const randomVariation = Math.floor(Math.random() * 11) - 5; // -5 to +5
+
+  const score = Math.round(Math.min(Math.max(baseScore + durationScore + pageScore + materialBonus + randomVariation, 40), 95));
+  const passed = score >= 75;
+
   return {
     score,
     status: passed ? 'fluent' : 'review',
@@ -766,22 +783,31 @@ function scoreAttempt({ pageNumber, durationSeconds, targetLines }) {
 
 async function assessWithMiMo({ audioBuffer, targetLines, pageNumber, bookId }) {
   if (!MIMO_API_KEY) {
-    console.warn('MIMO_API_KEY not set, falling back to mock scoring');
+    console.warn('[AI] MIMO_API_KEY not set, falling back to mock scoring');
     return scoreAttempt({ pageNumber, durationSeconds: 10, targetLines });
   }
 
   try {
+    console.log('[AI] Starting assessment...');
+    console.log('[AI] Audio size:', audioBuffer.length, 'bytes');
+    console.log('[AI] Target lines:', targetLines.length);
+
     // Step 1: Transcribe audio using MiMo ASR
+    console.log('[AI] Transcribing audio with MiMo ASR...');
     const transcribedText = await transcribeWithMiMoASR(audioBuffer);
+    console.log('[AI] Transcribed text:', transcribedText.substring(0, 100) + '...');
 
     // Step 2: Compare and generate feedback using MiMo Pro
     const targetText = targetLines.map(line => line.join(' ')).join('\n');
+    console.log('[AI] Generating feedback with MiMo Pro...');
     const feedback = await generateFeedbackWithMiMo(transcribedText, targetText, pageNumber, bookId);
 
     // Calculate score based on comparison
     const similarity = calculateSimilarity(transcribedText, targetText);
     const score = Math.round(60 + (similarity * 36)); // Scale 0-1 to 60-96
     const passed = score >= 80;
+
+    console.log('[AI] Similarity:', similarity, 'Score:', score, 'Passed:', passed);
 
     return {
       score,
@@ -790,8 +816,8 @@ async function assessWithMiMo({ audioBuffer, targetLines, pageNumber, bookId }) 
       note: feedback.note,
     };
   } catch (error) {
-    console.error('MiMo AI assessment failed:', error);
-    // Fallback to mock scoring
+    console.error('[AI] MiMo AI assessment failed:', error.message);
+    console.error('[AI] Falling back to mock scoring');
     return scoreAttempt({ pageNumber, durationSeconds: 10, targetLines });
   }
 }
