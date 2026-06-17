@@ -821,6 +821,12 @@ class IqrokuState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void selectChildForMode(String childId) {
+    selectedChildId = childId;
+    // Will show PIN entry for this child
+    notifyListeners();
+  }
+
   // --- PIN Management ---
 
   Future<void> setParentPin(String pin) async {

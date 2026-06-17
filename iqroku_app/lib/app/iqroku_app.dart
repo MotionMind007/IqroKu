@@ -14,6 +14,9 @@ import '../features/auth/onboarding_screen.dart';
 import '../features/auth/register_screen.dart';
 import '../features/auth/setup_child_screen.dart';
 import '../features/auth/welcome_screen.dart';
+import '../features/mode/mode_selection_screen.dart';
+import '../features/mode/parent_dashboard_screen.dart';
+import '../features/mode/pin_entry_screen.dart';
 import 'app_shell.dart';
 import 'app_state.dart';
 
@@ -87,9 +90,88 @@ class _IqrokuAppState extends State<IqrokuApp> {
             AppLaunchStage.login => LoginScreen(state: state),
             AppLaunchStage.register => RegisterScreen(state: state),
             AppLaunchStage.setupChild => SetupChildScreen(state: state),
-            AppLaunchStage.authenticated => AppShell(state: state),
+            AppLaunchStage.authenticated => _buildAuthenticatedView(),
           };
         },
+      ),
+    );
+  }
+
+  Widget _buildAuthenticatedView() {
+    // If no mode selected, show mode selection
+    if (state.currentMode == AppMode.none) {
+      return ModeSelectionScreen(state: state);
+    }
+
+    // Parent mode - show parent dashboard
+    if (state.currentMode == AppMode.parent) {
+      return ParentDashboardScreen(state: state);
+    }
+
+    // Child mode - show PIN entry if no child selected
+    if (state.currentMode == AppMode.child && state.currentChildAccount == null) {
+      return _buildChildSelection();
+    }
+
+    // Child mode with child selected - show PIN entry
+    if (state.currentMode == AppMode.child && state.currentChildAccount != null) {
+      return PinEntryScreen(
+        state: state,
+        isParentMode: false,
+        childName: state.currentChildAccount?.name,
+      );
+    }
+
+    // Default - show main app shell
+    return AppShell(state: state);
+  }
+
+  Widget _buildChildSelection() {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.child_care, size: 64, color: Color(0xFF23864B)),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Pilih Profil Anak',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 32),
+                  ...state.childProfiles.map((child) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          state.selectChildForMode(child.id);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Text(child.name, style: const TextStyle(fontSize: 18)),
+                      ),
+                    ),
+                  )),
+                  const SizedBox(height: 24),
+                  TextButton(
+                    onPressed: () => state.exitToModeSelection(),
+                    child: const Text('Kembali'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
