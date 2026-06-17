@@ -234,7 +234,7 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
       if (widget.isParentMode) {
         final valid = await widget.state.verifyParentPin(pin);
         if (valid) {
-          widget.state.enterParentMode();
+          widget.state.enterParentDashboard();
         } else {
           setState(() {
             _error = 'PIN salah';

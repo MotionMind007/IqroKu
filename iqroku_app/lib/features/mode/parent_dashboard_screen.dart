@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
+import '../../models/profile_models.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key, required this.state});
@@ -451,10 +452,8 @@ class _SettingsTab extends StatelessWidget {
             return _SettingsTile(
               icon: Icons.child_care,
               title: child.name,
-              subtitle: '${child.age} tahun',
-              onTap: () {
-                // TODO: Navigate to child settings
-              },
+              subtitle: '${child.age} tahun • Atur PIN & Jadwal',
+              onTap: () => _showChildSettings(context, child),
             );
           }).toList(),
         ),
@@ -465,19 +464,348 @@ class _SettingsTab extends StatelessWidget {
             _SettingsTile(
               icon: Icons.lock,
               title: 'Ubah PIN Orang Tua',
-              onTap: () {
-                // TODO: Change parent PIN
-              },
+              onTap: () => _showChangePinDialog(context, isParent: true),
+            ),
+            _SettingsTile(
+              icon: Icons.exit_to_app,
+              title: 'Keluar Mode Orang Tua',
+              onTap: () => state.exitToModeSelection(),
             ),
             _SettingsTile(
               icon: Icons.logout,
-              title: 'Keluar',
+              title: 'Logout',
               onTap: () => state.logout(),
             ),
           ],
         ),
       ],
     );
+  }
+
+  void _showChildSettings(BuildContext context, ChildProfile child) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _ChildSettingsSheet(state: state, child: child),
+    );
+  }
+
+  void _showChangePinDialog(BuildContext context, {required bool isParent, String? childId, String? childName}) {
+    showDialog(
+      context: context,
+      builder: (context) => _ChangePinDialog(
+        state: state,
+        isParent: isParent,
+        childId: childId,
+        childName: childName,
+      ),
+    );
+  }
+}
+
+class _ChildSettingsSheet extends StatelessWidget {
+  const _ChildSettingsSheet({required this.state, required this.child});
+
+  final IqrokuState state;
+  final ChildProfile child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.child_care, size: 32, color: Color(0xFF23864B)),
+              const SizedBox(width: 12),
+              Text(child.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _SettingsTile(
+            icon: Icons.lock,
+            title: 'Atur PIN Anak',
+            subtitle: 'PIN untuk akses mode anak',
+            onTap: () {
+              Navigator.pop(context);
+              showDialog(
+                context: context,
+                builder: (context) => _ChangePinDialog(
+                  state: state,
+                  isParent: false,
+                  childId: child.id,
+                  childName: child.name,
+                ),
+              );
+            },
+          ),
+          _SettingsTile(
+            icon: Icons.schedule,
+            title: 'Atur Jadwal Belajar',
+            subtitle: 'Waktu belajar harian',
+            onTap: () {
+              Navigator.pop(context);
+              showDialog(
+                context: context,
+                builder: (context) => _ScheduleDialog(state: state, child: child),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Tutup'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChangePinDialog extends StatefulWidget {
+  const _ChangePinDialog({
+    required this.state,
+    required this.isParent,
+    this.childId,
+    this.childName,
+  });
+
+  final IqrokuState state;
+  final bool isParent;
+  final String? childId;
+  final String? childName;
+
+  @override
+  State<_ChangePinDialog> createState() => _ChangePinDialogState();
+}
+
+class _ChangePinDialogState extends State<_ChangePinDialog> {
+  final _pinController = TextEditingController();
+  final _confirmController = TextEditingController();
+  String? _error;
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.isParent ? 'Ubah PIN Orang Tua' : 'Atur PIN ${widget.childName ?? "Anak"}';
+
+    return AlertDialog(
+      title: Text(title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _pinController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'PIN Baru (4 digit)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _confirmController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Konfirmasi PIN',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!, style: const TextStyle(color: Colors.red)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Batal'),
+        ),
+        FilledButton(
+          onPressed: _isLoading ? null : _savePin,
+          child: _isLoading
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Simpan'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _savePin() async {
+    final pin = _pinController.text;
+    final confirm = _confirmController.text;
+
+    if (pin.length != 4 || !RegExp(r'^\d{4}$').hasMatch(pin)) {
+      setState(() => _error = 'PIN harus 4 digit angka');
+      return;
+    }
+
+    if (pin != confirm) {
+      setState(() => _error = 'PIN tidak cocok');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      if (widget.isParent) {
+        await widget.state.setParentPin(pin);
+      } else {
+        await widget.state.setChildPin(widget.childId!, pin);
+      }
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('PIN berhasil disimpan')),
+        );
+      }
+    } catch (e) {
+      setState(() => _error = 'Gagal menyimpan PIN');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+}
+
+class _ScheduleDialog extends StatefulWidget {
+  const _ScheduleDialog({required this.state, required this.child});
+
+  final IqrokuState state;
+  final ChildProfile child;
+
+  @override
+  State<_ScheduleDialog> createState() => _ScheduleDialogState();
+}
+
+class _ScheduleDialogState extends State<_ScheduleDialog> {
+  TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay _endTime = const TimeOfDay(hour: 10, minute: 0);
+  final Set<int> _selectedDays = {1, 2, 3, 4, 5}; // Mon-Fri
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Jadwal Belajar ${widget.child.name}'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Waktu Belajar'),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () async {
+                    final time = await showTimePicker(context: context, initialTime: _startTime);
+                    if (time != null) setState(() => _startTime = time);
+                  },
+                  child: Text('Mulai: ${_startTime.format(context)}'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () async {
+                    final time = await showTimePicker(context: context, initialTime: _endTime);
+                    if (time != null) setState(() => _endTime = time);
+                  },
+                  child: Text('Selesai: ${_endTime.format(context)}'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text('Hari Belajar'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              _buildDayChip(1, 'Sen'),
+              _buildDayChip(2, 'Sel'),
+              _buildDayChip(3, 'Rab'),
+              _buildDayChip(4, 'Kam'),
+              _buildDayChip(5, 'Jum'),
+              _buildDayChip(6, 'Sab'),
+              _buildDayChip(7, 'Min'),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Batal'),
+        ),
+        FilledButton(
+          onPressed: _isLoading ? null : _saveSchedule,
+          child: _isLoading
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Simpan'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDayChip(int day, String label) {
+    final selected = _selectedDays.contains(day);
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (value) {
+        setState(() {
+          if (value) {
+            _selectedDays.add(day);
+          } else {
+            _selectedDays.remove(day);
+          }
+        });
+      },
+    );
+  }
+
+  Future<void> _saveSchedule() async {
+    setState(() => _isLoading = true);
+
+    try {
+      await widget.state.authService.setChildSchedule(
+        childId: widget.child.id,
+        startTime: '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}',
+        endTime: '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}',
+        days: _selectedDays.toList()..sort(),
+      );
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Jadwal berhasil disimpan')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal: $e')),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 }
 

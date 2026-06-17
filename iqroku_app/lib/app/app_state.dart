@@ -143,6 +143,7 @@ class IqrokuState extends ChangeNotifier {
   AppMode currentMode = AppMode.none;
   ChildAccount? currentChildAccount;
   bool hasParentPin = false;
+  bool parentPinVerified = false;
   int unreadNotifications = 0;
 
   ChildProfile get selectedChild {
@@ -170,6 +171,11 @@ class IqrokuState extends ChangeNotifier {
   String get planLabel => familyPlusActive ? 'IqroKu Plus' : 'Free';
   String get childQuotaLabel => '${childProfiles.length}/$childLimit anak';
   bool get subscriptionActive => familyPlusActive;
+  bool get currentChildHasPin {
+    // For now, assume child has PIN if they exist in the system
+    // In real implementation, this should check the backend
+    return currentChildAccount != null;
+  }
   String get subscriptionRenewalLabel {
     final activatedAt = subscriptionActivatedAt;
     if (!familyPlusActive || activatedAt == null) {
@@ -792,6 +798,7 @@ class IqrokuState extends ChangeNotifier {
     selectedChildId = '';
     currentMode = AppMode.none;
     currentChildAccount = null;
+    parentPinVerified = false;
     _persist();
     notifyListeners();
   }
@@ -805,6 +812,12 @@ class IqrokuState extends ChangeNotifier {
 
   void enterParentMode() {
     currentMode = AppMode.parent;
+    parentPinVerified = false; // Will be set to true after PIN verification
+    notifyListeners();
+  }
+
+  void enterParentDashboard() {
+    parentPinVerified = true;
     notifyListeners();
   }
 
@@ -818,6 +831,7 @@ class IqrokuState extends ChangeNotifier {
   void exitToModeSelection() {
     currentMode = AppMode.none;
     currentChildAccount = null;
+    parentPinVerified = false;
     notifyListeners();
   }
 
