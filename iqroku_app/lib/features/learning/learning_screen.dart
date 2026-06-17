@@ -8,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_chrome.dart';
 import '../../core/widgets/asset_icon.dart';
 import '../../core/widgets/subscription_sheet.dart';
+import '../../data/arabic_letter_repository.dart';
 import '../../models/iqro_models.dart';
 import '../../models/learning_status.dart';
 import '../../models/profile_models.dart';
@@ -376,33 +377,71 @@ class ReadingPracticeCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: StatusButton(
+                child: _StatusIndicator(
                   label: 'Perlu Ulang',
-                  selected: status == LearningStatus.review,
+                  active: status == LearningStatus.review,
                   color: AppColors.coral,
-                  onTap: () => onStatusChanged(LearningStatus.review),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: StatusButton(
+                child: _StatusIndicator(
                   label: 'Belajar Lagi',
-                  selected: status == LearningStatus.learning,
+                  active: status == LearningStatus.learning,
                   color: AppColors.gold,
-                  onTap: () => onStatusChanged(LearningStatus.learning),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: StatusButton(
+                child: _StatusIndicator(
                   label: 'Lancar',
-                  selected: status == LearningStatus.fluent,
+                  active: status == LearningStatus.fluent,
                   color: AppColors.primary,
-                  onTap: () => onStatusChanged(LearningStatus.fluent),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          if (latestAttempt != null) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: status != LearningStatus.fluent
+                        ? () => onStatusChanged(LearningStatus.review)
+                        : null,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Ulangi'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                      foregroundColor: AppColors.coral,
+                      side: const BorderSide(color: AppColors.coral),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: status == LearningStatus.fluent && page < totalPages
+                        ? onNextPage
+                        : null,
+                    icon: const Icon(Icons.arrow_forward),
+                    label: const Text('Lanjut'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                      backgroundColor: AppColors.primary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           Text(
             '$completedPages / $totalPages halaman lancar',
@@ -557,25 +596,47 @@ class _ArabicToken extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.paper,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        child: Text(
-          token,
-          textDirection: TextDirection.rtl,
-          style: const TextStyle(
-            fontSize: 23,
-            height: 1.2,
-            fontWeight: FontWeight.w600,
-            color: AppColors.text,
+    return FutureBuilder<String>(
+      future: ArabicLetterRepository().getLatinName(token),
+      builder: (context, snapshot) {
+        final latinName = snapshot.data ?? '';
+
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.paper,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.line),
           ),
-        ),
-      ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  token,
+                  textDirection: TextDirection.rtl,
+                  style: const TextStyle(
+                    fontSize: 23,
+                    height: 1.2,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.text,
+                  ),
+                ),
+                if (latinName.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    latinName,
+                    style: AppText.mini.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -781,7 +842,7 @@ class VoicePracticePanel extends StatelessWidget {
               ),
             const SizedBox(height: 8),
             const Text(
-              'Penilaian dilakukan oleh AI MiMo berdasarkan rekaman suara.',
+              'Penilaian Otomatis berdasarkan rekaman suara.',
               style: AppText.caption,
             ),
           ],
@@ -988,6 +1049,64 @@ class StatusButton extends StatelessWidget {
         label,
         textAlign: TextAlign.center,
         style: AppText.smallStrong,
+      ),
+    );
+  }
+}
+
+class _StatusIndicator extends StatelessWidget {
+  const _StatusIndicator({
+    required this.label,
+    required this.active,
+    required this.color,
+  });
+
+  final String label;
+  final bool active;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      decoration: BoxDecoration(
+        color: active ? color : color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: active ? color : color.withValues(alpha: 0.2),
+          width: active ? 2 : 1,
+        ),
+        boxShadow: active
+            ? [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (active) ...[
+            Icon(
+              Icons.check_circle,
+              size: 16,
+              color: active ? Colors.white : color,
+            ),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: AppText.smallStrong.copyWith(
+              color: active ? Colors.white : color.withValues(alpha: 0.6),
+            ),
+          ),
+        ],
       ),
     );
   }
