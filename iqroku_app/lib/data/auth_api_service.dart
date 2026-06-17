@@ -190,6 +190,107 @@ class AuthApiService {
     await _post('/subscriptions/activate', {'parentId': parentId});
   }
 
+  // --- PIN Management ---
+
+  Future<void> setParentPin(String pin) async {
+    await _post('/auth/set-parent-pin', {'pin': pin});
+  }
+
+  Future<bool> verifyParentPin(String pin) async {
+    final result = await _post('/auth/verify-parent-pin', {'pin': pin});
+    return result['valid'] == true;
+  }
+
+  Future<ChildAccount> childLogin(String childId, String pin) async {
+    final result = await _post('/auth/child-login', {
+      'childId': childId,
+      'pin': pin,
+    });
+    if (result['valid'] != true) {
+      throw const AuthApiException(401, 'invalid_pin');
+    }
+    return ChildAccount.fromJson(result['child'] as Map<String, Object?>);
+  }
+
+  Future<void> setChildPin(String childId, String pin) async {
+    await _post('/children/$childId/set-pin', {'pin': pin});
+  }
+
+  Future<void> setChildSchedule({
+    required String childId,
+    required String startTime,
+    required String endTime,
+    required List<int> days,
+  }) async {
+    await _post('/children/$childId/schedule', {
+      'startTime': startTime,
+      'endTime': endTime,
+      'days': days,
+    });
+  }
+
+  // --- Review System ---
+
+  Future<List<Map<String, Object?>>> getPendingReviews() async {
+    final result = await _get('/reviews/pending');
+    return (result as List<Object?>).cast<Map<String, Object?>>();
+  }
+
+  Future<Map<String, Object?>> approveReview(String attemptId) async {
+    return await _post('/reviews/approve', {'attemptId': attemptId});
+  }
+
+  Future<Map<String, Object?>> repeatReview({
+    required String attemptId,
+    required int fromPage,
+  }) async {
+    return await _post('/reviews/repeat', {
+      'attemptId': attemptId,
+      'fromPage': fromPage,
+    });
+  }
+
+  // --- Notifications ---
+
+  Future<List<Map<String, Object?>>> getNotifications({
+    String userType = 'parent',
+    String? childId,
+  }) async {
+    final queryParams = <String, String>{
+      'type': userType,
+      if (childId != null) 'childId': childId,
+    };
+    final result = await _get('/notifications', queryParams);
+    return (result as List<Object?>).cast<Map<String, Object?>>();
+  }
+
+  Future<int> getUnreadCount({
+    String userType = 'parent',
+    String? childId,
+  }) async {
+    final queryParams = <String, String>{
+      'type': userType,
+      if (childId != null) 'childId': childId,
+    };
+    final result = await _get('/notifications/unread-count', queryParams);
+    final map = result as Map<String, Object?>? ?? {};
+    return map['count'] as int? ?? 0;
+  }
+
+  Future<void> markNotificationRead(String notificationId) async {
+    await _post('/notifications/$notificationId/read', {});
+  }
+
+  Future<void> markAllNotificationsRead({
+    String userType = 'parent',
+    String? childId,
+  }) async {
+    await _post('/notifications/read-all', {
+      'type': userType,
+      if (childId != null) 'childId': childId,
+    });
+  }
+
   Map<String, String> _authHeaders() {
     final token = authToken;
     if (token == null || token.isEmpty) {
@@ -224,6 +325,14 @@ class AuthApiService {
       body: jsonEncode(body),
     ).timeout(const Duration(seconds: 15));
     return _decodeResponse(response) as Map<String, Object?>;
+  }
+
+  Future<Object?> _get(String path, [Map<String, String>? query]) async {
+    final response = await http.get(
+      _uri(path, query),
+      headers: _authHeaders(),
+    ).timeout(const Duration(seconds: 15));
+    return _decodeResponse(response);
   }
 
   Uri _uri(String path, [Map<String, String>? query]) {
@@ -346,4 +455,56 @@ class AuthApiException implements Exception {
 
   final int statusCode;
   final String code;
+}
+
+class ChildAccount {
+  const ChildAccount({
+    required this.id,
+    required this.name,
+    required this.age,
+    required this.avatarAsset,
+    this.studyStartTime,
+    this.studyEndTime,
+    this.studyDays = const [1, 2, 3, 4, 5],
+    this.repeatFromPage = 1,
+    this.repeatFromBook = 1,
+  });
+
+  final String id;
+  final String name;
+  final int age;
+  final String avatarAsset;
+  final String? studyStartTime;
+  final String? studyEndTime;
+  final List<int> studyDays;
+  final int repeatFromPage;
+  final int repeatFromBook;
+
+  static ChildAccount fromJson(Map<String, Object?> json) {
+    return ChildAccount(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? 'Anak',
+      age: (json['age'] as num?)?.toInt() ?? 7,
+      avatarAsset: json['avatarAsset'] as String? ?? 'assets/brand/male-avatar.png',
+      studyStartTime: json['studyStartTime'] as String?,
+      studyEndTime: json['studyEndTime'] as String?,
+      studyDays: (json['studyDays'] as List<Object?>?)?.cast<int>() ?? [1, 2, 3, 4, 5],
+      repeatFromPage: (json['repeatFromPage'] as num?)?.toInt() ?? 1,
+      repeatFromBook: (json['repeatFromBook'] as num?)?.toInt() ?? 1,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'age': age,
+      'avatarAsset': avatarAsset,
+      'studyStartTime': studyStartTime,
+      'studyEndTime': studyEndTime,
+      'studyDays': studyDays,
+      'repeatFromPage': repeatFromPage,
+      'repeatFromBook': repeatFromBook,
+    };
+  }
 }

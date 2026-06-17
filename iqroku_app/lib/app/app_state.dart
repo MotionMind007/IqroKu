@@ -139,6 +139,12 @@ class IqrokuState extends ChangeNotifier {
   String? playbackError;
   String? subscriptionNotice;
 
+  // Mode and PIN state
+  AppMode currentMode = AppMode.none;
+  ChildAccount? currentChildAccount;
+  bool hasParentPin = false;
+  int unreadNotifications = 0;
+
   ChildProfile get selectedChild {
     if (childProfiles.isEmpty) {
       return const ChildProfile(
@@ -784,8 +790,153 @@ class IqrokuState extends ChangeNotifier {
     subscriptionActivatedAt = null;
     childSetupCompleted = false;
     selectedChildId = '';
+    currentMode = AppMode.none;
+    currentChildAccount = null;
     _persist();
     notifyListeners();
+  }
+
+  // --- Mode Selection ---
+
+  void selectMode(AppMode mode) {
+    currentMode = mode;
+    notifyListeners();
+  }
+
+  void enterParentMode() {
+    currentMode = AppMode.parent;
+    notifyListeners();
+  }
+
+  void enterChildMode(ChildAccount child) {
+    currentMode = AppMode.child;
+    currentChildAccount = child;
+    selectedChildId = child.id;
+    notifyListeners();
+  }
+
+  void exitToModeSelection() {
+    currentMode = AppMode.none;
+    currentChildAccount = null;
+    notifyListeners();
+  }
+
+  // --- PIN Management ---
+
+  Future<void> setParentPin(String pin) async {
+    try {
+      await authService.setParentPin(pin);
+      hasParentPin = true;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to set parent PIN: $e');
+      rethrow;
+    }
+  }
+
+  Future<bool> verifyParentPin(String pin) async {
+    try {
+      return await authService.verifyParentPin(pin);
+    } catch (e) {
+      debugPrint('Failed to verify parent PIN: $e');
+      return false;
+    }
+  }
+
+  Future<void> setChildPin(String childId, String pin) async {
+    try {
+      await authService.setChildPin(childId, pin);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to set child PIN: $e');
+      rethrow;
+    }
+  }
+
+  Future<bool> childLogin(String pin) async {
+    try {
+      final child = await authService.childLogin(selectedChildId, pin);
+      enterChildMode(child);
+      return true;
+    } catch (e) {
+      debugPrint('Child login failed: $e');
+      return false;
+    }
+  }
+
+  // --- Sequential Page Access (Child Mode) ---
+
+  // --- Notifications ---
+
+  Future<void> loadUnreadCount({String userType = 'parent', String? childId}) async {
+    try {
+      unreadNotifications = await authService.getUnreadCount(
+        userType: userType,
+        childId: childId,
+      );
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to load unread count: $e');
+    }
+  }
+
+  Future<void> markNotificationRead(String notificationId) async {
+    try {
+      await authService.markNotificationRead(notificationId);
+      if (unreadNotifications > 0) {
+        unreadNotifications--;
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to mark notification read: $e');
+    }
+  }
+
+  Future<void> markAllNotificationsRead({String userType = 'parent', String? childId}) async {
+    try {
+      await authService.markAllNotificationsRead(
+        userType: userType,
+        childId: childId,
+      );
+      unreadNotifications = 0;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to mark all notifications read: $e');
+    }
+  }
+
+  // --- Sequential Page Access (Child Mode) ---
+
+  bool canAccessPage(int bookId, int pageNumber) {
+    if (currentMode != AppMode.child) return true;
+
+    final child = currentChildAccount;
+    if (child == null) return true;
+
+    // Check if page is at or after repeat_from_page
+    if (bookId == child.repeatFromBook && pageNumber < child.repeatFromPage) {
+      return false;
+    }
+
+    // Check if page is sequential (no skipping)
+    final lastCompleted = _getLastCompletedPage(selectedChildId, bookId);
+    return pageNumber <= lastCompleted + 1;
+  }
+
+  int _getLastCompletedPage(String childId, int bookId) {
+    final progress = _iqroProgress[childId];
+    if (progress == null) return 0;
+
+    final bookProgress = progress[bookId];
+    if (bookProgress == null) return 0;
+
+    int lastCompleted = 0;
+    for (final entry in bookProgress.entries) {
+      if (entry.value == LearningStatus.fluent) {
+        lastCompleted = entry.key;
+      }
+    }
+    return lastCompleted;
   }
 
   void backToWelcome() {
@@ -1819,3 +1970,5 @@ enum QuranMode { reading, memorization, murottal }
 enum QuranView { list, reader, memorization, murottal }
 
 enum ActivityView { schedule, qibla }
+
+enum AppMode { none, parent, child }
