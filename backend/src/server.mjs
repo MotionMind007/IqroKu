@@ -838,8 +838,8 @@ async function transcribeWithMiMoASR(audioBuffer) {
           role: 'user',
           content: [
             {
-              type: 'audio',
-              audio: {
+              type: 'input_audio',
+              input_audio: {
                 data: base64Audio,
                 format: 'm4a',
               },
