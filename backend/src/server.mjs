@@ -1,7 +1,8 @@
 import { createServer } from 'node:http';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
+import { execSync } from 'node:child_process';
 import * as db from './db.mjs';
 
 // Initialize PostgreSQL connection
@@ -823,41 +824,68 @@ async function assessWithMiMo({ audioBuffer, targetLines, pageNumber, bookId }) 
 }
 
 async function transcribeWithMiMoASR(audioBuffer) {
-  const base64Audio = audioBuffer.toString('base64');
-  const dataUrl = `data:audio/mpeg;base64,${base64Audio}`;
+  // Convert audio to wav using ffmpeg
+  const tmpDir = '/tmp/iqroku_audio';
+  await mkdir(tmpDir, { recursive: true });
 
-  const response = await fetch(`${MIMO_API_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${MIMO_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MIMO_ASR_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'input_audio',
-              input_audio: {
-                data: dataUrl,
-                format: 'mp3',
+  const tmpInput = resolve(tmpDir, `input_${Date.now()}.m4a`);
+  const tmpOutput = resolve(tmpDir, `output_${Date.now()}.wav`);
+
+  try {
+    // Write input file
+    await writeFile(tmpInput, audioBuffer);
+
+    // Convert to wav (16kHz, mono)
+    execSync(`ffmpeg -i ${tmpInput} -ar 16000 -ac 1 -f wav ${tmpOutput} -y`, {
+      stdio: 'pipe',
+    });
+
+    // Read converted file
+    const wavBuffer = await readFile(tmpOutput);
+    const base64Audio = wavBuffer.toString('base64');
+    const dataUrl = `data:audio/wav;base64,${base64Audio}`;
+
+    const response = await fetch(`${MIMO_API_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${MIMO_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: MIMO_ASR_MODEL,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_audio',
+                input_audio: {
+                  data: dataUrl,
+                  format: 'wav',
+                },
               },
-            },
-          ],
-        },
-      ],
-    }),
-  });
+            ],
+          },
+        ],
+      }),
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`MiMo ASR failed: ${response.status} - ${error}`);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`MiMo ASR failed: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '';
+  } finally {
+    // Cleanup temp files
+    try {
+      await unlink(tmpInput).catch(() => {});
+      await unlink(tmpOutput).catch(() => {});
+    } catch (_) {
+      // Ignore cleanup errors
+    }
   }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
 }
 
 async function generateFeedbackWithMiMo(transcribed, target, pageNumber, bookId) {
