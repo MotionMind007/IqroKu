@@ -824,6 +824,7 @@ async function assessWithMiMo({ audioBuffer, targetLines, pageNumber, bookId }) 
 
 async function transcribeWithMiMoASR(audioBuffer) {
   const base64Audio = audioBuffer.toString('base64');
+  const dataUrl = `data:audio/m4a;base64,${base64Audio}`;
 
   const response = await fetch(`${MIMO_API_URL}/chat/completions`, {
     method: 'POST',
@@ -840,7 +841,7 @@ async function transcribeWithMiMoASR(audioBuffer) {
             {
               type: 'input_audio',
               input_audio: {
-                data: base64Audio,
+                data: dataUrl,
                 format: 'm4a',
               },
             },
