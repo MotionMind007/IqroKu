@@ -845,10 +845,6 @@ async function transcribeWithMiMoASR(audioBuffer) {
                 format: 'mp3',
               },
             },
-            {
-              type: 'text',
-              text: 'Transkripsikan audio ini ke teks Arab. Hanya tulis teks Arab yang terdengar, tanpa penjelasan.',
-            },
           ],
         },
       ],
