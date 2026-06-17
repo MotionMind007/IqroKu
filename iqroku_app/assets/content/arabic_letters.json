@@ -1,0 +1,208 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "description": "Mapping huruf Arab ke nama Latin dan deskripsi cara baca"
+  },
+  "letters": {
+    "ا": {
+      "latin": "Alif",
+      "description": "Huruf pertama, seperti garis tegak. Baca: A",
+      "tips": "Mulut terbuka sedikit, suara keluar dari tenggorokan"
+    },
+    "أ": {
+      "latin": "Alif",
+      "description": "Alif dengan hamzah di atas. Baca: A",
+      "tips": "Sama seperti Alif biasa"
+    },
+    "ب": {
+      "latin": "Ba",
+      "description": "Bibir atas dan bawah dirapatkan. Baca: Ba",
+      "tips": "Seperti mau bilang 'ba' tapi bibir rapat dulu"
+    },
+    "ت": {
+      "latin": "Ta",
+      "description": "Ujung lidah menyentuh gigi atas. Baca: Ta",
+      "tips": "Seperti 'ta' dalam kata 'tangan'"
+    },
+    "ث": {
+      "latin": "Tsa",
+      "description": "Ujung lidah di antara gigi atas dan bawah. Baca: Tsa",
+      "tips": "Seperti 'th' dalam bahasa Inggris 'think'"
+    },
+    "ج": {
+      "latin": "Jim",
+      "description": "Tengah lidah menyentuh langit-langit. Baca: Jim",
+      "tips": "Seperti 'j' dalam kata 'jalan'"
+    },
+    "جَ": {
+      "latin": "Jim",
+      "description": "Tengah lidah menyentuh langit-langit. Baca: Ja",
+      "tips": "Seperti 'j' dalam kata 'jalan' dengan fathah"
+    },
+    "ح": {
+      "latin": "Ha",
+      "description": "Tenggorokan bergetar lembut. Baca: Ha",
+      "tips": "Seperti menghembuskan napas pelan"
+    },
+    "حَ": {
+      "latin": "Ha",
+      "description": "Tenggorokan bergetar lembut. Baca: Ha",
+      "tips": "Seperti menghembuskan napas pelan dengan fathah"
+    },
+    "خ": {
+      "latin": "Kha",
+      "description": "Seperti mendengkur. Baca: Kha",
+      "tips": "Seperti 'kh' dalam kata 'khabar'"
+    },
+    "خَ": {
+      "latin": "Kha",
+      "description": "Seperti mendengkur. Baca: Kha",
+      "tips": "Seperti 'kh' dalam kata 'khabar' dengan fathah"
+    },
+    "د": {
+      "latin": "Dal",
+      "description": "Ujung lidah menyentuh gigi atas. Baca: Dal",
+      "tips": "Seperti 'd' dalam kata 'duduk'"
+    },
+    "ذ": {
+      "latin": "Dzal",
+      "description": "Ujung lidah di antara gigi. Baca: Dzal",
+      "tips": "Seperti 'th' dalam bahasa Inggris 'the'"
+    },
+    "ر": {
+      "latin": "Ra",
+      "description": "Ujung lidah bergetar di dekat gusi. Baca: Ra",
+      "tips": "Seperti 'r' dalam kata 'raja' tapi bergetar"
+    },
+    "ز": {
+      "latin": "Zai",
+      "description": "Seperti bunyi z. Baca: Zai",
+      "tips": "Seperti 'z' dalam bahasa Inggris 'zoo'"
+    },
+    "س": {
+      "latin": "Sin",
+      "description": "Gigi atas hampir menyentuh bibir bawah. Baca: Sin",
+      "tips": "Seperti 's' dalam kata 'susu'"
+    },
+    "ش": {
+      "latin": "Syin",
+      "description": "Seperti Sin tapi lebih tebal. Baca: Syin",
+      "tips": "Seperti 'sy' dalam kata 'syarat'"
+    },
+    "ص": {
+      "latin": "Shad",
+      "description": "Seperti Sin tapi lebih tebal. Baca: Shad",
+      "tips": "Seperti 's' tapi lidah lebih ke belakang"
+    },
+    "ض": {
+      "latin": "Dhad",
+      "description": "Seperti Dal tapi lebih tebal. Baca: Dhad",
+      "tips": "Seperti 'd' tapi lidah lebih ke belakang"
+    },
+    "ط": {
+      "latin": "Tha",
+      "description": "Seperti Ta tapi lebih tebal. Baca: Tha",
+      "tips": "Seperti 't' tapi lidah lebih ke belakang"
+    },
+    "ظ": {
+      "latin": "Zha",
+      "description": "Seperti Dzal tapi lebih tebal. Baca: Zha",
+      "tips": "Seperti 'z' tapi lidah lebih ke belakang"
+    },
+    "ع": {
+      "latin": "Ain",
+      "description": "Tenggorokan bergetar kuat. Baca: Ain",
+      "tips": "Seperti menahan napas lalu keluarkan"
+    },
+    "غ": {
+      "latin": "Ghain",
+      "description": "Seperti mendengkur kuat. Baca: Ghain",
+      "tips": "Seperti 'gh' dalam bahasa Arab 'ghali'"
+    },
+    "ف": {
+      "latin": "Fa",
+      "description": "Gigi atas menyentuh bibir bawah. Baca: Fa",
+      "tips": "Seperti 'f' dalam kata 'foto'"
+    },
+    "ق": {
+      "latin": "Qaf",
+      "description": "Belakang lidah menyentuh langit-langit. Baca: Qaf",
+      "tips": "Seperti 'q' tapi lebih dalam dari Kaf"
+    },
+    "ك": {
+      "latin": "Kaf",
+      "description": "Belakang lidah menyentuh langit-langit. Baca: Kaf",
+      "tips": "Seperti 'k' dalam kata 'kucing'"
+    },
+    "ل": {
+      "latin": "Lam",
+      "description": "Ujung lidah menyentuh gusi atas. Baca: Lam",
+      "tips": "Seperti 'l' dalam kata 'lari'"
+    },
+    "م": {
+      "latin": "Mim",
+      "description": "Bibir dirapatkan. Baca: Mim",
+      "tips": "Seperti 'm' dalam kata 'makan'"
+    },
+    "ن": {
+      "latin": "Nun",
+      "description": "Ujung lidah menyentuh gusi atas. Baca: Nun",
+      "tips": "Seperti 'n' dalam kata 'nama'"
+    },
+    "و": {
+      "latin": "Wau",
+      "description": "Bibir monyong. Baca: Wau",
+      "tips": "Seperti 'w' dalam kata 'warna'"
+    },
+    "ه": {
+      "latin": "Ha",
+      "description": "Hembusan napas lembut. Baca: Ha",
+      "tips": "Seperti menghembuskan lilin"
+    },
+    "ء": {
+      "latin": "Hamzah",
+      "description": "Sentakan kecil di tenggorokan. Baca: ' (tanda baca)",
+      "tips": "Seperti jeda kecil saat bicara"
+    },
+    "ي": {
+      "latin": "Ya",
+      "description": "Seperti bunyi y. Baca: Ya",
+      "tips": "Seperti 'y' dalam kata 'yang'"
+    }
+  },
+  "fathah": {
+    "symbol": "َ",
+    "name": "Fathah",
+    "description": "Garis miring ke atas di atas huruf",
+    "sound": "a",
+    "example": "بَ = Ba"
+  },
+  "kasrah": {
+    "symbol": "ِ",
+    "name": "Kasrah",
+    "description": "Garis miring ke bawah di bawah huruf",
+    "sound": "i",
+    "example": "بِ = Bi"
+  },
+  "dammah": {
+    "symbol": "ُ",
+    "name": "Dammah",
+    "description": "Seperti huruf wau kecil di atas huruf",
+    "sound": "u",
+    "example": "بُ = Bu"
+  },
+  "sukun": {
+    "symbol": "ْ",
+    "name": "Sukun",
+    "description": "Lingkaran kecil di atas huruf",
+    "sound": "mati (tanpa vokal)",
+    "example": "بْ = B (mati)"
+  },
+  "tasydid": {
+    "symbol": "ّ",
+    "name": "Tasydid",
+    "description": "Seperti huruf sin kecil di atas huruf",
+    "sound": "digandakan",
+    "example": "بَّ = Bba (tekan dua kali)"
+  }
+}
