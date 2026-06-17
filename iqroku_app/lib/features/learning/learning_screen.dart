@@ -781,7 +781,7 @@ class VoicePracticePanel extends StatelessWidget {
               ),
             const SizedBox(height: 8),
             const Text(
-              'Penilaian ini masih simulasi lokal sebagai fondasi. Nanti mesin AI akan mengganti bagian nilainya.',
+              'Penilaian dilakukan oleh AI MiMo berdasarkan rekaman suara.',
               style: AppText.caption,
             ),
           ],
