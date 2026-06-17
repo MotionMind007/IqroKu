@@ -102,7 +102,11 @@ function authenticateAdmin(request) {
     ? authHeader.slice(7).trim()
     : '';
 
-  if (token !== ADMIN_TOKEN) {
+  // Check cookie
+  const cookie = request.headers?.['cookie'] ?? '';
+  const cookieToken = cookie.match(/admin_token=([^;]+)/)?.[1] ?? '';
+
+  if (token !== ADMIN_TOKEN && cookieToken !== ADMIN_TOKEN) {
     throw httpError(403, 'admin_access_denied');
   }
 }
@@ -125,13 +129,18 @@ const server = createServer(async (request, response) => {
     const result = await route(request.method ?? 'GET', url, body, request);
     const responseStatus = typeof result.status === 'number' ? result.status : 200;
     if (result.html) {
-      sendHtml(response, responseStatus, result.html);
+      sendHtml(response, responseStatus, result.html, result.headers);
       logRequest(request.method ?? 'GET', path, responseStatus, Date.now() - startTime, clientIp);
       return;
     }
     if (result.filePath) {
       await sendFile(response, result.filePath, result.contentType);
       logRequest(request.method ?? 'GET', path, 200, Date.now() - startTime, clientIp);
+      return;
+    }
+    if (result.status === 302 && result.headers) {
+      sendRedirect(response, result.status, result.headers);
+      logRequest(request.method ?? 'GET', path, result.status, Date.now() - startTime, clientIp);
       return;
     }
     sendJson(response, responseStatus, result.body ?? result);
@@ -188,6 +197,36 @@ async function route(method, url, body, request) {
   }
 
   // --- Admin routes (require admin token) ---
+  if (method === 'GET' && path === '/admin/login') {
+    return { html: renderAdminLogin() };
+  }
+
+  if (method === 'POST' && path === '/admin/login') {
+    const token = cleanString(body.token);
+    if (token !== ADMIN_TOKEN) {
+      return { html: renderAdminLogin('Token salah. Silakan coba lagi.') };
+    }
+    return {
+      status: 302,
+      headers: {
+        'Set-Cookie': `admin_token=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=86400`,
+        'Location': '/admin',
+      },
+      body: '',
+    };
+  }
+
+  if (method === 'GET' && path === '/admin/logout') {
+    return {
+      status: 302,
+      headers: {
+        'Set-Cookie': 'admin_token=; Path=/admin; HttpOnly; Max-Age=0',
+        'Location': '/admin/login',
+      },
+      body: '',
+    };
+  }
+
   if (method === 'GET' && path === '/admin') {
     authenticateAdmin(request);
     const metrics = await db.getAdminMetrics();
@@ -493,15 +532,21 @@ function sendJson(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-function sendHtml(response, status, html) {
+function sendHtml(response, status, html, extraHeaders = {}) {
   response.writeHead(status, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
     'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';",
     'x-frame-options': 'DENY',
     'x-content-type-options': 'nosniff',
+    ...extraHeaders,
   });
   response.end(html);
+}
+
+function sendRedirect(response, status, headers) {
+  response.writeHead(status, headers);
+  response.end();
 }
 
 async function sendFile(response, filePath, contentType = 'application/octet-stream') {
@@ -803,6 +848,120 @@ function parseBoolean(value, fallback = false) {
   return ['true', '1', 'yes', 'on'].includes(String(value).toLowerCase());
 }
 
+function renderAdminLogin(error = '') {
+  return `<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login - IqroKu Admin</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --canvas: #f8f6ef;
+        --surface: #ffffff;
+        --line: #e7e1d6;
+        --text: #17201b;
+        --muted: #6d756f;
+        --primary: #23864b;
+        --primary-dark: #0f5b39;
+        --danger: #d84f3f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
+        background: linear-gradient(180deg, var(--canvas), #fff);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .login-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, .08);
+        padding: 40px;
+        width: min(420px, calc(100% - 32px));
+      }
+      h1 { margin: 0 0 8px; font-size: 24px; }
+      p { margin: 0 0 24px; color: var(--muted); font-size: 14px; }
+      label {
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        margin-bottom: 20px;
+      }
+      input {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 16px;
+        color: var(--text);
+        background: #fff;
+        font: inherit;
+        font-size: 15px;
+      }
+      input:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(35, 134, 75, .15);
+      }
+      button {
+        width: 100%;
+        border: 0;
+        border-radius: 12px;
+        padding: 14px;
+        background: var(--primary);
+        color: #fff;
+        font-weight: 800;
+        font-size: 15px;
+        cursor: pointer;
+        transition: background .2s;
+      }
+      button:hover { background: var(--primary-dark); }
+      .error {
+        padding: 12px 16px;
+        margin-bottom: 20px;
+        border: 1px solid rgba(216, 79, 63, .3);
+        border-radius: 12px;
+        background: #fff0ee;
+        color: var(--danger);
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .footer {
+        margin-top: 20px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="login-card">
+      <h1>IqroKu Admin</h1>
+      <p>Masukkan admin token untuk mengakses dashboard.</p>
+      ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
+      <form method="post" action="/admin/login">
+        <label>
+          Admin Token
+          <input name="token" type="password" placeholder="Masukkan token..." required autofocus>
+        </label>
+        <button type="submit">Masuk</button>
+      </form>
+      <div class="footer">
+        IqroKu &copy; ${new Date().getFullYear()}
+      </div>
+    </div>
+  </body>
+</html>`;
+}
+
 function renderAdminDashboard(metrics) {
   const cards = [
     ['Total Parent', metrics.totals.parents],
@@ -967,7 +1126,7 @@ function renderAdminDashboard(metrics) {
         </div>
         <div>
           <span class="badge">Generated ${escapeHtml(formatDateTime(metrics.generatedAt))}</span>
-          <p><a href="/admin/prayers">Kelola Doa</a> · <a href="/admin/metrics">View JSON metrics</a></p>
+          <p><a href="/admin/prayers">Kelola Doa</a> · <a href="/admin/metrics">View JSON metrics</a> · <a href="/admin/logout">Logout</a></p>
         </div>
       </header>
 
