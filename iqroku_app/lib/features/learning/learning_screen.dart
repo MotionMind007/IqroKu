@@ -990,29 +990,58 @@ class _AssessmentResult extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.all(10),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: color.withValues(alpha: 0.12),
-              foregroundColor: color,
-              child: Text('${attempt.score}', style: AppText.smallStrong),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Skor ${attempt.score}/100', style: AppText.bodyStrong),
-                  const SizedBox(height: 3),
-                  Text(
-                    attempt.feedback ?? attempt.note ?? '',
-                    style: AppText.caption.copyWith(color: AppColors.text),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: color.withValues(alpha: 0.12),
+                  foregroundColor: color,
+                  child: Text('${attempt.score}', style: AppText.smallStrong),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Skor ${attempt.score}/100', style: AppText.bodyStrong),
+                      const SizedBox(height: 3),
+                      Text(
+                        attempt.feedback ?? attempt.note ?? '',
+                        style: AppText.caption.copyWith(color: AppColors.text),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
+            if (attempt.note != null && attempt.note!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppColors.paper,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.info_outline, size: 16, color: AppColors.muted),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          attempt.note!,
+                          style: AppText.mini.copyWith(color: AppColors.muted),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

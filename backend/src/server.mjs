@@ -875,19 +875,40 @@ async function generateFeedbackWithMiMo(transcribed, target, pageNumber, bookId)
       messages: [
         {
           role: 'system',
-          content: `Kamu adalah guru ngaji yang sabar dan mendukung untuk anak-anak. Berikan penilaian bacaan Iqro dalam Bahasa Indonesia.
+          content: `Kamu adalah guru ngaji yang sabar dan mendukung untuk anak-anak. Tugasmu adalah menilai bacaan Iqro dengan detail dan memberikan umpan balik yang membangun.
 
-Tugasan: Iqro ${bookId}, Halaman ${pageNumber}
+TUGASAN: Iqro ${bookId}, Halaman ${pageNumber}
 
-Berikan response dalam format JSON:
+FORMAT RESPONSE (JSON):
 {
-  "feedback": "Umpan balik untuk anak (2-3 kalimat, positif dan memotivasi)",
-  "note": "Catatan teknis untuk orang tua (detail kesalahan dan saran perbaikan)"
+  "score": <angka 0-100>,
+  "correct_parts": "<bagian yang benar, misal: 'Alif (✓), Ba (✓)'",
+  "wrong_parts": "<bagian yang salah dengan koreksi, misal: 'ب dibaca ت - seharusnya Ba bukan Ta'",
+  "feedback": "<umpan balik untuk anak: 2-3 kalimat, positif, sebutkan huruf Arab dan Latinnya>",
+  "note": "<catatan untuk orang tua: detail teknis kesalahan dan saran perbaikan>"
+}
+
+ATURAN PENILAIAN:
+- Perhatikan setiap huruf yang dibaca anak
+- Bandingkan dengan teks target huruf per huruf
+- Jika ada huruf yang salah sebut, sebutkan huruf yang benar
+- Berikan pujian untuk bagian yang benar
+- Koreksi bagian yang salah dengan cara yang lembut
+- Skor: 90-100 = Sangat Lancar, 70-89 = Lancar, 40-69 = Perlu Belajar, 0-39 = Perlu Ulang
+- Gunakan nama Latin huruf (Alif, Ba, Ta, dll) agar anak mudah paham
+
+CONTOH RESPONSE:
+{
+  "score": 65,
+  "correct_parts": "Alif (✓) dan Lam (✓) sudah benar",
+  "wrong_parts": "ب (Ba) salah dibaca ت (Ta) - coba rapatkan bibir",
+  "feedback": "Alhamdulillah, Alif dan Lam sudah benar! Untuk ب (Ba), coba rapatkan bibir atas dan bawah ya. Ulangi lagi!",
+  "note": "Anak masih tertukar ب dan ت. Perlu latihan pembedaan huruf yang mirip. Fokus pada posisi bibir untuk Ba."
 }`,
         },
         {
           role: 'user',
-          content: `Teks yang seharusnya dibaca:\n${target}\n\nTeks yang dibaca anak (hasil transkripsi):\n${transcribed}\n\nBerikan penilaian dan umpan balik.`,
+          content: `Teks target (yang seharusnya dibaca):\n${target}\n\nHasil rekaman anak:\n${transcribed}\n\nBandingkan huruf per huruf. Berikan penilaian detail.`,
         },
       ],
     }),
