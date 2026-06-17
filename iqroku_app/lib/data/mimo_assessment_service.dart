@@ -21,16 +21,22 @@ class MiMoAssessmentService implements AssessmentService {
     }
 
     try {
-      // Step 1: Upload audio to server
+      // Step 1: Upload audio to server (with timeout)
       await authService.uploadAudio(
         attemptId: attemptId,
         audioPath: audioPath,
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw AssessmentException('Upload timeout'),
       );
 
-      // Step 2: Call AI assessment endpoint
+      // Step 2: Call AI assessment endpoint (with timeout)
       final result = await authService.assessAttemptWithAI(
         attemptId: attemptId,
         targetLines: request.targetLines,
+      ).timeout(
+        const Duration(seconds: 60),
+        onTimeout: () => throw AssessmentException('Assessment timeout'),
       );
 
       // Parse result
@@ -45,6 +51,8 @@ class MiMoAssessmentService implements AssessmentService {
         feedback: feedback,
         note: note,
       );
+    } on AssessmentException {
+      rethrow;
     } on AuthApiException catch (e) {
       throw AssessmentException('Assessment failed: ${e.code}');
     } catch (e) {

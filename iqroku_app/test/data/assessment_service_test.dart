@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iqroku/data/assessment_service.dart';
-import 'package:iqroku/data/auth_api_service.dart';
 import 'package:iqroku/models/learning_status.dart';
 
 void main() {

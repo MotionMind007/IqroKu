@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iqroku/data/local_app_storage.dart';
 import 'package:iqroku/data/auth_api_service.dart';
 import 'package:iqroku/models/learning_status.dart';
-import 'package:iqroku/models/profile_models.dart';
 
 void main() {
   group('StoredIqrokuState', () {

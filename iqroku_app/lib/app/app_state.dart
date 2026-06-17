@@ -1646,11 +1646,17 @@ class IqrokuState extends ChangeNotifier {
         durationSeconds: attempt.durationSeconds,
         audioPath: attempt.audioPath,
       );
-      if (remoteAttempt.id.isNotEmpty) {
-        await authService.assessAttempt(
-          attemptId: remoteAttempt.id,
-          targetLines: _targetLinesFor(attempt.bookId, attempt.pageNumber),
-        );
+
+      // Upload audio if available
+      if (attempt.audioPath != null && attempt.audioPath!.isNotEmpty && remoteAttempt.id.isNotEmpty) {
+        try {
+          await authService.uploadAudio(
+            attemptId: remoteAttempt.id,
+            audioPath: attempt.audioPath!,
+          );
+        } catch (e) {
+          debugPrint('Audio upload failed: $e');
+        }
       }
     } on AuthApiException catch (error) {
       if (error.statusCode == 401) {

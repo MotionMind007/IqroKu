@@ -31,7 +31,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _signInWithGoogle() async {
     try {
-      final googleUser = await GoogleSignIn(scopes: ['email']).signIn();
+      final googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+        serverClientId: '55523615051-81vpiqk0jiamubrnjb0ss4i6irpifm2t.apps.googleusercontent.com',
+      );
+
+      final googleUser = await googleSignIn.signIn();
       if (googleUser == null) return; // User cancelled
 
       final googleAuth = await googleUser.authentication;
