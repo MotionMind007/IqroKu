@@ -25,13 +25,14 @@ class IqrokuState extends ChangeNotifier {
     this.storage = const LocalAppStorage(),
     this.iqroContentRepository = const IqroContentRepository(),
     this.assessmentService = const MockAssessmentService(),
-    this.authService = const AuthApiService(),
+    AuthApiService? authService,
     this.dailyPrayerApiService = const DailyPrayerApiService(),
     this.quranApiService = const QuranApiService(),
     this.islamicActivityService = const IslamicActivityService(),
     VoiceRecordingService? voiceRecordingService,
     AudioPlaybackService? audioPlaybackService,
-  }) : childProfiles = List.of(repository.children.take(freeChildLimit)),
+  }) : authService = authService ?? AuthApiService(),
+       childProfiles = List.of(repository.children.take(freeChildLimit)),
        learningNotes = List.of(repository.learningNotes),
        learningAttempts = <LearningAttempt>[],
        voiceRecordingService =
@@ -465,7 +466,15 @@ class IqrokuState extends ChangeNotifier {
   }
 
   Future<void> restoreFromDisk() async {
-    final stored = await storage.load();
+    StoredIqrokuState? stored;
+    try {
+      stored = await storage.load();
+    } catch (error) {
+      debugPrint('Failed to restore state from disk: $error');
+      // Corrupted data — start fresh
+      return;
+    }
+
     if (stored == null) {
       return;
     }
@@ -491,6 +500,7 @@ class IqrokuState extends ChangeNotifier {
     subscriptionActivatedAt = stored.subscriptionActivatedAt;
     parentAccount = stored.parentAccount;
     authToken = stored.authToken;
+    authService.authToken = stored.authToken;
     childSetupCompleted = stored.childSetupCompleted;
     selectedIqroBook = stored.selectedIqroBook;
     selectedIqroPage = stored.selectedIqroPage;
@@ -701,6 +711,7 @@ class IqrokuState extends ChangeNotifier {
     selectedTab = 0;
     parentAccount = null;
     authToken = null;
+    authService.authToken = null;
     authError = null;
     _persist();
     notifyListeners();
@@ -1457,6 +1468,7 @@ class IqrokuState extends ChangeNotifier {
   Future<void> _finishAuth(AuthResult result) async {
     parentAccount = result.parent;
     authToken = result.sessionToken;
+    authService.authToken = result.sessionToken;
     authError = null;
 
     final remoteChildren = await authService.loadChildren(result.parent.id);

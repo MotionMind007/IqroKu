@@ -17,48 +17,80 @@ npm start
 
 Default URL: `http://localhost:8787`
 
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8787` | Server port |
+| `IQROKU_ADMIN_TOKEN` | `admin-dev-token` | Token for admin dashboard access |
+| `IQROKU_BACKEND_STORE` | `data/dev-store.json` | Path to JSON data store |
+
+## Authentication
+
+All protected endpoints require a `Bearer` token in the `Authorization` header:
+
+```
+Authorization: Bearer <session_token>
+```
+
+Tokens are returned by `/auth/register` and `/auth/login`.
+
 ## Admin Dashboard
 
-Open:
+Admin routes require the admin token either via header or query param:
 
 ```text
-http://localhost:8787/admin
+http://localhost:8787/admin?token=admin-dev-token
 ```
 
-The dashboard shows parent users, child profiles, Free vs Plus users, active subscriptions, estimated monthly revenue, reading attempts, assessment counts, and recent activity.
-
-Daily prayers can be managed from:
-
-```text
-http://localhost:8787/admin/prayers
+Or with header:
+```
+Authorization: Bearer admin-dev-token
 ```
 
-Raw metrics are available at:
+Pages:
+- `/admin` — Dashboard with metrics
+- `/admin/metrics` — Raw JSON metrics
+- `/admin/prayers` — Prayer CRUD interface
 
-```text
-http://localhost:8787/admin/metrics
-```
+## Security Features
+
+- **Auth middleware** — All data endpoints verify session tokens and enforce ownership
+- **Admin protection** — Admin dashboard requires separate admin token
+- **Rate limiting** — 10 auth attempts / 120 general requests per minute per IP
+- **Request body size limit** — 5MB max
+- **Input validation** — String truncation (500 chars), number clamping, email length check
+- **Password constraints** — 6-128 characters, scrypt hashing with timing-safe verification
+- **Graceful shutdown** — SIGTERM/SIGINT handlers save state before exit
+- **Session TTL** — Sessions expire after 7 days
+- **Ownership enforcement** — Users can only access their own children/progress/attempts
 
 ## Endpoints
 
+### Public
 - `GET /health`
-- `GET /admin`
-- `GET /admin/metrics`
-- `GET /admin/prayers`
 - `GET /daily-prayers`
-- `POST /admin/prayers`
-- `POST /admin/prayers/:id/update`
-- `POST /admin/prayers/:id/delete`
 - `POST /auth/demo-login`
 - `POST /auth/register`
 - `POST /auth/login`
+
+### Protected (require user auth token)
 - `GET /children?parentId=...`
 - `POST /children`
 - `GET /progress?childId=...`
 - `PUT /progress`
 - `GET /attempts?childId=...`
 - `POST /attempts`
+- `POST /attempts/:id/audio` (multipart)
 - `POST /assessments/mock`
 - `POST /subscriptions/activate`
+
+### Admin (require admin token)
+- `GET /admin`
+- `GET /admin/metrics`
+- `GET /admin/prayers`
+- `POST /admin/prayers`
+- `POST /admin/prayers/:id/update`
+- `POST /admin/prayers/:id/delete`
 
 Runtime data is stored in `backend/data/dev-store.json` and ignored by Git.

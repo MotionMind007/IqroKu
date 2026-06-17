@@ -41,6 +41,7 @@ class HomeScreen extends StatelessWidget {
               IconButton.filledTonal(
                 onPressed: () {},
                 icon: const Icon(Icons.notifications_none),
+                tooltip: 'Notifikasi',
               ),
             ],
           ),
@@ -221,36 +222,41 @@ class QuickAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(5),
+                    child: Image.asset(asset, fit: BoxFit.contain,
+                        semanticLabel: label),
+                  ),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(5),
-                  child: Image.asset(asset, fit: BoxFit.contain),
+                const SizedBox(height: 7),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: AppText.smallStrong,
                 ),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: AppText.smallStrong,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -276,49 +282,55 @@ class ContinueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: EdgeInsets.zero,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: AppColors.mint,
-                child: AssetIcon(asset, size: 34),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: AppText.bodyStrong),
-                    const SizedBox(height: 2),
-                    Text(subtitle, style: AppText.caption),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        minHeight: 5,
-                        color: AppColors.primary,
-                        backgroundColor: AppColors.line,
-                      ),
-                    ),
-                  ],
+    return Semantics(
+      button: onTap != null,
+      label: '$title, $subtitle, ${(progress * 100).round()} persen',
+      child: AppCard(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: EdgeInsets.zero,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: AppColors.mint,
+                  child: AssetIcon(asset, size: 34),
                 ),
-              ),
-              const SizedBox(width: 12),
-              const CircleAvatar(
-                radius: 18,
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                child: Icon(Icons.arrow_forward, size: 18),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: AppText.bodyStrong),
+                      const SizedBox(height: 2),
+                      Text(subtitle, style: AppText.caption),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 5,
+                          color: AppColors.primary,
+                          backgroundColor: AppColors.line,
+                          semanticsLabel: '$title progress',
+                          semanticsValue: '${(progress * 100).round()}%',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  child: Icon(Icons.arrow_forward, size: 18),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -6,7 +6,7 @@ import '../models/learning_status.dart';
 import '../models/profile_models.dart';
 
 class AuthApiService {
-  const AuthApiService({
+  AuthApiService({
     this.baseUrl = const String.fromEnvironment(
       'IQROKU_API_BASE',
       defaultValue: 'http://127.0.0.1:8787',
@@ -14,6 +14,9 @@ class AuthApiService {
   });
 
   final String baseUrl;
+
+  /// Auth token set after login/register, used for authenticated requests.
+  String? authToken;
 
   Future<AuthResult> register({
     required String name,
@@ -24,7 +27,7 @@ class AuthApiService {
       'name': name,
       'email': email,
       'password': password,
-    });
+    }, authenticated: false);
     return AuthResult.fromJson(json);
   }
 
@@ -35,12 +38,15 @@ class AuthApiService {
     final json = await _post('/auth/login', {
       'email': email,
       'password': password,
-    });
+    }, authenticated: false);
     return AuthResult.fromJson(json);
   }
 
   Future<List<ChildProfile>> loadChildren(String parentId) async {
-    final response = await http.get(_uri('/children', {'parentId': parentId}));
+    final response = await http.get(
+      _uri('/children', {'parentId': parentId}),
+      headers: _authHeaders(),
+    );
     final json = _decodeResponse(response);
     return (json as List<Object?>)
         .cast<Map<String, Object?>>()
@@ -49,7 +55,10 @@ class AuthApiService {
   }
 
   Future<List<RemoteIqroProgress>> loadProgress(String childId) async {
-    final response = await http.get(_uri('/progress', {'childId': childId}));
+    final response = await http.get(
+      _uri('/progress', {'childId': childId}),
+      headers: _authHeaders(),
+    );
     final json = _decodeResponse(response);
     return (json as List<Object?>)
         .cast<Map<String, Object?>>()
@@ -117,13 +126,25 @@ class AuthApiService {
     await _post('/subscriptions/activate', {'parentId': parentId});
   }
 
+  Map<String, String> _authHeaders() {
+    final token = authToken;
+    if (token == null || token.isEmpty) {
+      return const {'content-type': 'application/json; charset=utf-8'};
+    }
+    return {
+      'content-type': 'application/json; charset=utf-8',
+      'authorization': 'Bearer $token',
+    };
+  }
+
   Future<Map<String, Object?>> _post(
     String path,
-    Map<String, Object?> body,
-  ) async {
+    Map<String, Object?> body, {
+    bool authenticated = true,
+  }) async {
     final response = await http.post(
       _uri(path),
-      headers: const {'content-type': 'application/json; charset=utf-8'},
+      headers: authenticated ? _authHeaders() : const {'content-type': 'application/json; charset=utf-8'},
       body: jsonEncode(body),
     );
     return _decodeResponse(response) as Map<String, Object?>;
@@ -135,7 +156,7 @@ class AuthApiService {
   ) async {
     final response = await http.put(
       _uri(path),
-      headers: const {'content-type': 'application/json; charset=utf-8'},
+      headers: _authHeaders(),
       body: jsonEncode(body),
     );
     return _decodeResponse(response) as Map<String, Object?>;

@@ -1,18 +1,149 @@
 import { createServer } from 'node:http';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { extname, resolve } from 'node:path';
 import { JsonStore } from './store.mjs';
 
 const store = new JsonStore();
 const port = Number(process.env.PORT ?? 8787);
+const ADMIN_TOKEN = process.env.IQROKU_ADMIN_TOKEN || 'admin-dev-token';
+const MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB max request body
+const MAX_STRING_LENGTH = 500; // max string field length
+
+// --- Rate Limiter ---
+const rateLimits = new Map();
+const RATE_WINDOW_MS = 60_000; // 1 minute
+const RATE_MAX_AUTH = 10; // max auth attempts per IP per minute
+const RATE_MAX_GENERAL = 120; // max general requests per IP per minute
+
+function getRateLimitKey(ip, bucket) {
+  return `${ip}:${bucket}`;
+}
+
+function checkRateLimit(ip, bucket, max = RATE_MAX_GENERAL) {
+  const key = getRateLimitKey(ip, bucket);
+  const now = Date.now();
+  let entry = rateLimits.get(key);
+  if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
+    entry = { windowStart: now, count: 0 };
+    rateLimits.set(key, entry);
+  }
+  entry.count += 1;
+  if (entry.count > max) {
+    throw httpError(429, 'rate_limit_exceeded');
+  }
+}
+
+// Cleanup stale rate limit entries every 5 minutes
+setInterval(() => {
+  const cutoff = Date.now() - RATE_WINDOW_MS * 2;
+  for (const [key, entry] of rateLimits) {
+    if (entry.windowStart < cutoff) {
+      rateLimits.delete(key);
+    }
+  }
+}, 300_000).unref();
+
+// --- Session Store ---
+const sessions = new Map();
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function storeSession(token, parentId) {
+  sessions.set(token, { parentId, createdAt: Date.now() });
+}
+
+function resolveSession(token) {
+  const session = sessions.get(token);
+  if (!session) {
+    return null;
+  }
+  if (Date.now() - session.createdAt > SESSION_TTL_MS) {
+    sessions.delete(token);
+    return null;
+  }
+  return session.parentId;
+}
+
+function revokeSession(token) {
+  sessions.delete(token);
+}
+
+// Cleanup expired sessions every 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions) {
+    if (now - session.createdAt > SESSION_TTL_MS) {
+      sessions.delete(token);
+    }
+  }
+}, 1_800_000).unref();
+
+// --- Auth Middleware ---
+function authenticateRequest(request, state) {
+  const authHeader = request.headers?.['authorization'] ?? '';
+  const token = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : '';
+
+  if (!token) {
+    throw httpError(401, 'missing_auth_token');
+  }
+
+  // Check session store first
+  const parentId = resolveSession(token);
+  if (parentId) {
+    const parent = state.parents.find((p) => p.id === parentId);
+    if (parent) {
+      return parent;
+    }
+  }
+
+  // Fallback: parse legacy token format (session_<parentId>_<random> or demo_<parentId>)
+  const legacyMatch = /^(?:session|demo)_([^_]+)/.exec(token);
+  if (legacyMatch) {
+    const parent = state.parents.find((p) => p.id === legacyMatch[1]);
+    if (parent) {
+      return parent;
+    }
+  }
+
+  throw httpError(401, 'invalid_auth_token');
+}
+
+function authenticateAdmin(request) {
+  const authHeader = request.headers?.['authorization'] ?? '';
+  const token = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : '';
+
+  // Also check query param for browser-based admin access
+  const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
+  const queryToken = url.searchParams.get('token') ?? '';
+
+  if (token !== ADMIN_TOKEN && queryToken !== ADMIN_TOKEN) {
+    throw httpError(403, 'admin_access_denied');
+  }
+}
 
 const server = createServer(async (request, response) => {
+  const clientIp = request.socket?.remoteAddress ?? 'unknown';
   try {
     const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
+    const path = url.pathname;
+
+    // Rate limit: stricter for auth endpoints
+    const isAuthEndpoint = path.startsWith('/auth/');
+    checkRateLimit(clientIp, isAuthEndpoint ? 'auth' : 'general', isAuthEndpoint ? RATE_MAX_AUTH : RATE_MAX_GENERAL);
+
     const body = await readJson(request);
-    const result = await route(request.method ?? 'GET', url, body);
+    const result = await route(request.method ?? 'GET', url, body, request);
     const responseStatus = typeof result.status === 'number' ? result.status : 200;
     if (result.html) {
       sendHtml(response, responseStatus, result.html);
+      return;
+    }
+    if (result.filePath) {
+      await sendFile(response, result.filePath, result.contentType);
       return;
     }
     sendJson(response, responseStatus, result.body ?? result);
@@ -31,7 +162,26 @@ server.listen(port, () => {
   console.log(`IqroKu backend listening on http://localhost:${port}`);
 });
 
-async function route(method, url, body) {
+// --- Graceful Shutdown ---
+function gracefulShutdown(signal) {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+  server.close(async () => {
+    try {
+      await store.save();
+    } catch (_) {
+      // best-effort save
+    }
+    console.log('Server closed.');
+    process.exit(0);
+  });
+  // Force exit after 5s if connections don't close
+  setTimeout(() => process.exit(1), 5000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+async function route(method, url, body, request) {
   const state = await store.load();
   const path = url.pathname;
 
@@ -43,15 +193,19 @@ async function route(method, url, body) {
     return { ok: true, service: 'iqroku-backend', timestamp: new Date().toISOString() };
   }
 
+  // --- Admin routes (require admin token) ---
   if (method === 'GET' && path === '/admin') {
+    authenticateAdmin(request);
     return { html: renderAdminDashboard(buildAdminMetrics(state)) };
   }
 
   if (method === 'GET' && path === '/admin/metrics') {
+    authenticateAdmin(request);
     return buildAdminMetrics(state);
   }
 
   if (method === 'GET' && path === '/admin/prayers') {
+    authenticateAdmin(request);
     return { html: renderAdminPrayers(prayersForAdmin(state)) };
   }
 
@@ -59,7 +213,16 @@ async function route(method, url, body) {
     return publicPrayers(state);
   }
 
+  if (method === 'GET' && path.startsWith('/uploads/audio/')) {
+    const fileName = safeStoredFileName(path.split('/').pop() ?? '');
+    return {
+      filePath: resolve('uploads/audio', fileName),
+      contentType: contentTypeForAudio(fileName),
+    };
+  }
+
   if (method === 'POST' && path === '/admin/prayers') {
+    authenticateAdmin(request);
     const prayer = prayerFromBody(body);
     state.dailyPrayers.unshift({
       id: randomUUID(),
@@ -76,6 +239,7 @@ async function route(method, url, body) {
 
   const prayerAction = adminPrayerAction(path);
   if (method === 'POST' && prayerAction) {
+    authenticateAdmin(request);
     const prayer = state.dailyPrayers.find((item) => item.id === prayerAction.id);
     if (!prayer) {
       throw httpError(404, 'prayer_not_found');
@@ -135,11 +299,13 @@ async function route(method, url, body) {
     };
     state.parents.push(parent);
     await store.save();
+    const token = createSessionToken(parent.id);
+    storeSession(token, parent.id);
     return {
       status: 201,
       body: {
         parent: publicParent(parent),
-        session: { token: createSessionToken(parent.id), type: 'password' },
+        session: { token, type: 'password' },
       },
     };
   }
@@ -152,25 +318,37 @@ async function route(method, url, body) {
       throw httpError(401, 'invalid_email_or_password');
     }
 
+    const token = createSessionToken(parent.id);
+    storeSession(token, parent.id);
     return {
       parent: publicParent(parent),
-      session: { token: createSessionToken(parent.id), type: 'password' },
+      session: { token, type: 'password' },
     };
   }
 
+  // --- Protected routes (require user auth) ---
   if (method === 'GET' && path === '/children') {
+    const authedParent = authenticateRequest(request, state);
     const parentId = requiredQuery(url, 'parentId');
+    // Users can only access their own children
+    if (parentId !== authedParent.id) {
+      throw httpError(403, 'access_denied');
+    }
     return state.children.filter((child) => child.parentId === parentId);
   }
 
   if (method === 'POST' && path === '/children') {
+    const authedParent = authenticateRequest(request, state);
     const parentId = requiredBody(body, 'parentId');
+    if (parentId !== authedParent.id) {
+      throw httpError(403, 'access_denied');
+    }
     enforceChildLimit(state, parentId);
     const child = {
       id: randomUUID(),
       parentId,
-      name: cleanString(body.name) || 'Anak',
-      age: Number(body.age ?? 7),
+      name: truncateString(cleanString(body.name) || 'Anak'),
+      age: clampNumber(Number(body.age ?? 7), 1, 18),
       avatarAsset: cleanString(body.avatarAsset) || 'assets/brand/male-avatar.png',
       createdAt: now(),
     };
@@ -180,14 +358,18 @@ async function route(method, url, body) {
   }
 
   if (method === 'GET' && path === '/progress') {
+    const authedParent = authenticateRequest(request, state);
     const childId = requiredQuery(url, 'childId');
+    enforceChildOwnership(state, authedParent.id, childId);
     return state.progress.filter((item) => item.childId === childId);
   }
 
   if (method === 'PUT' && path === '/progress') {
+    const authedParent = authenticateRequest(request, state);
     const childId = requiredBody(body, 'childId');
-    const bookId = Number(requiredBody(body, 'bookId'));
-    const pageNumber = Number(requiredBody(body, 'pageNumber'));
+    enforceChildOwnership(state, authedParent.id, childId);
+    const bookId = clampNumber(Number(requiredBody(body, 'bookId')), 1, 99);
+    const pageNumber = clampNumber(Number(requiredBody(body, 'pageNumber')), 1, 999);
     const status = cleanString(requiredBody(body, 'status'));
     const existing = state.progress.find((item) => {
       return item.childId === childId && item.bookId === bookId && item.pageNumber === pageNumber;
@@ -209,15 +391,20 @@ async function route(method, url, body) {
   }
 
   if (method === 'GET' && path === '/attempts') {
+    const authedParent = authenticateRequest(request, state);
     const childId = requiredQuery(url, 'childId');
+    enforceChildOwnership(state, authedParent.id, childId);
     return state.attempts.filter((attempt) => attempt.childId === childId);
   }
 
   if (method === 'POST' && path === '/attempts') {
+    const authedParent = authenticateRequest(request, state);
+    const childId = requiredBody(body, 'childId');
+    enforceChildOwnership(state, authedParent.id, childId);
     const attempt = {
       id: randomUUID(),
-      childId: requiredBody(body, 'childId'),
-      bookId: Number(requiredBody(body, 'bookId')),
+      childId,
+      bookId: clampNumber(Number(requiredBody(body, 'bookId')), 1, 99),
       pageNumber: Number(requiredBody(body, 'pageNumber')),
       durationSeconds: Number(body.durationSeconds ?? 1),
       audioPath: cleanString(body.audioPath),
@@ -229,12 +416,44 @@ async function route(method, url, body) {
     return { status: 201, body: attempt };
   }
 
+  const audioUpload = attemptAudioUpload(path);
+  if (method === 'POST' && audioUpload) {
+    const authedParent = authenticateRequest(request, state);
+    const attempt = state.attempts.find((item) => item.id === audioUpload.attemptId);
+    if (!attempt) {
+      throw httpError(404, 'attempt_not_found');
+    }
+    enforceChildOwnership(state, authedParent.id, attempt.childId);
+    const audio = body.__multipart?.files?.audio;
+    if (!audio?.content?.length) {
+      throw httpError(400, 'missing_audio');
+    }
+    const stored = await storeAttemptAudio({
+      attemptId: attempt.id,
+      originalFileName: audio.fileName,
+      contentType: audio.contentType,
+      content: audio.content,
+    });
+    Object.assign(attempt, {
+      audioPath: stored.url,
+      audioUrl: stored.url,
+      audioFileName: stored.fileName,
+      audioContentType: stored.contentType,
+      audioSizeBytes: stored.sizeBytes,
+      audioUploadedAt: now(),
+    });
+    await store.save();
+    return attempt;
+  }
+
   if (method === 'POST' && path === '/assessments/mock') {
+    const authedParent = authenticateRequest(request, state);
     const attemptId = requiredBody(body, 'attemptId');
     const attempt = state.attempts.find((item) => item.id === attemptId);
     if (!attempt) {
       throw httpError(404, 'attempt_not_found');
     }
+    enforceChildOwnership(state, authedParent.id, attempt.childId);
     const result = scoreAttempt({
       pageNumber: attempt.pageNumber,
       durationSeconds: attempt.durationSeconds,
@@ -250,7 +469,11 @@ async function route(method, url, body) {
   }
 
   if (method === 'POST' && path === '/subscriptions/activate') {
+    const authedParent = authenticateRequest(request, state);
     const parentId = requiredBody(body, 'parentId');
+    if (parentId !== authedParent.id) {
+      throw httpError(403, 'access_denied');
+    }
     const activeUntil = addDays(new Date(), 30).toISOString();
     let subscription = state.subscriptions.find((item) => item.parentId === parentId);
     if (!subscription) {
@@ -277,14 +500,24 @@ async function readJson(request) {
   }
 
   const chunks = [];
+  let totalSize = 0;
   for await (const chunk of request) {
+    totalSize += chunk.length;
+    if (totalSize > MAX_BODY_SIZE) {
+      throw httpError(413, 'request_body_too_large');
+    }
     chunks.push(chunk);
   }
-  const raw = Buffer.concat(chunks).toString('utf8').trim();
+  const buffer = Buffer.concat(chunks);
+  const contentType = String(request.headers['content-type'] ?? '');
+  const boundary = multipartBoundary(contentType);
+  if (boundary) {
+    return { __multipart: parseMultipart(buffer, boundary) };
+  }
+  const raw = buffer.toString('utf8').trim();
   if (!raw) {
     return {};
   }
-  const contentType = String(request.headers['content-type'] ?? '');
   if (contentType.includes('application/x-www-form-urlencoded')) {
     return Object.fromEntries(new URLSearchParams(raw));
   }
@@ -309,13 +542,51 @@ function sendHtml(response, status, html) {
   response.end(html);
 }
 
+async function sendFile(response, filePath, contentType = 'application/octet-stream') {
+  try {
+    const content = await readFile(filePath);
+    response.writeHead(200, {
+      'content-type': contentType,
+      'cache-control': 'public, max-age=3600',
+      'access-control-allow-origin': '*',
+    });
+    response.end(content);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      sendJson(response, 404, { error: 'file_not_found' });
+      return;
+    }
+    throw error;
+  }
+}
+
 function cleanString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function truncateString(value) {
+  const str = cleanString(value);
+  return str.length > MAX_STRING_LENGTH ? str.slice(0, MAX_STRING_LENGTH) : str;
+}
+
+function clampNumber(value, min, max) {
+  const num = Number.isFinite(value) ? value : min;
+  return Math.max(min, Math.min(max, num));
+}
+
+function enforceChildOwnership(state, parentId, childId) {
+  const child = state.children.find((c) => c.id === childId);
+  if (!child || child.parentId !== parentId) {
+    throw httpError(403, 'access_denied');
+  }
 }
 
 function normalizeEmail(value) {
   const email = cleanString(value).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw httpError(400, 'invalid_email');
+  }
+  if (email.length > 254) {
     throw httpError(400, 'invalid_email');
   }
   return email;
@@ -324,6 +595,9 @@ function normalizeEmail(value) {
 function validatePassword(password) {
   if (password.length < 6) {
     throw httpError(400, 'password_min_6');
+  }
+  if (password.length > 128) {
+    throw httpError(400, 'password_too_long');
   }
 }
 
@@ -444,6 +718,137 @@ function adminPrayerAction(path) {
     return null;
   }
   return { id: decodeURIComponent(match[1]), action: match[2] };
+}
+
+function attemptAudioUpload(path) {
+  const match = /^\/attempts\/([^/]+)\/audio$/.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { attemptId: decodeURIComponent(match[1]) };
+}
+
+function multipartBoundary(contentType) {
+  const match = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
+  return match?.[1] ?? match?.[2] ?? '';
+}
+
+function parseMultipart(buffer, boundary) {
+  const payload = buffer.toString('latin1');
+  const parts = payload.split(`--${boundary}`);
+  const result = { fields: {}, files: {} };
+
+  for (let part of parts) {
+    if (!part || part === '--\r\n' || part === '--') {
+      continue;
+    }
+    if (part.startsWith('\r\n')) {
+      part = part.slice(2);
+    }
+    if (part.endsWith('\r\n')) {
+      part = part.slice(0, -2);
+    }
+    if (part.endsWith('--')) {
+      part = part.slice(0, -2);
+    }
+
+    const headerEnd = part.indexOf('\r\n\r\n');
+    if (headerEnd === -1) {
+      continue;
+    }
+    const headersRaw = part.slice(0, headerEnd);
+    let contentRaw = part.slice(headerEnd + 4);
+    if (contentRaw.endsWith('\r\n')) {
+      contentRaw = contentRaw.slice(0, -2);
+    }
+
+    const headers = parsePartHeaders(headersRaw);
+    const disposition = headers['content-disposition'] ?? '';
+    const name = dispositionValue(disposition, 'name');
+    if (!name) {
+      continue;
+    }
+    const fileName = dispositionValue(disposition, 'filename');
+    const content = Buffer.from(contentRaw, 'latin1');
+    if (fileName) {
+      result.files[name] = {
+        fileName,
+        content,
+        contentType: headers['content-type'] ?? 'application/octet-stream',
+      };
+    } else {
+      result.fields[name] = content.toString('utf8');
+    }
+  }
+
+  return result;
+}
+
+function parsePartHeaders(headersRaw) {
+  return Object.fromEntries(
+    headersRaw.split('\r\n').map((line) => {
+      const separator = line.indexOf(':');
+      if (separator === -1) {
+        return ['', ''];
+      }
+      return [
+        line.slice(0, separator).trim().toLowerCase(),
+        line.slice(separator + 1).trim(),
+      ];
+    }).filter(([key]) => key),
+  );
+}
+
+function dispositionValue(disposition, key) {
+  const match = new RegExp(`${key}="([^"]*)"`).exec(disposition);
+  return match?.[1] ?? '';
+}
+
+async function storeAttemptAudio({ attemptId, originalFileName, contentType, content }) {
+  const directory = resolve('uploads/audio');
+  await mkdir(directory, { recursive: true });
+  const extension = audioExtension(originalFileName, contentType);
+  const fileName = safeStoredFileName(`${attemptId}-${Date.now()}${extension}`);
+  await writeFile(resolve(directory, fileName), content);
+  return {
+    fileName,
+    contentType: contentType || contentTypeForAudio(fileName),
+    sizeBytes: content.length,
+    url: `/uploads/audio/${fileName}`,
+  };
+}
+
+function audioExtension(fileName = '', contentType = '') {
+  const extension = extname(fileName).toLowerCase();
+  if (['.m4a', '.mp3', '.aac', '.wav', '.webm', '.mp4'].includes(extension)) {
+    return extension;
+  }
+  if (contentType.includes('mpeg')) {
+    return '.mp3';
+  }
+  if (contentType.includes('wav')) {
+    return '.wav';
+  }
+  if (contentType.includes('webm')) {
+    return '.webm';
+  }
+  return '.m4a';
+}
+
+function safeStoredFileName(fileName) {
+  return String(fileName).replaceAll(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function contentTypeForAudio(fileName) {
+  const extension = extname(fileName).toLowerCase();
+  return {
+    '.aac': 'audio/aac',
+    '.m4a': 'audio/mp4',
+    '.mp3': 'audio/mpeg',
+    '.mp4': 'audio/mp4',
+    '.wav': 'audio/wav',
+    '.webm': 'audio/webm',
+  }[extension] ?? 'application/octet-stream';
 }
 
 function parseBoolean(value, fallback = false) {

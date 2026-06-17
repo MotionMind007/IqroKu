@@ -18,17 +18,17 @@ import 'app_shell.dart';
 import 'app_state.dart';
 
 class IqrokuApp extends StatefulWidget {
-  const IqrokuApp({
+  IqrokuApp({
     super.key,
     this.repository = const DummyIqrokuRepository(),
     this.assessmentService = const MockAssessmentService(),
-    this.authService = const AuthApiService(),
+    AuthApiService? authService,
     this.dailyPrayerApiService = const DailyPrayerApiService(),
     this.quranApiService = const QuranApiService(),
     this.islamicActivityService = const IslamicActivityService(),
     this.voiceRecordingService,
     this.audioPlaybackService,
-  });
+  }) : authService = authService ?? AuthApiService();
 
   final DummyIqrokuRepository repository;
   final AssessmentService assessmentService;
