@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -19,6 +20,17 @@ import '../models/learning_status.dart';
 import '../models/prayer_models.dart';
 import '../models/profile_models.dart';
 import '../models/quran_models.dart';
+
+
+String _generateUuid() {
+  final random = Random.secure();
+  final values = List<int>.generate(16, (_) => random.nextInt(256));
+  // Version 4 UUID
+  values[6] = (values[6] & 0x0f) | 0x40;
+  values[8] = (values[8] & 0x3f) | 0x80;
+  final hex = values.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  return '\${hex.substring(0,8)}-\${hex.substring(8,12)}-\${hex.substring(12,16)}-\${hex.substring(16,20)}-\${hex.substring(20)}';
+}
 
 class IqrokuState extends ChangeNotifier {
   IqrokuState({
@@ -890,7 +902,7 @@ class IqrokuState extends ChangeNotifier {
     _activeVoicePath = null;
 
     final attempt = LearningAttempt(
-      id: '${selectedChildId}_${DateTime.now().microsecondsSinceEpoch}',
+      id: _generateUuid(),
       childId: selectedChildId,
       bookId: selectedIqroBook,
       pageNumber: selectedIqroPage,
@@ -1047,7 +1059,7 @@ class IqrokuState extends ChangeNotifier {
     quranMemorizationRecordingSurahId = null;
 
     final attempt = LearningAttempt(
-      id: 'quran_${selectedChildId}_${DateTime.now().microsecondsSinceEpoch}',
+      id: _generateUuid(),
       childId: selectedChildId,
       bookId: quranMemorizationBookId,
       pageNumber: selectedSurahData.id,
