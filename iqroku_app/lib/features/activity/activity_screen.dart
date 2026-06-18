@@ -11,23 +11,28 @@ import '../../core/widgets/app_chrome.dart';
 import '../../models/prayer_models.dart';
 
 class ActivityScreen extends StatelessWidget {
-  const ActivityScreen({super.key, required this.state});
+  const ActivityScreen({super.key, required this.state, this.onBack});
 
   final IqrokuState state;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
     return switch (state.activityView) {
-      ActivityView.schedule => PrayerScheduleScreen(state: state),
-      ActivityView.qibla => QiblaCompassScreen(state: state),
+      ActivityView.schedule => PrayerScheduleScreen(
+        state: state,
+        onBack: onBack,
+      ),
+      ActivityView.qibla => QiblaCompassScreen(state: state, onBack: onBack),
     };
   }
 }
 
 class PrayerScheduleScreen extends StatelessWidget {
-  const PrayerScheduleScreen({super.key, required this.state});
+  const PrayerScheduleScreen({super.key, required this.state, this.onBack});
 
   final IqrokuState state;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +43,7 @@ class PrayerScheduleScreen extends StatelessWidget {
           AppTopBar(
             title: 'Jadwal Solat',
             trailing: Icons.tune,
-            onBack: state.goHome,
+            onBack: onBack ?? state.goHome,
           ),
           const SizedBox(height: 8),
           Row(
@@ -277,9 +282,10 @@ class QiblaCard extends StatelessWidget {
 }
 
 class QiblaCompassScreen extends StatelessWidget {
-  const QiblaCompassScreen({super.key, required this.state});
+  const QiblaCompassScreen({super.key, required this.state, this.onBack});
 
   final IqrokuState state;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -298,7 +304,7 @@ class QiblaCompassScreen extends StatelessWidget {
           Row(
             children: [
               IconButton(
-                onPressed: state.goHome,
+                onPressed: onBack ?? state.goHome,
                 icon: const Icon(
                   Icons.arrow_back,
                   color: Colors.white,

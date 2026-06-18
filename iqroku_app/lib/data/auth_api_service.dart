@@ -67,10 +67,9 @@ class AuthApiService {
   }
 
   Future<List<ChildProfile>> loadChildren(String parentId) async {
-    final response = await http.get(
-      _uri('/children', {'parentId': parentId}),
-      headers: _authHeaders(),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(_uri('/children', {'parentId': parentId}), headers: _authHeaders())
+        .timeout(const Duration(seconds: 15));
     final json = _decodeResponse(response);
     return (json as List<Object?>)
         .cast<Map<String, Object?>>()
@@ -79,10 +78,9 @@ class AuthApiService {
   }
 
   Future<List<RemoteIqroProgress>> loadProgress(String childId) async {
-    final response = await http.get(
-      _uri('/progress', {'childId': childId}),
-      headers: _authHeaders(),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(_uri('/progress', {'childId': childId}), headers: _authHeaders())
+        .timeout(const Duration(seconds: 15));
     final json = _decodeResponse(response);
     return (json as List<Object?>)
         .cast<Map<String, Object?>>()
@@ -177,12 +175,19 @@ class AuthApiService {
     // Add audio file
     request.files.add(await http.MultipartFile.fromPath('audio', audioPath));
 
-    final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
+    final streamedResponse = await request.send().timeout(
+      const Duration(seconds: 30),
+    );
     final response = await http.Response.fromStream(streamedResponse);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final error = response.body.isEmpty ? 'upload_failed' : jsonDecode(response.body)['error'] ?? 'upload_failed';
-      throw AuthApiException(response.statusCode, error is String ? error : 'upload_failed');
+      final error = response.body.isEmpty
+          ? 'upload_failed'
+          : jsonDecode(response.body)['error'] ?? 'upload_failed';
+      throw AuthApiException(
+        response.statusCode,
+        error is String ? error : 'upload_failed',
+      );
     }
   }
 
@@ -256,10 +261,8 @@ class AuthApiService {
     String userType = 'parent',
     String? childId,
   }) async {
-    final queryParams = <String, String>{
-      'type': userType,
-      if (childId != null) 'childId': childId,
-    };
+    final queryParams = <String, String>{'type': userType};
+    if (childId != null) queryParams['childId'] = childId;
     final result = await _get('/notifications', queryParams);
     return (result as List<Object?>).cast<Map<String, Object?>>();
   }
@@ -268,10 +271,8 @@ class AuthApiService {
     String userType = 'parent',
     String? childId,
   }) async {
-    final queryParams = <String, String>{
-      'type': userType,
-      if (childId != null) 'childId': childId,
-    };
+    final queryParams = <String, String>{'type': userType};
+    if (childId != null) queryParams['childId'] = childId;
     final result = await _get('/notifications/unread-count', queryParams);
     final map = result as Map<String, Object?>? ?? {};
     return map['count'] as int? ?? 0;
@@ -285,10 +286,9 @@ class AuthApiService {
     String userType = 'parent',
     String? childId,
   }) async {
-    await _post('/notifications/read-all', {
-      'type': userType,
-      if (childId != null) 'childId': childId,
-    });
+    final body = <String, String>{'type': userType};
+    if (childId != null) body['childId'] = childId;
+    await _post('/notifications/read-all', body);
   }
 
   Map<String, String> _authHeaders() {
@@ -307,11 +307,15 @@ class AuthApiService {
     Map<String, Object?> body, {
     bool authenticated = true,
   }) async {
-    final response = await http.post(
-      _uri(path),
-      headers: authenticated ? _authHeaders() : const {'content-type': 'application/json; charset=utf-8'},
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .post(
+          _uri(path),
+          headers: authenticated
+              ? _authHeaders()
+              : const {'content-type': 'application/json; charset=utf-8'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 15));
     return _decodeResponse(response) as Map<String, Object?>;
   }
 
@@ -319,19 +323,16 @@ class AuthApiService {
     String path,
     Map<String, Object?> body,
   ) async {
-    final response = await http.put(
-      _uri(path),
-      headers: _authHeaders(),
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .put(_uri(path), headers: _authHeaders(), body: jsonEncode(body))
+        .timeout(const Duration(seconds: 15));
     return _decodeResponse(response) as Map<String, Object?>;
   }
 
   Future<Object?> _get(String path, [Map<String, String>? query]) async {
-    final response = await http.get(
-      _uri(path, query),
-      headers: _authHeaders(),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(_uri(path, query), headers: _authHeaders())
+        .timeout(const Duration(seconds: 15));
     return _decodeResponse(response);
   }
 
@@ -485,10 +486,12 @@ class ChildAccount {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? 'Anak',
       age: (json['age'] as num?)?.toInt() ?? 7,
-      avatarAsset: json['avatarAsset'] as String? ?? 'assets/brand/male-avatar.png',
+      avatarAsset:
+          json['avatarAsset'] as String? ?? 'assets/brand/male-avatar.png',
       studyStartTime: json['studyStartTime'] as String?,
       studyEndTime: json['studyEndTime'] as String?,
-      studyDays: (json['studyDays'] as List<Object?>?)?.cast<int>() ?? [1, 2, 3, 4, 5],
+      studyDays:
+          (json['studyDays'] as List<Object?>?)?.cast<int>() ?? [1, 2, 3, 4, 5],
       repeatFromPage: (json['repeatFromPage'] as num?)?.toInt() ?? 1,
       repeatFromBook: (json['repeatFromBook'] as num?)?.toInt() ?? 1,
     );

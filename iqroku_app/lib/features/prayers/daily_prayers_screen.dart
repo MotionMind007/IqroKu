@@ -7,9 +7,10 @@ import '../../core/widgets/app_chrome.dart';
 import '../../models/prayer_models.dart';
 
 class DailyPrayersScreen extends StatelessWidget {
-  const DailyPrayersScreen({super.key, required this.state});
+  const DailyPrayersScreen({super.key, required this.state, this.onBack});
 
   final IqrokuState state;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +24,7 @@ class DailyPrayersScreen extends StatelessWidget {
             trailing: state.dailyPrayersLoading
                 ? Icons.hourglass_empty
                 : Icons.refresh,
-            onBack: state.goHome,
+            onBack: onBack ?? state.goHome,
             onTrailing: () => state.loadDailyPrayers(forceRefresh: true),
           ),
           const SizedBox(height: 14),

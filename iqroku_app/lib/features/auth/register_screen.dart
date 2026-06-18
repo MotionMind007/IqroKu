@@ -19,8 +19,11 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final nameController = TextEditingController();
   final emailController = TextEditingController();
+  final phoneController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmPasswordController = TextEditingController();
+  final pinController = TextEditingController();
+  final confirmPinController = TextEditingController();
   bool obscurePassword = true;
   bool obscureConfirm = true;
   bool agreedToTerms = false;
@@ -29,8 +32,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     nameController.dispose();
     emailController.dispose();
+    phoneController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
+    pinController.dispose();
+    confirmPinController.dispose();
     super.dispose();
   }
 
@@ -87,9 +93,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'Nama Lengkap',
                             prefixIcon: Icon(Icons.person_outline),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(14),
-                              ),
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
                             ),
                           ),
                         ),
@@ -101,9 +105,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'Email',
                             prefixIcon: Icon(Icons.mail_outline),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(14),
-                              ),
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: phoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            labelText: 'No. Telepon',
+                            prefixIcon: Icon(Icons.phone_outlined),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
                             ),
                           ),
                         ),
@@ -115,19 +129,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'Password',
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
-                              onPressed: () => setState(
-                                () => obscurePassword = !obscurePassword,
-                              ),
-                              icon: Icon(
-                                obscurePassword
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                              ),
+                              onPressed: () => setState(() => obscurePassword = !obscurePassword),
+                              icon: Icon(obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                             ),
                             border: const OutlineInputBorder(
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(14),
-                              ),
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
                             ),
                           ),
                         ),
@@ -139,19 +145,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'Konfirmasi Password',
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
-                              onPressed: () => setState(
-                                () => obscureConfirm = !obscureConfirm,
-                              ),
-                              icon: Icon(
-                                obscureConfirm
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                              ),
+                              onPressed: () => setState(() => obscureConfirm = !obscureConfirm),
+                              icon: Icon(obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                             ),
                             border: const OutlineInputBorder(
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(14),
-                              ),
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        const Divider(),
+                        const SizedBox(height: 12),
+                        Text('PIN Orang Tua (4 digit)', style: AppText.bodyStrong),
+                        const SizedBox(height: 4),
+                        Text('Digunakan untuk akses mode orang tua', style: AppText.caption),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: pinController,
+                          keyboardType: TextInputType.number,
+                          maxLength: 4,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'PIN (4 digit)',
+                            prefixIcon: Icon(Icons.pin_outlined),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: confirmPinController,
+                          keyboardType: TextInputType.number,
+                          maxLength: 4,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Konfirmasi PIN',
+                            prefixIcon: Icon(Icons.pin_outlined),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
                             ),
                           ),
                         ),
@@ -160,24 +192,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           children: [
                             Checkbox(
                               value: agreedToTerms,
-                              onChanged: (value) => setState(
-                                () => agreedToTerms = value ?? false,
-                              ),
+                              onChanged: (value) => setState(() => agreedToTerms = value ?? false),
                               activeColor: AppColors.primary,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
-                              ),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                             ),
                             Expanded(
                               child: GestureDetector(
-                                onTap: () => setState(
-                                  () => agreedToTerms = !agreedToTerms,
-                                ),
+                                onTap: () => setState(() => agreedToTerms = !agreedToTerms),
                                 child: Text(
                                   'Saya setuju dengan Syarat & Ketentuan dan Kebijakan Privasi',
-                                  style: AppText.caption.copyWith(
-                                    color: AppColors.text,
-                                  ),
+                                  style: AppText.caption.copyWith(color: AppColors.text),
                                 ),
                               ),
                             ),
@@ -194,6 +218,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   final email = emailController.text.trim();
                                   final password = passwordController.text;
                                   final confirmPassword = confirmPasswordController.text;
+                                  final pin = pinController.text;
+                                  final confirmPin = confirmPinController.text;
 
                                   if (nameController.text.trim().isEmpty) {
                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -219,11 +245,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     );
                                     return;
                                   }
+                                  if (pin.length != 4 || !RegExp(r'^\d{4}$').hasMatch(pin)) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('PIN harus 4 digit angka.')),
+                                    );
+                                    return;
+                                  }
+                                  if (pin != confirmPin) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Konfirmasi PIN belum sama.')),
+                                    );
+                                    return;
+                                  }
                                   unawaited(
                                     widget.state.registerWithEmail(
                                       name: nameController.text.trim(),
                                       email: email,
                                       password: password,
+                                      pin: pin,
                                     ),
                                   );
                                 }

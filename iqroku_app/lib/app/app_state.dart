@@ -21,7 +21,6 @@ import '../models/prayer_models.dart';
 import '../models/profile_models.dart';
 import '../models/quran_models.dart';
 
-
 String _generateUuid() {
   final random = Random.secure();
   final values = List<int>.generate(16, (_) => random.nextInt(256));
@@ -29,7 +28,7 @@ String _generateUuid() {
   values[6] = (values[6] & 0x0f) | 0x40;
   values[8] = (values[8] & 0x3f) | 0x80;
   final hex = values.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  return "${hex.substring(0,8)}-${hex.substring(8,12)}-${hex.substring(12,16)}-${hex.substring(16,20)}-${hex.substring(20)}";
+  return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}";
 }
 
 class IqrokuState extends ChangeNotifier {
@@ -106,6 +105,7 @@ class IqrokuState extends ChangeNotifier {
     }
     return assessmentService;
   }
+
   int selectedIqroBook = 1;
   int selectedIqroPage = 8;
   int selectedSurahIndex = 3;
@@ -144,6 +144,7 @@ class IqrokuState extends ChangeNotifier {
   ChildAccount? currentChildAccount;
   bool hasParentPin = false;
   bool parentPinVerified = false;
+  bool childPinVerified = false;
   int unreadNotifications = 0;
 
   ChildProfile get selectedChild {
@@ -176,6 +177,7 @@ class IqrokuState extends ChangeNotifier {
     // In real implementation, this should check the backend
     return currentChildAccount != null;
   }
+
   String get subscriptionRenewalLabel {
     final activatedAt = subscriptionActivatedAt;
     if (!familyPlusActive || activatedAt == null) {
@@ -596,6 +598,7 @@ class IqrokuState extends ChangeNotifier {
     required String name,
     required String email,
     required String password,
+    String? pin,
   }) async {
     if (name.trim().isEmpty || email.trim().isEmpty || password.isEmpty) {
       authError = 'Nama, email, dan password wajib diisi.';
@@ -614,6 +617,15 @@ class IqrokuState extends ChangeNotifier {
         password: password,
       );
       await _finishAuth(result);
+
+      // Set parent PIN if provided
+      if (pin != null && pin.isNotEmpty) {
+        try {
+          await setParentPin(pin);
+        } catch (e) {
+          debugPrint('Failed to set PIN during registration: $e');
+        }
+      }
     } catch (error) {
       authError = _authErrorMessage(error);
     } finally {
@@ -680,6 +692,10 @@ class IqrokuState extends ChangeNotifier {
     String? name,
     int? age,
     String avatarAsset = AppAssets.avatarMale,
+    String? childPin,
+    String? studyStartTime,
+    String? studyEndTime,
+    List<int>? studyDays,
   }) async {
     final cleanName = name?.trim();
     if (cleanName == null || cleanName.isEmpty) {
@@ -709,6 +725,29 @@ class IqrokuState extends ChangeNotifier {
               age: age ?? 7,
               avatarAsset: avatarAsset,
             );
+
+      // Set child PIN if provided
+      if (childPin != null && childPin.isNotEmpty) {
+        try {
+          await authService.setChildPin(child.id, childPin);
+        } catch (e) {
+          debugPrint('Failed to set child PIN: $e');
+        }
+      }
+
+      // Set child schedule if provided
+      if (studyStartTime != null && studyEndTime != null) {
+        try {
+          await authService.setChildSchedule(
+            childId: child.id,
+            startTime: studyStartTime,
+            endTime: studyEndTime,
+            days: studyDays ?? [1, 2, 3, 4, 5],
+          );
+        } catch (e) {
+          debugPrint('Failed to set child schedule: $e');
+        }
+      }
 
       if (childProfiles.isEmpty) {
         childProfiles.add(child);
@@ -799,6 +838,7 @@ class IqrokuState extends ChangeNotifier {
     currentMode = AppMode.none;
     currentChildAccount = null;
     parentPinVerified = false;
+    childPinVerified = false;
     _persist();
     notifyListeners();
   }
@@ -807,12 +847,18 @@ class IqrokuState extends ChangeNotifier {
 
   void selectMode(AppMode mode) {
     currentMode = mode;
+    if (mode != AppMode.child) {
+      currentChildAccount = null;
+      childPinVerified = false;
+    }
     notifyListeners();
   }
 
   void enterParentMode() {
     currentMode = AppMode.parent;
     parentPinVerified = false; // Will be set to true after PIN verification
+    currentChildAccount = null;
+    childPinVerified = false;
     notifyListeners();
   }
 
@@ -825,6 +871,7 @@ class IqrokuState extends ChangeNotifier {
     currentMode = AppMode.child;
     currentChildAccount = child;
     selectedChildId = child.id;
+    childPinVerified = true;
     notifyListeners();
   }
 
@@ -832,12 +879,30 @@ class IqrokuState extends ChangeNotifier {
     currentMode = AppMode.none;
     currentChildAccount = null;
     parentPinVerified = false;
+    childPinVerified = false;
     notifyListeners();
   }
 
   void selectChildForMode(String childId) {
     selectedChildId = childId;
-    // Will show PIN entry for this child
+    // Find the child and set as currentChildAccount
+    final child = childProfiles.firstWhere(
+      (c) => c.id == childId,
+      orElse: () => childProfiles.first,
+    );
+    // Create a ChildAccount from ChildProfile
+    currentChildAccount = ChildAccount(
+      id: child.id,
+      name: child.name,
+      age: child.age,
+      avatarAsset: child.avatarAsset,
+    );
+    childPinVerified = false;
+    notifyListeners();
+  }
+
+  void markChildPinSet() {
+    // Child PIN was just set, proceed to learning mode
     notifyListeners();
   }
 
@@ -856,9 +921,14 @@ class IqrokuState extends ChangeNotifier {
 
   Future<bool> verifyParentPin(String pin) async {
     try {
-      return await authService.verifyParentPin(pin);
+      final result = await authService.verifyParentPin(pin);
+      return result;
     } catch (e) {
       debugPrint('Failed to verify parent PIN: $e');
+      // If pin_not_set, return false but log the issue
+      if (e.toString().contains('pin_not_set')) {
+        debugPrint('Parent PIN is not set in database');
+      }
       return false;
     }
   }
@@ -888,7 +958,10 @@ class IqrokuState extends ChangeNotifier {
 
   // --- Notifications ---
 
-  Future<void> loadUnreadCount({String userType = 'parent', String? childId}) async {
+  Future<void> loadUnreadCount({
+    String userType = 'parent',
+    String? childId,
+  }) async {
     try {
       unreadNotifications = await authService.getUnreadCount(
         userType: userType,
@@ -912,7 +985,10 @@ class IqrokuState extends ChangeNotifier {
     }
   }
 
-  Future<void> markAllNotificationsRead({String userType = 'parent', String? childId}) async {
+  Future<void> markAllNotificationsRead({
+    String userType = 'parent',
+    String? childId,
+  }) async {
     try {
       await authService.markAllNotificationsRead(
         userType: userType,
@@ -1821,7 +1897,9 @@ class IqrokuState extends ChangeNotifier {
 
       // Upload audio if available
       if (attempt.audioPath != null && attempt.audioPath!.isNotEmpty) {
-        final uploadId = remoteAttempt.id.isNotEmpty ? remoteAttempt.id : attempt.id;
+        final uploadId = remoteAttempt.id.isNotEmpty
+            ? remoteAttempt.id
+            : attempt.id;
         try {
           await authService.uploadAudio(
             attemptId: uploadId,

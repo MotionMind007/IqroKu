@@ -237,7 +237,7 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
           widget.state.enterParentDashboard();
         } else {
           setState(() {
-            _error = 'PIN salah';
+            _error = 'PIN salah. Silakan coba lagi.';
             _pin.clear();
           });
         }
@@ -245,14 +245,21 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
         final success = await widget.state.childLogin(pin);
         if (!success) {
           setState(() {
-            _error = 'PIN salah';
+            _error = 'PIN salah. Silakan coba lagi.';
             _pin.clear();
           });
         }
       }
     } catch (e) {
+      debugPrint('PIN verification error: $e');
       setState(() {
-        _error = 'Terjadi kesalahan';
+        if (e.toString().contains('pin_not_set')) {
+          _error = 'PIN belum diset. Silakan hubungi orang tua.';
+        } else if (e.toString().contains('network')) {
+          _error = 'Gagal terhubung ke server.';
+        } else {
+          _error = 'Terjadi kesalahan. Silakan coba lagi.';
+        }
         _pin.clear();
       });
     } finally {

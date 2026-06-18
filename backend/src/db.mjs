@@ -261,6 +261,14 @@ export async function findAttemptById(attemptId) {
   return row ? rowToAttempt(row) : null;
 }
 
+export async function findAttemptByAudioFileName(fileName) {
+  const row = await queryOne(
+    'SELECT * FROM attempts WHERE audio_file_name = $1',
+    [fileName],
+  );
+  return row ? rowToAttempt(row) : null;
+}
+
 export async function createAttempt({ id, childId, bookId, pageNumber, durationSeconds, audioPath }) {
   const row = await queryOne(
     `INSERT INTO attempts (id, child_id, book_id, page_number, duration_seconds, audio_path)
@@ -668,6 +676,10 @@ export async function getUnreadNotifications(userId, userType) {
     [userId, userType],
   );
   return rows;
+}
+
+export async function findNotificationById(notificationId) {
+  return queryOne('SELECT * FROM notifications WHERE id = $1', [notificationId]);
 }
 
 export async function markNotificationRead(notificationId) {

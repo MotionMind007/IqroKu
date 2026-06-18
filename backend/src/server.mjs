@@ -21,6 +21,12 @@ const MIMO_ASR_MODEL = process.env.MIMO_ASR_MODEL || 'mimo-v2.5-asr';
 const MIMO_PRO_MODEL = process.env.MIMO_PRO_MODEL || 'mimo-v2.5-pro';
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://iqroku.motionmind.store';
+const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN === 'true';
+
+// Google Sign-In: the audience the client's idToken must be issued for.
+// Defaults to the serverClientId used by the Flutter app.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID
+  || '55523615051-81vpiqk0jiamubrnjb0ss4i6irpifm2t.apps.googleusercontent.com';
 
 const port = Number(process.env.PORT ?? 8787);
 const ADMIN_TOKEN = process.env.IQROKU_ADMIN_TOKEN || 'admin-dev-token';
@@ -103,6 +109,54 @@ async function authenticateRequest(request) {
   throw httpError(401, 'invalid_auth_token');
 }
 
+// Constant-time string comparison to avoid leaking the admin token via timing.
+function safeStrEqual(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) {
+    // Compare against itself to keep the timing roughly constant, then fail.
+    timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
+}
+
+// Verify a Google Sign-In ID token with Google and return its trusted claims.
+// Never trust email/sub coming from the request body — only what Google signs.
+async function verifyGoogleIdToken(idToken) {
+  if (!idToken) {
+    throw httpError(400, 'missing_id_token');
+  }
+  let payload;
+  try {
+    const res = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+    );
+    if (!res.ok) {
+      throw httpError(401, 'invalid_google_token');
+    }
+    payload = await res.json();
+  } catch (err) {
+    if (err.statusCode) throw err;
+    throw httpError(502, 'google_verification_failed');
+  }
+
+  // aud must match our client id; iss must be Google; email must be present+verified.
+  if (payload.aud !== GOOGLE_CLIENT_ID) {
+    throw httpError(401, 'google_token_wrong_audience');
+  }
+  if (payload.iss !== 'accounts.google.com' && payload.iss !== 'https://accounts.google.com') {
+    throw httpError(401, 'google_token_wrong_issuer');
+  }
+  if (payload.exp && Number(payload.exp) * 1000 < Date.now()) {
+    throw httpError(401, 'google_token_expired');
+  }
+  if (!payload.email || payload.email_verified === 'false' || payload.email_verified === false) {
+    throw httpError(401, 'google_email_unverified');
+  }
+  return { email: String(payload.email), sub: String(payload.sub), name: payload.name };
+}
+
 function authenticateAdmin(request) {
   const authHeader = request.headers?.['authorization'] ?? '';
   const token = authHeader.startsWith('Bearer ')
@@ -113,13 +167,28 @@ function authenticateAdmin(request) {
   const cookie = request.headers?.['cookie'] ?? '';
   const cookieToken = cookie.match(/admin_token=([^;]+)/)?.[1] ?? '';
 
-  if (token !== ADMIN_TOKEN && cookieToken !== ADMIN_TOKEN) {
+  if (!safeStrEqual(token, ADMIN_TOKEN) && !safeStrEqual(cookieToken, ADMIN_TOKEN)) {
     throw httpError(403, 'admin_access_denied');
   }
 }
 
+// Behind a reverse proxy (nginx) every request's socket address is the proxy
+// itself, so rate limiting on remoteAddress buckets ALL users into one counter.
+// Trust the first hop in X-Forwarded-For (set by our nginx) for the real IP.
+const TRUST_PROXY = (process.env.TRUST_PROXY ?? 'true') !== 'false';
+function getClientIp(request) {
+  if (TRUST_PROXY) {
+    const fwd = request.headers?.['x-forwarded-for'];
+    if (typeof fwd === 'string' && fwd.length > 0) {
+      const first = fwd.split(',')[0].trim();
+      if (first) return first;
+    }
+  }
+  return request.socket?.remoteAddress ?? 'unknown';
+}
+
 const server = createServer(async (request, response) => {
-  const clientIp = request.socket?.remoteAddress ?? 'unknown';
+  const clientIp = getClientIp(request);
   const startTime = Date.now();
   try {
     const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
@@ -210,7 +279,7 @@ async function route(method, url, body, request) {
 
   if (method === 'POST' && path === '/admin/login') {
     const token = cleanString(body.token);
-    if (token !== ADMIN_TOKEN) {
+    if (!safeStrEqual(token, ADMIN_TOKEN)) {
       return { html: renderAdminLogin('Token salah. Silakan coba lagi.') };
     }
     return {
@@ -257,7 +326,13 @@ async function route(method, url, body, request) {
   }
 
   if (method === 'GET' && path.startsWith('/uploads/audio/')) {
+    const authedParent = await authenticateRequest(request);
     const fileName = safeStoredFileName(path.split('/').pop() ?? '');
+    const attempt = await db.findAttemptByAudioFileName(fileName);
+    if (!attempt) {
+      throw httpError(404, 'file_not_found');
+    }
+    await enforceChildOwnership(authedParent.id, attempt.childId);
     return {
       filePath: resolve('uploads/audio', fileName),
       contentType: contentTypeForAudio(fileName),
@@ -297,13 +372,18 @@ async function route(method, url, body, request) {
   }
 
   if (method === 'POST' && path === '/auth/demo-login') {
+    if (!ENABLE_DEMO_LOGIN) {
+      throw httpError(404, 'not_found');
+    }
     const email = cleanString(body.email) || 'parent@iqroku.local';
     const name = cleanString(body.name) || 'Orang Tua';
-    let parent = await db.findParentByEmail(email);
-    if (!parent) {
-      parent = await db.createParent({ id: randomUUID(), email, name });
+    const demoEmail = normalizeDemoEmail(email);
+    const existing = await db.findParentByEmail(demoEmail);
+    if (existing) {
+      throw httpError(409, 'demo_account_exists');
     }
-    const token = `demo_${parent.id}`;
+    const parent = await db.createParent({ id: randomUUID(), email: demoEmail, name });
+    const token = createSessionToken(parent.id);
     await storeSession(token, parent.id);
     return { parent: publicParent(parent), session: { token, type: 'demo' } };
   }
@@ -354,12 +434,16 @@ async function route(method, url, body, request) {
 
   if (method === 'POST' && path === '/auth/google') {
     const idToken = cleanString(requiredBody(body, 'idToken'));
-    const email = normalizeEmail(requiredBody(body, 'email'));
-    const name = truncateString(cleanString(body.name) || 'User');
-    const googleId = cleanString(body.googleId);
+
+    // Verify the token with Google and derive identity from the SIGNED claims,
+    // not from anything the client sent in the body.
+    const claims = await verifyGoogleIdToken(idToken);
+    const email = normalizeEmail(claims.email);
+    const googleId = cleanString(claims.sub);
+    const name = truncateString(cleanString(claims.name || body.name) || 'User');
 
     if (!googleId) {
-      throw httpError(400, 'missing_google_id');
+      throw httpError(401, 'invalid_google_token');
     }
 
     // Try to find existing user by email
@@ -395,7 +479,8 @@ async function route(method, url, body, request) {
     if (parentId !== authedParent.id) {
       throw httpError(403, 'access_denied');
     }
-    return db.findChildrenByParent(parentId);
+    const children = await db.findChildrenByParent(parentId);
+    return children.map(publicChild);
   }
 
   if (method === 'POST' && path === '/children') {
@@ -412,7 +497,7 @@ async function route(method, url, body, request) {
       age: clampNumber(Number(body.age ?? 7), 1, 18),
       avatarAsset: cleanString(body.avatarAsset) || 'assets/brand/male-avatar.png',
     });
-    return { status: 201, body: child };
+    return { status: 201, body: publicChild(child) };
   }
 
   if (method === 'GET' && path === '/progress') {
@@ -649,12 +734,13 @@ async function route(method, url, body, request) {
     if (!valid) {
       throw httpError(401, 'invalid_pin');
     }
-    return { valid: true, child };
+    return { valid: true, child: publicChild(child) };
   }
 
-  if (method === 'POST' && path === '/children/:id/set-pin') {
+  const childPinAction = childSetPinAction(path);
+  if (method === 'POST' && childPinAction) {
     const authedParent = await authenticateRequest(request);
-    const childId = path.split('/')[2];
+    const childId = childPinAction.id;
     await enforceChildOwnership(authedParent.id, childId);
     const pin = cleanString(body.pin);
     if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
@@ -662,18 +748,19 @@ async function route(method, url, body, request) {
     }
     const pinHash = hashPassword(pin);
     const child = await db.setChildPin(childId, pinHash);
-    return { ok: true, child };
+    return { ok: true, child: publicChild(child) };
   }
 
-  if (method === 'POST' && path === '/children/:id/schedule') {
+  const childSchedule = childScheduleAction(path);
+  if (method === 'POST' && childSchedule) {
     const authedParent = await authenticateRequest(request);
-    const childId = path.split('/')[2];
+    const childId = childSchedule.id;
     await enforceChildOwnership(authedParent.id, childId);
     const startTime = cleanString(body.startTime);
     const endTime = cleanString(body.endTime);
     const days = Array.isArray(body.days) ? body.days : [1, 2, 3, 4, 5];
     const child = await db.updateChildSchedule(childId, startTime, endTime, days);
-    return { ok: true, child };
+    return { ok: true, child: publicChild(child) };
   }
 
   // --- Review System ---
@@ -773,9 +860,20 @@ async function route(method, url, body, request) {
     return { count: await db.countUnreadNotifications(authedParent.id, 'parent') };
   }
 
-  if (method === 'POST' && path === '/notifications/:id/read') {
-    const notificationId = path.split('/')[2];
-    await db.markNotificationRead(notificationId);
+  const notificationRead = notificationReadAction(path);
+  if (method === 'POST' && notificationRead) {
+    const authedParent = await authenticateRequest(request);
+    const notification = await db.findNotificationById(notificationRead.id);
+    if (!notification) {
+      throw httpError(404, 'notification_not_found');
+    }
+    // Verify the notification belongs to this parent, or to one of their children.
+    if (notification.user_type === 'child') {
+      await enforceChildOwnership(authedParent.id, notification.user_id);
+    } else if (notification.user_id !== authedParent.id) {
+      throw httpError(403, 'access_denied');
+    }
+    await db.markNotificationRead(notification.id);
     return { ok: true };
   }
 
@@ -862,7 +960,7 @@ async function sendFile(response, filePath, contentType = 'application/octet-str
     const content = await readFile(filePath);
     response.writeHead(200, {
       'content-type': contentType,
-      'cache-control': 'public, max-age=3600',
+      'cache-control': 'private, no-store',
       'access-control-allow-origin': ALLOWED_ORIGIN,
     });
     response.end(content);
@@ -907,6 +1005,14 @@ function normalizeEmail(value) {
   return email;
 }
 
+function normalizeDemoEmail(value) {
+  const email = normalizeEmail(value);
+  if (!email.endsWith('@iqroku.local')) {
+    throw httpError(400, 'demo_email_must_use_iqroku_local');
+  }
+  return email;
+}
+
 function validatePassword(password) {
   if (password.length < 6) {
     throw httpError(400, 'password_min_6');
@@ -937,8 +1043,17 @@ function createSessionToken(parentId) {
 }
 
 function publicParent(parent) {
-  const { passwordHash, ...safeParent } = parent;
+  const { passwordHash, pinHash, ...safeParent } = parent;
   return safeParent;
+}
+
+function publicChild(child) {
+  if (!child) return child;
+  const { pinHash, ...safeChild } = child;
+  return {
+    ...safeChild,
+    hasPin: Boolean(pinHash),
+  };
 }
 
 function requiredBody(body, key) {
@@ -1233,6 +1348,30 @@ function attemptAudioUpload(path) {
     return null;
   }
   return { attemptId: decodeURIComponent(match[1]) };
+}
+
+function childSetPinAction(path) {
+  const match = /^\/children\/([^/]+)\/set-pin$/.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { id: decodeURIComponent(match[1]) };
+}
+
+function childScheduleAction(path) {
+  const match = /^\/children\/([^/]+)\/schedule$/.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { id: decodeURIComponent(match[1]) };
+}
+
+function notificationReadAction(path) {
+  const match = /^\/notifications\/([^/]+)\/read$/.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { id: decodeURIComponent(match[1]) };
 }
 
 function multipartBoundary(contentType) {

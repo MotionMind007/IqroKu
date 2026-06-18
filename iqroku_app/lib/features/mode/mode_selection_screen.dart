@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../core/assets/app_assets.dart';
 import '../../core/theme/app_theme.dart';
 
 class ModeSelectionScreen extends StatelessWidget {
@@ -21,7 +22,7 @@ class ModeSelectionScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Image.asset(
-                    'assets/brand/app_logo.png',
+                    AppAssets.appLogo,
                     width: 180,
                     fit: BoxFit.contain,
                   ),

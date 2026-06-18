@@ -28,17 +28,33 @@ class TestFlutterSecureStoragePlatform extends FlutterSecureStoragePlatform {
   final Map<String, String> data;
 
   @override
-  Future<bool> containsKey({required String key, required Map<String, String> options}) async => data.containsKey(key);
+  Future<bool> containsKey({
+    required String key,
+    required Map<String, String> options,
+  }) async => data.containsKey(key);
   @override
-  Future<void> delete({required String key, required Map<String, String> options}) async => data.remove(key);
+  Future<void> delete({
+    required String key,
+    required Map<String, String> options,
+  }) async => data.remove(key);
   @override
-  Future<void> deleteAll({required Map<String, String> options}) async => data.clear();
+  Future<void> deleteAll({required Map<String, String> options}) async =>
+      data.clear();
   @override
-  Future<String?> read({required String key, required Map<String, String> options}) async => data[key];
+  Future<String?> read({
+    required String key,
+    required Map<String, String> options,
+  }) async => data[key];
   @override
-  Future<Map<String, String>> readAll({required Map<String, String> options}) async => data;
+  Future<Map<String, String>> readAll({
+    required Map<String, String> options,
+  }) async => data;
   @override
-  Future<void> write({required String key, required String value, required Map<String, String> options}) async => data[key] = value;
+  Future<void> write({
+    required String key,
+    required String value,
+    required Map<String, String> options,
+  }) async => data[key] = value;
 }
 
 void main() {
@@ -46,7 +62,9 @@ void main() {
 
   setUp(() {
     secureData = {};
-    FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(secureData);
+    FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
+      secureData,
+    );
   });
 
   testWidgets('IqroKu starts from welcome and reaches learning tab', (
@@ -105,6 +123,14 @@ void main() {
     expect(find.text('Tambah Profil Anak'), findsOneWidget);
 
     await tester.enterText(find.widgetWithText(TextField, 'Nama Anak'), 'Nedy');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'PIN Anak (4 digit)'),
+      '1234',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Konfirmasi PIN'),
+      '1234',
+    );
     await tester.pump();
     final saveChildButton = find.widgetWithText(
       FilledButton,
@@ -118,7 +144,25 @@ void main() {
     await tester.tap(saveChildButton);
     await tester.pumpAndSettle();
 
+    expect(find.text('Pilih Mode'), findsOneWidget);
+
+    await tester.tap(find.text('Mode Anak'));
+    await tester.pumpAndSettle();
+
     expect(find.text('Nedy'), findsOneWidget);
+    expect(find.text('Pilih Profil Anak'), findsOneWidget);
+
+    await tester.tap(find.text('Nedy'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Masukkan PIN Nedy'), findsOneWidget);
+
+    for (final digit in ['1', '2', '3', '4']) {
+      await tester.tap(find.text(digit).last);
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
     expect(find.text('Menu Utama'), findsOneWidget);
 
     await tester.tap(find.text('Belajar'));
@@ -418,6 +462,7 @@ class FakeAuthApiService extends AuthApiService {
     email: 'parent@iqroku.test',
   );
   final children = <ChildProfile>[];
+  final childPins = <String, String>{};
   final progress = <String, List<RemoteIqroProgress>>{};
 
   @override
@@ -464,6 +509,25 @@ class FakeAuthApiService extends AuthApiService {
     );
     children.add(child);
     return child;
+  }
+
+  @override
+  Future<void> setChildPin(String childId, String pin) async {
+    childPins[childId] = pin;
+  }
+
+  @override
+  Future<ChildAccount> childLogin(String childId, String pin) async {
+    if (childPins[childId] != pin) {
+      throw const AuthApiException(401, 'invalid_pin');
+    }
+    final child = children.firstWhere((child) => child.id == childId);
+    return ChildAccount(
+      id: child.id,
+      name: child.name,
+      age: child.age,
+      avatarAsset: child.avatarAsset,
+    );
   }
 }
 

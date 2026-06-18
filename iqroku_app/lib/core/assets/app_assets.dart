@@ -8,6 +8,9 @@ class AppAssets {
   static const homeMosque = 'assets/brand/home_mosque.png';
   static const avatarMale = 'assets/brand/male-avatar.png';
   static const avatarFemale = 'assets/brand/female-avatar.png';
+  static const parentAvatar = 'assets/brand/parent.png';
+  static const boyKid = 'assets/brand/boykids.png';
+  static const femaleKid = 'assets/brand/femalekids.png';
 
   static const home = 'assets/icons/home.png';
   static const navHome = 'assets/icons/nav_home.png';

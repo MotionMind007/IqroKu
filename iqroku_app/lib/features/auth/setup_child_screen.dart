@@ -19,7 +19,12 @@ class SetupChildScreen extends StatefulWidget {
 class _SetupChildScreenState extends State<SetupChildScreen> {
   final nameController = TextEditingController();
   final ageController = TextEditingController();
+  final pinController = TextEditingController();
+  final confirmPinController = TextEditingController();
   int selectedAvatar = 0;
+  TimeOfDay startTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay endTime = const TimeOfDay(hour: 10, minute: 0);
+  final Set<int> selectedDays = {1, 2, 3, 4, 5}; // Mon-Fri
 
   static const _avatars = [
     _AvatarOption(
@@ -38,6 +43,8 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
   void dispose() {
     nameController.dispose();
     ageController.dispose();
+    pinController.dispose();
+    confirmPinController.dispose();
     super.dispose();
   }
 
@@ -159,9 +166,7 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
                             hintText: 'Contoh: Nedy',
                             prefixIcon: Icon(Icons.person_outline),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(14),
-                              ),
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
                             ),
                           ),
                           onChanged: (_) => setState(() {}),
@@ -175,9 +180,7 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
                             hintText: 'Contoh: 7',
                             prefixIcon: Icon(Icons.cake_outlined),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(14),
-                              ),
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
                             ),
                           ),
                         ),
@@ -186,10 +189,85 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
                           alignment: Alignment.centerLeft,
                           child: Text(
                             '* Usia opsional, bisa diisi nanti',
-                            style: AppText.mini.copyWith(
-                              color: AppColors.muted,
+                            style: AppText.mini.copyWith(color: AppColors.muted),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        const Divider(),
+                        const SizedBox(height: 12),
+                        Text('PIN Anak (4 digit)', style: AppText.bodyStrong),
+                        const SizedBox(height: 4),
+                        Text('PIN untuk akses mode anak', style: AppText.caption),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: pinController,
+                          keyboardType: TextInputType.number,
+                          maxLength: 4,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'PIN Anak (4 digit)',
+                            prefixIcon: Icon(Icons.pin_outlined),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
                             ),
                           ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: confirmPinController,
+                          keyboardType: TextInputType.number,
+                          maxLength: 4,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Konfirmasi PIN',
+                            prefixIcon: Icon(Icons.pin_outlined),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        const Divider(),
+                        const SizedBox(height: 12),
+                        Text('Jadwal Belajar', style: AppText.bodyStrong),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  final time = await showTimePicker(context: context, initialTime: startTime);
+                                  if (time != null) setState(() => startTime = time);
+                                },
+                                icon: const Icon(Icons.access_time),
+                                label: Text('Mulai: ${startTime.format(context)}'),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  final time = await showTimePicker(context: context, initialTime: endTime);
+                                  if (time != null) setState(() => endTime = time);
+                                },
+                                icon: const Icon(Icons.access_time),
+                                label: Text('Selesai: ${endTime.format(context)}'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            _buildDayChip(1, 'Sen'),
+                            _buildDayChip(2, 'Sel'),
+                            _buildDayChip(3, 'Rab'),
+                            _buildDayChip(4, 'Kam'),
+                            _buildDayChip(5, 'Jum'),
+                            _buildDayChip(6, 'Sab'),
+                            _buildDayChip(7, 'Min'),
+                          ],
                         ),
                       ],
                     ),
@@ -202,15 +280,39 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
                     const SizedBox(height: 12),
                   ],
                   FilledButton(
-                    onPressed:
-                        nameController.text.trim().isNotEmpty && !isLoading
-                        ? () => unawaited(
-                            widget.state.completeSetup(
-                              name: nameController.text,
-                              age: int.tryParse(ageController.text),
-                              avatarAsset: selectedAvatarOption.asset,
-                            ),
-                          )
+                    onPressed: nameController.text.trim().isNotEmpty && !isLoading
+                        ? () {
+                            final pin = pinController.text;
+                            final confirmPin = confirmPinController.text;
+
+                            // Validate PIN
+                            if (pin.isNotEmpty) {
+                              if (pin.length != 4 || !RegExp(r'^\d{4}$').hasMatch(pin)) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('PIN harus 4 digit angka.')),
+                                );
+                                return;
+                              }
+                              if (pin != confirmPin) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Konfirmasi PIN belum sama.')),
+                                );
+                                return;
+                              }
+                            }
+
+                            unawaited(
+                              widget.state.completeSetup(
+                                name: nameController.text,
+                                age: int.tryParse(ageController.text),
+                                avatarAsset: selectedAvatarOption.asset,
+                                childPin: pin.isNotEmpty ? pin : null,
+                                studyStartTime: '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
+                                studyEndTime: '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
+                                studyDays: selectedDays.toList()..sort(),
+                              ),
+                            );
+                          }
                         : null,
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 54),
@@ -248,6 +350,23 @@ class _SetupChildScreenState extends State<SetupChildScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildDayChip(int day, String label) {
+    final isSelected = selectedDays.contains(day);
+    return FilterChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (value) {
+        setState(() {
+          if (value) {
+            selectedDays.add(day);
+          } else {
+            selectedDays.remove(day);
+          }
+        });
+      },
     );
   }
 }
