@@ -40,6 +40,39 @@ class AuthApiService {
     return AuthResult.fromJson(json);
   }
 
+  Future<ParentAccount> verifyEmail(String token) async {
+    final json = await _post('/auth/verify-email', {
+      'token': token,
+    }, authenticated: false);
+    return ParentAccount.fromJson(json['parent'] as Map<String, Object?>);
+  }
+
+  Future<AuthFlowInfo?> resendVerification(String email) async {
+    final json = await _post('/auth/resend-verification', {
+      'email': email,
+    }, authenticated: false);
+    final flow = json['emailVerification'];
+    return flow is Map<String, Object?> ? AuthFlowInfo.fromJson(flow) : null;
+  }
+
+  Future<AuthFlowInfo?> requestPasswordReset(String email) async {
+    final json = await _post('/auth/password-reset/request', {
+      'email': email,
+    }, authenticated: false);
+    final flow = json['passwordReset'];
+    return flow is Map<String, Object?> ? AuthFlowInfo.fromJson(flow) : null;
+  }
+
+  Future<void> confirmPasswordReset({
+    required String token,
+    required String password,
+  }) async {
+    await _post('/auth/password-reset/confirm', {
+      'token': token,
+      'password': password,
+    }, authenticated: false);
+  }
+
   Future<AuthResult> login({
     required String email,
     required String password,
@@ -413,10 +446,15 @@ class RemoteIqroProgress {
 }
 
 class AuthResult {
-  const AuthResult({required this.parent, required this.sessionToken});
+  const AuthResult({
+    required this.parent,
+    required this.sessionToken,
+    this.emailVerification,
+  });
 
   final ParentAccount parent;
   final String sessionToken;
+  final AuthFlowInfo? emailVerification;
 
   static AuthResult fromJson(Map<String, Object?> json) {
     final parentJson = json['parent'] as Map<String, Object?>;
@@ -424,6 +462,31 @@ class AuthResult {
     return AuthResult(
       parent: ParentAccount.fromJson(parentJson),
       sessionToken: sessionJson['token'] as String? ?? '',
+      emailVerification: json['emailVerification'] is Map<String, Object?>
+          ? AuthFlowInfo.fromJson(
+              json['emailVerification'] as Map<String, Object?>,
+            )
+          : null,
+    );
+  }
+}
+
+class AuthFlowInfo {
+  const AuthFlowInfo({
+    this.required = false,
+    this.expiresAt,
+    this.devToken,
+  });
+
+  final bool required;
+  final String? expiresAt;
+  final String? devToken;
+
+  static AuthFlowInfo fromJson(Map<String, Object?> json) {
+    return AuthFlowInfo(
+      required: json['required'] as bool? ?? false,
+      expiresAt: json['expiresAt'] as String?,
+      devToken: json['devToken'] as String?,
     );
   }
 }

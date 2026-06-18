@@ -154,7 +154,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed: () {},
+                            onPressed: isLoading
+                                ? null
+                                : () => widget.state.goToPasswordReset(
+                                      email: emailController.text,
+                                    ),
                             child: const Text('Lupa password?'),
                           ),
                         ),

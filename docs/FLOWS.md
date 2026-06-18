@@ -15,6 +15,20 @@ Catatan:
 - Google login hanya tersedia di halaman login awal.
 - Halaman buat akun tidak menampilkan tombol Google.
 - Legal document ada di `iqroku_app/lib/core/widgets/legal_documents.dart`.
+- Setelah register, user diarahkan ke layar verifikasi email. Selama `REQUIRE_EMAIL_VERIFICATION=false`, user masih bisa lanjut setup dulu.
+
+## Flow Forgot Password
+
+1. User membuka `Lupa password?` dari halaman login.
+2. User memasukkan email.
+3. Backend membuat token reset sekali pakai.
+4. User memasukkan kode reset dan password baru.
+5. Setelah berhasil, user kembali ke halaman login.
+
+Catatan:
+
+- Request reset selalu memberi response sukses agar tidak membocorkan email mana yang terdaftar.
+- Saat production, kode dikirim lewat email provider. Saat local, kode bisa dilihat dari response/log development.
 
 ## Mode Anak dan Mode Orang Tua
 

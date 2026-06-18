@@ -51,6 +51,11 @@ void main() {
           'email': 'ahmad@example.com',
         },
         'session': {'token': 'session_abc123', 'type': 'password'},
+        'emailVerification': {
+          'required': true,
+          'expiresAt': '2026-06-19T00:00:00.000Z',
+          'devToken': 'verify-token',
+        },
       };
 
       final result = AuthResult.fromJson(json);
@@ -58,6 +63,8 @@ void main() {
       expect(result.parent.id, 'parent-1');
       expect(result.parent.name, 'Ahmad');
       expect(result.sessionToken, 'session_abc123');
+      expect(result.emailVerification?.required, isTrue);
+      expect(result.emailVerification?.devToken, 'verify-token');
     });
 
     test('fromJson with missing session token', () {
@@ -73,6 +80,20 @@ void main() {
       final result = AuthResult.fromJson(json);
 
       expect(result.sessionToken, '');
+    });
+  });
+
+  group('AuthFlowInfo', () {
+    test('fromJson uses optional dev token', () {
+      final flow = AuthFlowInfo.fromJson({
+        'required': true,
+        'expiresAt': '2026-06-19T00:00:00.000Z',
+        'devToken': 'token-dev',
+      });
+
+      expect(flow.required, isTrue);
+      expect(flow.expiresAt, '2026-06-19T00:00:00.000Z');
+      expect(flow.devToken, 'token-dev');
     });
   });
 

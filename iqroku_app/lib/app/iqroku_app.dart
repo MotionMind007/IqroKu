@@ -10,7 +10,9 @@ import '../data/quran_api_service.dart';
 import '../data/voice_recording_service.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/onboarding_screen.dart';
+import '../features/auth/password_reset_screen.dart';
 import '../features/auth/register_screen.dart';
+import '../features/auth/email_verification_screen.dart';
 import '../features/auth/setup_child_screen.dart';
 import '../features/auth/welcome_screen.dart';
 import '../features/mode/mode_selection_screen.dart';
@@ -85,6 +87,9 @@ class _IqrokuAppState extends State<IqrokuApp> {
             AppLaunchStage.welcome => WelcomeScreen(state: state),
             AppLaunchStage.login => LoginScreen(state: state),
             AppLaunchStage.register => RegisterScreen(state: state),
+            AppLaunchStage.emailVerification =>
+              EmailVerificationScreen(state: state),
+            AppLaunchStage.passwordReset => PasswordResetScreen(state: state),
             AppLaunchStage.setupChild => SetupChildScreen(state: state),
             AppLaunchStage.authenticated => _buildAuthenticatedView(),
           };

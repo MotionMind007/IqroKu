@@ -497,9 +497,11 @@ async function route(method, url, body, request) {
   if (method === 'POST' && path === '/auth/resend-verification') {
     const email = normalizeEmail(requiredBody(body, 'email'));
     const parent = await db.findParentByEmail(email);
+    let flow;
     if (parent && !parent.emailVerified) {
       await db.revokeAuthTokens(parent.id, 'email_verification');
       const verification = await createAuthFlowToken(parent, 'email_verification', EMAIL_VERIFICATION_TTL_MINUTES);
+      flow = authFlowResponse(verification);
       emitAuthFlowToken({
         type: 'email_verification',
         email,
@@ -507,15 +509,17 @@ async function route(method, url, body, request) {
         path: '/auth/verify-email',
       });
     }
-    return { ok: true };
+    return { ok: true, emailVerification: flow };
   }
 
   if (method === 'POST' && path === '/auth/password-reset/request') {
     const email = normalizeEmail(requiredBody(body, 'email'));
     const parent = await db.findParentByEmail(email);
+    let flow;
     if (parent?.passwordHash) {
       await db.revokeAuthTokens(parent.id, 'password_reset');
       const reset = await createAuthFlowToken(parent, 'password_reset', PASSWORD_RESET_TTL_MINUTES);
+      flow = authFlowResponse(reset);
       emitAuthFlowToken({
         type: 'password_reset',
         email,
@@ -523,7 +527,7 @@ async function route(method, url, body, request) {
         path: '/auth/password-reset/confirm',
       });
     }
-    return { ok: true };
+    return { ok: true, passwordReset: flow };
   }
 
   if (method === 'POST' && path === '/auth/password-reset/confirm') {

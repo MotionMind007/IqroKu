@@ -42,10 +42,22 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
   - `EMAIL_VERIFICATION_TTL_MINUTES`
   - `PASSWORD_RESET_TTL_MINUTES`
 
+### 3. Auth UI Foundation
+
+- Menambahkan layar verifikasi email di Flutter.
+- Menambahkan tombol resend verification.
+- Menambahkan layar reset password dari tombol `Lupa password?`.
+- Menambahkan flow:
+  - request kode reset
+  - input kode reset
+  - input password baru
+  - kembali ke login setelah sukses
+- Saat local/development, token dari backend bisa dipakai untuk mengisi kode manual.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
-- UI Flutter untuk verifikasi email dan forgot password belum dibuat.
+- Email verification dan forgot password UI sudah ada, tetapi belum memakai deep link email otomatis.
 - `REQUIRE_EMAIL_VERIFICATION` sebaiknya tetap `false` sampai email delivery dan UI sudah siap end-to-end.
 - Audio masih disimpan di filesystem persistent path. Untuk scale lebih besar, pindahkan ke object storage/private bucket.
 

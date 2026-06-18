@@ -25,7 +25,8 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 
 - Email verification foundation tersedia di backend.
 - Forgot password foundation tersedia di backend.
-- Sambungkan email provider dan UI sebelum mengaktifkan `REQUIRE_EMAIL_VERIFICATION=true`.
+- UI verifikasi email dan forgot password tersedia di Flutter.
+- Sambungkan email provider dan deep link sebelum mengaktifkan `REQUIRE_EMAIL_VERIFICATION=true`.
 - Rate limit login, register, resend email, dan PIN verification.
 - Audit session expiry dan logout.
 - Simpan consent legal docs dengan versi dokumen jika dibutuhkan.

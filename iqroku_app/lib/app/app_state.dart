@@ -117,6 +117,12 @@ class IqrokuState extends ChangeNotifier {
   ParentAccount? parentAccount;
   String? authToken;
   String? authError;
+  String? authMessage;
+  String? pendingVerificationEmail;
+  String? emailVerificationDevToken;
+  bool emailVerificationRequired = false;
+  String? passwordResetEmail;
+  String? passwordResetDevToken;
   String? iqroContentError;
   String? quranError;
   String? islamicActivityError;
@@ -583,11 +589,34 @@ class IqrokuState extends ChangeNotifier {
 
   void goToLogin() {
     launchStage = AppLaunchStage.login;
+    authError = null;
+    authMessage = null;
     notifyListeners();
   }
 
   void goToRegister() {
     launchStage = AppLaunchStage.register;
+    authError = null;
+    authMessage = null;
+    notifyListeners();
+  }
+
+  void goToPasswordReset({String? email}) {
+    passwordResetEmail = email?.trim();
+    passwordResetDevToken = null;
+    authError = null;
+    authMessage = null;
+    launchStage = AppLaunchStage.passwordReset;
+    notifyListeners();
+  }
+
+  void goToEmailVerification({String? email}) {
+    pendingVerificationEmail = email?.trim().isNotEmpty == true
+        ? email!.trim()
+        : parentAccount?.email;
+    authError = null;
+    authMessage = null;
+    launchStage = AppLaunchStage.emailVerification;
     notifyListeners();
   }
 
@@ -628,6 +657,11 @@ class IqrokuState extends ChangeNotifier {
         } catch (e) {
           debugPrint('Failed to set PIN during registration: $e');
         }
+      }
+      _captureEmailVerification(result);
+      if (result.emailVerification != null && !result.parent.emailVerified) {
+        launchStage = AppLaunchStage.emailVerification;
+        _persist();
       }
     } catch (error) {
       authError = _authErrorMessage(error);
@@ -1104,6 +1138,130 @@ class IqrokuState extends ChangeNotifier {
     subscriptionNotice = null;
     _persist();
     notifyListeners();
+  }
+
+  Future<void> resendEmailVerification({String? email}) async {
+    final targetEmail = (email ?? pendingVerificationEmail ?? parentAccount?.email)
+        ?.trim();
+    if (targetEmail == null || targetEmail.isEmpty) {
+      authError = 'Email wajib diisi.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    authMessage = null;
+    notifyListeners();
+
+    try {
+      final flow = await authService.resendVerification(targetEmail);
+      pendingVerificationEmail = targetEmail;
+      emailVerificationDevToken = flow?.devToken;
+      emailVerificationRequired = flow?.required ?? emailVerificationRequired;
+      authMessage = 'Link verifikasi sudah dikirim. Cek email untuk lanjut.';
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> verifyEmailToken(String token) async {
+    if (token.trim().isEmpty) {
+      authError = 'Kode verifikasi wajib diisi.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    authMessage = null;
+    notifyListeners();
+
+    try {
+      final verifiedParent = await authService.verifyEmail(token.trim());
+      parentAccount = verifiedParent;
+      pendingVerificationEmail = verifiedParent.email;
+      emailVerificationDevToken = null;
+      emailVerificationRequired = false;
+      authMessage = 'Email berhasil diverifikasi.';
+      _persist();
+      continueAfterEmailVerification();
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void continueAfterEmailVerification() {
+    authError = null;
+    authMessage = null;
+    launchStage = childSetupCompleted || childProfiles.isNotEmpty
+        ? AppLaunchStage.authenticated
+        : AppLaunchStage.setupChild;
+    _persist();
+    notifyListeners();
+  }
+
+  Future<void> requestPasswordReset(String email) async {
+    if (email.trim().isEmpty) {
+      authError = 'Email wajib diisi.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    authMessage = null;
+    notifyListeners();
+
+    try {
+      final flow = await authService.requestPasswordReset(email.trim());
+      passwordResetEmail = email.trim();
+      passwordResetDevToken = flow?.devToken;
+      authMessage =
+          'Instruksi reset password sudah dikirim jika email terdaftar.';
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> confirmPasswordReset({
+    required String token,
+    required String password,
+  }) async {
+    if (token.trim().isEmpty || password.isEmpty) {
+      authError = 'Kode dan password baru wajib diisi.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    authMessage = null;
+    notifyListeners();
+
+    try {
+      await authService.confirmPasswordReset(
+        token: token.trim(),
+        password: password,
+      );
+      passwordResetDevToken = null;
+      authMessage = 'Password berhasil diganti. Silakan masuk lagi.';
+      launchStage = AppLaunchStage.login;
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
   }
 
   void applyParentReviewResult({
@@ -1871,6 +2029,12 @@ class IqrokuState extends ChangeNotifier {
     _persist();
   }
 
+  void _captureEmailVerification(AuthResult result) {
+    pendingVerificationEmail = result.parent.email;
+    emailVerificationDevToken = result.emailVerification?.devToken;
+    emailVerificationRequired = result.emailVerification?.required ?? false;
+  }
+
   Future<void> _loadRemoteProgressForChild(String childId) async {
     try {
       final records = await authService.loadProgress(childId);
@@ -2021,6 +2185,9 @@ class IqrokuState extends ChangeNotifier {
       return switch (error.code) {
         'email_already_registered' => 'Email ini sudah terdaftar. Coba masuk.',
         'invalid_email_or_password' => 'Email atau password belum cocok.',
+        'email_not_verified' => 'Email belum diverifikasi. Cek email dulu.',
+        'invalid_or_expired_token' =>
+          'Kode sudah tidak valid atau kedaluwarsa.',
         'invalid_email' => 'Format email belum benar.',
         'password_min_6' => 'Password minimal 6 karakter.',
         'child_limit_requires_plus' =>
@@ -2114,6 +2281,8 @@ enum AppLaunchStage {
   welcome,
   login,
   register,
+  emailVerification,
+  passwordReset,
   setupChild,
   authenticated,
 }
