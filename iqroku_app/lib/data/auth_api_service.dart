@@ -433,14 +433,21 @@ class ParentAccount {
     required this.id,
     required this.name,
     required this.email,
+    this.emailVerified = false,
   });
 
   final String id;
   final String name;
   final String email;
+  final bool emailVerified;
 
   Map<String, Object?> toJson() {
-    return {'id': id, 'name': name, 'email': email};
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'emailVerified': emailVerified,
+    };
   }
 
   static ParentAccount fromJson(Map<String, Object?> json) {
@@ -448,6 +455,7 @@ class ParentAccount {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? 'Orang Tua',
       email: json['email'] as String? ?? '',
+      emailVerified: json['emailVerified'] as bool? ?? false,
     );
   }
 }

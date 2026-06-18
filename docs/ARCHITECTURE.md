@@ -71,6 +71,10 @@ GET  /daily-prayers
 POST /auth/register
 POST /auth/login
 POST /auth/google
+POST /auth/verify-email
+POST /auth/resend-verification
+POST /auth/password-reset/request
+POST /auth/password-reset/confirm
 GET  /children
 POST /children
 GET  /progress

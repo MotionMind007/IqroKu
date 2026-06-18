@@ -6,6 +6,8 @@
   "description": "Production API for IqroKu with PostgreSQL storage.",
   "scripts": {
     "start": "node src/server.mjs",
+    "migrate": "node scripts/migrate.mjs",
+    "migrate:status": "node scripts/migrate.mjs --status",
     "check": "node --check src/server.mjs && node --check src/db.mjs",
     "test": "node --test test/*.test.mjs"
   },

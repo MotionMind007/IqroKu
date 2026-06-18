@@ -69,10 +69,18 @@ export async function findParentById(id) {
 
 export async function createParent({ id, email, name, passwordHash, googleId }) {
   const row = await queryOne(
-    `INSERT INTO parents (id, email, name, password_hash, google_id)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO parents (id, email, name, password_hash, google_id, email_verified, email_verified_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [id, email, name, passwordHash ?? null, googleId ?? null],
+    [
+      id,
+      email,
+      name,
+      passwordHash ?? null,
+      googleId ?? null,
+      Boolean(googleId),
+      googleId ? new Date().toISOString() : null,
+    ],
   );
   return rowToParent(row);
 }
@@ -104,6 +112,31 @@ export async function updateParent(id, updates) {
   return row ? rowToParent(row) : null;
 }
 
+export async function markParentEmailVerified(parentId) {
+  const row = await queryOne(
+    `UPDATE parents
+     SET email_verified = TRUE,
+         email_verified_at = COALESCE(email_verified_at, NOW()),
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [parentId],
+  );
+  return row ? rowToParent(row) : null;
+}
+
+export async function updateParentPassword(parentId, passwordHash) {
+  const row = await queryOne(
+    `UPDATE parents
+     SET password_hash = $1,
+         updated_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [passwordHash, parentId],
+  );
+  return row ? rowToParent(row) : null;
+}
+
 export async function getAllParents() {
   const rows = await queryAll('SELECT * FROM parents ORDER BY created_at DESC');
   return rows.map(rowToParent);
@@ -117,6 +150,65 @@ function rowToParent(row) {
     passwordHash: row.password_hash ?? undefined,
     googleId: row.google_id ?? undefined,
     pinHash: row.pin_hash ?? undefined,
+    emailVerified: row.email_verified === true,
+    emailVerifiedAt: row.email_verified_at?.toISOString(),
+    updatedAt: row.updated_at?.toISOString(),
+    createdAt: row.created_at?.toISOString(),
+  };
+}
+
+// =============================================================================
+// AUTH TOKENS
+// =============================================================================
+
+export async function createAuthToken({ parentId, purpose, tokenHash, expiresAt, metadata }) {
+  const row = await queryOne(
+    `INSERT INTO auth_tokens (parent_id, purpose, token_hash, expires_at, metadata)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [parentId, purpose, tokenHash, expiresAt, metadata ? JSON.stringify(metadata) : null],
+  );
+  return rowToAuthToken(row);
+}
+
+export async function findValidAuthToken({ purpose, tokenHash }) {
+  const row = await queryOne(
+    `SELECT * FROM auth_tokens
+     WHERE purpose = $1
+       AND token_hash = $2
+       AND used_at IS NULL
+       AND expires_at > NOW()`,
+    [purpose, tokenHash],
+  );
+  return row ? rowToAuthToken(row) : null;
+}
+
+export async function markAuthTokenUsed(id) {
+  await query('UPDATE auth_tokens SET used_at = NOW() WHERE id = $1', [id]);
+}
+
+export async function revokeAuthTokens(parentId, purpose) {
+  await query(
+    `UPDATE auth_tokens
+     SET used_at = NOW()
+     WHERE parent_id = $1 AND purpose = $2 AND used_at IS NULL`,
+    [parentId, purpose],
+  );
+}
+
+export async function cleanupExpiredAuthTokens() {
+  await query('DELETE FROM auth_tokens WHERE expires_at < NOW() - INTERVAL \'7 days\'');
+}
+
+function rowToAuthToken(row) {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    purpose: row.purpose,
+    tokenHash: row.token_hash,
+    expiresAt: row.expires_at?.toISOString(),
+    usedAt: row.used_at?.toISOString(),
+    metadata: row.metadata,
     createdAt: row.created_at?.toISOString(),
   };
 }
@@ -345,6 +437,9 @@ function rowToAttempt(row) {
     audioSizeBytes: row.audio_size_bytes,
     audioUploadedAt: row.audio_uploaded_at?.toISOString(),
     assessmentStatus: row.assessment_status,
+    reviewStatus: row.review_status,
+    reviewedAt: row.reviewed_at?.toISOString(),
+    reviewedBy: row.reviewed_by ?? undefined,
     score: row.score,
     status: row.status,
     feedback: row.feedback,
@@ -629,10 +724,11 @@ export async function updateAttemptReview(attemptId, reviewStatus, reviewedBy) {
     `UPDATE attempts
      SET review_status = $1,
          reviewed_at = NOW(),
+         reviewed_by = $5,
          assessment_status = $2,
          status = $3
      WHERE id = $4 RETURNING *`,
-    [reviewStatus, assessmentStatus, status, attemptId],
+    [reviewStatus, assessmentStatus, status, attemptId, reviewedBy],
   );
   return row;
 }

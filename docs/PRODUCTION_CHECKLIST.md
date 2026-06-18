@@ -14,7 +14,8 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 ## Database
 
 - Jalankan schema dari `deploy/schema.sql` di database production.
-- Buat strategi migration versi berikutnya.
+- Jalankan migration dengan `npm run migrate --prefix backend`.
+- Cek status migration dengan `npm run migrate:status --prefix backend`.
 - Buat backup otomatis harian.
 - Tes restore backup.
 - Tambahkan index jika query review/progress mulai besar.
@@ -22,8 +23,9 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 
 ## Auth dan Akun
 
-- Pertimbangkan email verification untuk akun baru.
-- Tambahkan forgot password.
+- Email verification foundation tersedia di backend.
+- Forgot password foundation tersedia di backend.
+- Sambungkan email provider dan UI sebelum mengaktifkan `REQUIRE_EMAIL_VERIFICATION=true`.
 - Rate limit login, register, resend email, dan PIN verification.
 - Audit session expiry dan logout.
 - Simpan consent legal docs dengan versi dokumen jika dibutuhkan.
@@ -32,7 +34,7 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 
 - Batasi ukuran upload audio.
 - Validasi MIME/type dan ekstensi.
-- Simpan audio di storage yang tahan production, bukan storage lokal ephemeral jika deploy pindah host.
+- Simpan audio di `IQROKU_UPLOAD_ROOT` pada persistent disk atau object storage.
 - Pastikan audio private dan hanya bisa diakses pemiliknya.
 - Tambahkan lifecycle policy untuk audio lama jika dibutuhkan.
 

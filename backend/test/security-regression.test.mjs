@@ -46,3 +46,13 @@ test('nginx proxies uploads through backend authorization instead of public alia
   assert.match(nginxSource, /proxy_pass http:\/\/iqroku_backend;/);
   assert.doesNotMatch(nginxSource, /alias \/opt\/iqroku\/uploads\/;/);
 });
+
+test('auth verification and reset use one-time hashed tokens', () => {
+  assert.match(serverSource, /path === '\/auth\/verify-email'/);
+  assert.match(serverSource, /path === '\/auth\/password-reset\/request'/);
+  assert.match(serverSource, /path === '\/auth\/password-reset\/confirm'/);
+  assert.match(serverSource, /createHash\('sha256'\)\.update\(String\(token\)\)\.digest\('hex'\)/);
+  assert.match(serverSource, /db\.findValidAuthToken/);
+  assert.match(serverSource, /db\.markAuthTokenUsed/);
+  assert.doesNotMatch(serverSource, /INSERT INTO auth_tokens[\s\S]*token\s*,/);
+});

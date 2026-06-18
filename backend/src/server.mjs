@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import * as db from './db.mjs';
@@ -15,6 +15,10 @@ db.initDb(DATABASE_URL);
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://iqroku.motionmind.store';
 const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN === 'true';
+const REQUIRE_EMAIL_VERIFICATION = process.env.REQUIRE_EMAIL_VERIFICATION === 'true';
+const AUTH_LINK_BASE_URL = process.env.AUTH_LINK_BASE_URL || ALLOWED_ORIGIN;
+const EMAIL_VERIFICATION_TTL_MINUTES = Number(process.env.EMAIL_VERIFICATION_TTL_MINUTES ?? 60 * 24);
+const PASSWORD_RESET_TTL_MINUTES = Number(process.env.PASSWORD_RESET_TTL_MINUTES ?? 30);
 
 // Google Sign-In: the audience the client's idToken must be issued for.
 // Defaults to the serverClientId used by the Flutter app.
@@ -29,6 +33,8 @@ if (ADMIN_TOKEN === 'admin-dev-token' && process.env.NODE_ENV === 'production') 
 }
 const MAX_BODY_SIZE = Number(process.env.MAX_BODY_SIZE) || 5 * 1024 * 1024; // 5MB max request body
 const MAX_STRING_LENGTH = 500; // max string field length
+const UPLOAD_ROOT = resolve(process.env.IQROKU_UPLOAD_ROOT || 'uploads');
+const AUDIO_UPLOAD_DIR = resolve(UPLOAD_ROOT, 'audio');
 
 // --- Rate Limiter ---
 const rateLimits = new Map();
@@ -327,7 +333,7 @@ async function route(method, url, body, request) {
     }
     await enforceChildOwnership(authedParent.id, attempt.childId);
     return {
-      filePath: resolve('uploads/audio', fileName),
+      filePath: resolve(AUDIO_UPLOAD_DIR, fileName),
       contentType: contentTypeForAudio(fileName),
     };
   }
@@ -398,6 +404,13 @@ async function route(method, url, body, request) {
       name,
       passwordHash: hashPassword(password),
     });
+    const verification = await createAuthFlowToken(parent, 'email_verification', EMAIL_VERIFICATION_TTL_MINUTES);
+    emitAuthFlowToken({
+      type: 'email_verification',
+      email,
+      token: verification.token,
+      path: '/auth/verify-email',
+    });
     const token = createSessionToken(parent.id);
     await storeSession(token, parent.id);
     return {
@@ -405,6 +418,9 @@ async function route(method, url, body, request) {
       body: {
         parent: publicParent(parent),
         session: { token, type: 'password' },
+        emailVerification: authFlowResponse(verification, {
+          required: REQUIRE_EMAIL_VERIFICATION,
+        }),
       },
     };
   }
@@ -415,6 +431,9 @@ async function route(method, url, body, request) {
     const parent = await db.findParentByEmail(email);
     if (!parent || !parent.passwordHash || !verifyPassword(password, parent.passwordHash)) {
       throw httpError(401, 'invalid_email_or_password');
+    }
+    if (REQUIRE_EMAIL_VERIFICATION && !parent.emailVerified) {
+      throw httpError(403, 'email_not_verified');
     }
 
     const token = createSessionToken(parent.id);
@@ -445,7 +464,10 @@ async function route(method, url, body, request) {
     if (parent) {
       // Update Google ID if not set
       if (!parent.googleId) {
-        await db.updateParent(parent.id, { googleId });
+        parent = await db.updateParent(parent.id, { googleId });
+      }
+      if (!parent.emailVerified) {
+        parent = await db.markParentEmailVerified(parent.id);
       }
     } else {
       // Create new user
@@ -463,6 +485,55 @@ async function route(method, url, body, request) {
       parent: publicParent(parent),
       session: { token, type: 'google' },
     };
+  }
+
+  if (method === 'POST' && path === '/auth/verify-email') {
+    const token = cleanString(requiredBody(body, 'token'));
+    const parent = await consumeAuthFlowToken('email_verification', token);
+    const verified = await db.markParentEmailVerified(parent.id);
+    return { ok: true, parent: publicParent(verified) };
+  }
+
+  if (method === 'POST' && path === '/auth/resend-verification') {
+    const email = normalizeEmail(requiredBody(body, 'email'));
+    const parent = await db.findParentByEmail(email);
+    if (parent && !parent.emailVerified) {
+      await db.revokeAuthTokens(parent.id, 'email_verification');
+      const verification = await createAuthFlowToken(parent, 'email_verification', EMAIL_VERIFICATION_TTL_MINUTES);
+      emitAuthFlowToken({
+        type: 'email_verification',
+        email,
+        token: verification.token,
+        path: '/auth/verify-email',
+      });
+    }
+    return { ok: true };
+  }
+
+  if (method === 'POST' && path === '/auth/password-reset/request') {
+    const email = normalizeEmail(requiredBody(body, 'email'));
+    const parent = await db.findParentByEmail(email);
+    if (parent?.passwordHash) {
+      await db.revokeAuthTokens(parent.id, 'password_reset');
+      const reset = await createAuthFlowToken(parent, 'password_reset', PASSWORD_RESET_TTL_MINUTES);
+      emitAuthFlowToken({
+        type: 'password_reset',
+        email,
+        token: reset.token,
+        path: '/auth/password-reset/confirm',
+      });
+    }
+    return { ok: true };
+  }
+
+  if (method === 'POST' && path === '/auth/password-reset/confirm') {
+    const token = cleanString(requiredBody(body, 'token'));
+    const password = cleanString(requiredBody(body, 'password'));
+    validatePassword(password);
+    const parent = await consumeAuthFlowToken('password_reset', token);
+    await db.updateParentPassword(parent.id, hashPassword(password));
+    await db.revokeAuthTokens(parent.id, 'password_reset');
+    return { ok: true };
   }
 
   // --- Protected routes (require user auth) ---
@@ -981,6 +1052,73 @@ function createSessionToken(parentId) {
   return `session_${parentId}_${randomBytes(24).toString('hex')}`;
 }
 
+function createOneTimeToken() {
+  return randomBytes(32).toString('base64url');
+}
+
+function hashAuthToken(token) {
+  return createHash('sha256').update(String(token)).digest('hex');
+}
+
+async function createAuthFlowToken(parent, purpose, ttlMinutes) {
+  const token = createOneTimeToken();
+  const expiresAt = addMinutes(new Date(), ttlMinutes).toISOString();
+  await db.createAuthToken({
+    parentId: parent.id,
+    purpose,
+    tokenHash: hashAuthToken(token),
+    expiresAt,
+    metadata: { email: parent.email },
+  });
+  return { token, expiresAt };
+}
+
+async function consumeAuthFlowToken(purpose, token) {
+  const record = await db.findValidAuthToken({
+    purpose,
+    tokenHash: hashAuthToken(token),
+  });
+  if (!record) {
+    throw httpError(400, 'invalid_or_expired_token');
+  }
+  await db.markAuthTokenUsed(record.id);
+  const parent = await db.findParentById(record.parentId);
+  if (!parent) {
+    throw httpError(400, 'invalid_or_expired_token');
+  }
+  return parent;
+}
+
+function authFlowResponse(flow, extra = {}) {
+  return {
+    ...extra,
+    expiresAt: flow.expiresAt,
+    devToken: process.env.NODE_ENV === 'production' ? undefined : flow.token,
+  };
+}
+
+function emitAuthFlowToken({ type, email, token, path }) {
+  const link = `${AUTH_LINK_BASE_URL.replace(/\/$/, '')}${path}?token=${encodeURIComponent(token)}`;
+  if (process.env.NODE_ENV === 'production') {
+    console.log(JSON.stringify({
+      ts: new Date().toISOString(),
+      event: 'auth_token_created',
+      type,
+      email,
+      delivery: 'pending_email_provider',
+    }));
+    return;
+  }
+  console.log(JSON.stringify({
+    ts: new Date().toISOString(),
+    event: 'auth_token_created',
+    type,
+    email,
+    token,
+    link,
+  }));
+}
+
 function publicParent(parent) {
   const { passwordHash, pinHash, ...safeParent } = parent;
   return safeParent;
@@ -1163,11 +1301,10 @@ function dispositionValue(disposition, key) {
 }
 
 async function storeAttemptAudio({ attemptId, originalFileName, contentType, content }) {
-  const directory = resolve('uploads/audio');
-  await mkdir(directory, { recursive: true });
+  await mkdir(AUDIO_UPLOAD_DIR, { recursive: true });
   const extension = audioExtension(originalFileName, contentType);
   const fileName = safeStoredFileName(`${attemptId}-${Date.now()}${extension}`);
-  await writeFile(resolve(directory, fileName), content);
+  await writeFile(resolve(AUDIO_UPLOAD_DIR, fileName), content);
   return {
     fileName,
     contentType: contentType || contentTypeForAudio(fileName),
@@ -1941,6 +2078,12 @@ function now() {
 function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
+  return next;
+}
+
+function addMinutes(date, minutes) {
+  const next = new Date(date);
+  next.setMinutes(next.getMinutes() + minutes);
   return next;
 }
 

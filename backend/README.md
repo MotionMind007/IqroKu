@@ -16,6 +16,7 @@ Default URL: `http://localhost:8787`
 
 ```bash
 cd backend
+npm run migrate:status
 npm run check
 npm test
 ```
@@ -30,6 +31,9 @@ Variable penting:
 PORT
 DATABASE_URL
 IQROKU_ADMIN_TOKEN
+IQROKU_UPLOAD_ROOT
+REQUIRE_EMAIL_VERIFICATION
+AUTH_LINK_BASE_URL
 ```
 
 ## Authentication
@@ -61,4 +65,5 @@ Authorization: Bearer admin-dev-token
 - Arsitektur: `../docs/ARCHITECTURE.md`
 - Flow produk: `../docs/FLOWS.md`
 - Panduan perubahan: `../docs/CHANGE_GUIDE.md`
+- Progress production: `../docs/PRODUCTION_PROGRESS.md`
 - Deploy VPS: `../deploy/README.md`

@@ -46,6 +46,7 @@ Backend:
 
 ```powershell
 cd backend
+npm run migrate
 npm run check
 npm test
 ```
