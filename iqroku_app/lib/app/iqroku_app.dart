@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
-import '../data/assessment_service.dart';
 import '../data/audio_playback_service.dart';
 import '../data/auth_api_service.dart';
 import '../data/daily_prayer_api_service.dart';
@@ -24,7 +23,6 @@ class IqrokuApp extends StatefulWidget {
   IqrokuApp({
     super.key,
     this.repository = const DummyIqrokuRepository(),
-    this.assessmentService = const MockAssessmentService(),
     AuthApiService? authService,
     this.dailyPrayerApiService = const DailyPrayerApiService(),
     this.quranApiService = const QuranApiService(),
@@ -34,7 +32,6 @@ class IqrokuApp extends StatefulWidget {
   }) : authService = authService ?? AuthApiService();
 
   final DummyIqrokuRepository repository;
-  final AssessmentService assessmentService;
   final AuthApiService authService;
   final DailyPrayerApiService dailyPrayerApiService;
   final QuranApiService quranApiService;
@@ -54,7 +51,6 @@ class _IqrokuAppState extends State<IqrokuApp> {
     super.initState();
     state = IqrokuState(
       repository: widget.repository,
-      assessmentService: widget.assessmentService,
       authService: widget.authService,
       dailyPrayerApiService: widget.dailyPrayerApiService,
       quranApiService: widget.quranApiService,

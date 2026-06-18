@@ -139,26 +139,6 @@ class AuthApiService {
     return RemoteAttempt.fromJson(json);
   }
 
-  Future<void> assessAttempt({
-    required String attemptId,
-    required List<List<String>> targetLines,
-  }) async {
-    await _post('/assessments/mock', {
-      'attemptId': attemptId,
-      'targetLines': targetLines,
-    });
-  }
-
-  Future<Map<String, Object?>> assessAttemptWithAI({
-    required String attemptId,
-    required List<List<String>> targetLines,
-  }) async {
-    return await _post('/assessments/ai', {
-      'attemptId': attemptId,
-      'targetLines': targetLines,
-    });
-  }
-
   Future<void> uploadAudio({
     required String attemptId,
     required String audioPath,
@@ -364,6 +344,8 @@ class AuthApiService {
       progress: 0,
       avatarAsset:
           json['avatarAsset'] as String? ?? 'assets/brand/male-avatar.png',
+      repeatFromPage: (json['repeatFromPage'] as num?)?.toInt() ?? 1,
+      repeatFromBook: (json['repeatFromBook'] as num?)?.toInt() ?? 1,
     );
   }
 }

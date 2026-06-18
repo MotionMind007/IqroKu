@@ -9,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:iqroku/app/app_state.dart';
 import 'package:iqroku/app/iqroku_app.dart';
-import 'package:iqroku/data/assessment_service.dart';
 import 'package:iqroku/data/audio_playback_service.dart';
 import 'package:iqroku/data/auth_api_service.dart';
 import 'package:iqroku/data/daily_prayer_api_service.dart';
@@ -80,7 +79,6 @@ void main() {
 
     await tester.pumpWidget(
       IqrokuApp(
-        assessmentService: const FakeAssessmentService(),
         authService: FakeAuthApiService(),
         dailyPrayerApiService: const FakeDailyPrayerApiService(),
         quranApiService: const FakeQuranApiService(),
@@ -176,7 +174,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -198,7 +195,6 @@ void main() {
 
     final restored = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -226,7 +222,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -247,10 +242,9 @@ void main() {
     expect(state.learningAttempts.first.assessmentStatus.name, 'recorded');
 
     await Future<void>.delayed(const Duration(milliseconds: 400));
-    expect(state.learningAttempts.first.score, isNotNull);
-    expect(state.learningAttempts.first.status, LearningStatus.fluent);
-    expect(state.learningNotes.first.title, 'Iqro 1 - Halaman 8');
-    expect(state.learningNotes.first.note, contains('Skor'));
+    expect(state.learningAttempts.first.score, isNull);
+    expect(state.learningAttempts.first.status, LearningStatus.learning);
+    expect(state.learningAttempts.first.note, contains('review orang tua'));
 
     await state.toggleAttemptPlayback(state.learningAttempts.first);
     expect(state.playingAttemptId, state.learningAttempts.first.id);
@@ -262,7 +256,6 @@ void main() {
 
     final restored = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -276,7 +269,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -298,7 +290,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -357,7 +348,6 @@ void main() {
 
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       authService: authService,
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
@@ -547,20 +537,6 @@ class FakeDailyPrayerApiService extends DailyPrayerApiService {
         sortOrder: 10,
       ),
     ];
-  }
-}
-
-class FakeAssessmentService implements AssessmentService {
-  const FakeAssessmentService();
-
-  @override
-  Future<AssessmentResult> assess(AssessmentRequest request) async {
-    return const AssessmentResult(
-      score: 88,
-      status: LearningStatus.fluent,
-      feedback: 'Bacaan sudah lancar untuk latihan.',
-      note: 'Hasil penilaian: lancar.',
-    );
   }
 }
 

@@ -26,6 +26,13 @@ test('audio downloads authenticate before serving stored files', () => {
   assert.match(serverSource, /'cache-control': 'private, no-store'/);
 });
 
+test('AI and mock assessment endpoints are disabled', () => {
+  assert.match(serverSource, /path === '\/assessments\/mock'[\s\S]*throw httpError\(410, 'assessment_disabled'\);/);
+  assert.match(serverSource, /path === '\/assessments\/ai'[\s\S]*throw httpError\(410, 'assessment_disabled'\);/);
+  assert.doesNotMatch(serverSource, /MIMO_API_KEY/);
+  assert.doesNotMatch(serverSource, /assessWithMiMo/);
+});
+
 test('child dynamic routes are matched with concrete path regex helpers', () => {
   assert.match(serverSource, /function childSetPinAction\(path\)/);
   assert.match(serverSource, /\^\\\/children\\\/\(\[\^\/\]\+\)\\\/set-pin\$/);

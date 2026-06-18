@@ -374,6 +374,8 @@ class _ReviewTabState extends State<_ReviewTab> {
     try {
       await widget.state.authService.approveReview(review['id'] as String);
       if (!mounted) return;
+      await widget.state.refreshChildrenFromBackend();
+      if (!mounted) return;
       _loadPendingReviews();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bacaan berhasil di-approve')),
@@ -392,6 +394,8 @@ class _ReviewTabState extends State<_ReviewTab> {
         attemptId: review['id'] as String,
         fromPage: fromPage,
       );
+      if (!mounted) return;
+      await widget.state.refreshChildrenFromBackend();
       if (!mounted) return;
       _loadPendingReviews();
       ScaffoldMessenger.of(context).showSnackBar(

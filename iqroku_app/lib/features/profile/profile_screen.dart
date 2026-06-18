@@ -736,7 +736,6 @@ class ProgressPageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final latestAttempt = attempt;
-    final score = latestAttempt?.score;
 
     return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
@@ -769,10 +768,10 @@ class ProgressPageCard extends StatelessWidget {
                         : 'Rekaman ${_formatDuration(latestAttempt.durationSeconds)} - ${latestAttempt.date}',
                     style: AppText.caption,
                   ),
-                  if (latestAttempt?.feedback != null) ...[
+                  if (latestAttempt?.note != null) ...[
                     const SizedBox(height: 5),
                     Text(
-                      latestAttempt!.feedback!,
+                      latestAttempt!.note!,
                       style: AppText.caption.copyWith(color: AppColors.text),
                     ),
                   ],
@@ -787,10 +786,6 @@ class ProgressPageCard extends StatelessWidget {
                   label: status.shortLabel,
                   color: status.color,
                 ),
-                if (score != null) ...[
-                  const SizedBox(height: 6),
-                  Text('$score/100', style: AppText.smallStrong),
-                ],
               ],
             ),
           ],
@@ -903,7 +898,6 @@ class LearningAttemptHistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _assessmentColor(attempt.assessmentStatus);
-    final score = attempt.score;
 
     return AppCard(
       margin: const EdgeInsets.only(bottom: 12),
@@ -932,7 +926,7 @@ class LearningAttemptHistoryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  attempt.feedback ?? attempt.note ?? 'Belum ada saran.',
+                  attempt.note ?? 'Menunggu review orang tua.',
                   style: AppText.body,
                 ),
               ],
@@ -946,10 +940,6 @@ class LearningAttemptHistoryCard extends StatelessWidget {
                 label: attempt.assessmentStatus.label,
                 color: color,
               ),
-              if (score != null) ...[
-                const SizedBox(height: 7),
-                Text('$score/100', style: AppText.bodyStrong),
-              ],
             ],
           ),
         ],

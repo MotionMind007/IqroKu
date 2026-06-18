@@ -1,8 +1,7 @@
 import { createServer } from 'node:http';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
-import { execSync } from 'node:child_process';
 import * as db from './db.mjs';
 
 // Initialize PostgreSQL connection
@@ -13,12 +12,6 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 db.initDb(DATABASE_URL);
-
-// MiMo AI Configuration
-const MIMO_API_URL = process.env.MIMO_API_URL || 'https://api.xiaomimimo.com/v1';
-const MIMO_API_KEY = process.env.MIMO_API_KEY || '';
-const MIMO_ASR_MODEL = process.env.MIMO_ASR_MODEL || 'mimo-v2.5-asr';
-const MIMO_PRO_MODEL = process.env.MIMO_PRO_MODEL || 'mimo-v2.5-pro';
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://iqroku.motionmind.store';
 const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN === 'true';
@@ -594,83 +587,11 @@ async function route(method, url, body, request) {
   }
 
   if (method === 'POST' && path === '/assessments/mock') {
-    const authedParent = await authenticateRequest(request);
-    const attemptId = requiredBody(body, 'attemptId');
-    const attempt = await db.findAttemptById(attemptId);
-    if (!attempt) {
-      throw httpError(404, 'attempt_not_found');
-    }
-    await enforceChildOwnership(authedParent.id, attempt.childId);
-    const result = scoreAttempt({
-      pageNumber: attempt.pageNumber,
-      durationSeconds: attempt.durationSeconds,
-      targetLines: Array.isArray(body.targetLines) ? body.targetLines : [],
-    });
-    return db.updateAttempt(attempt.id, {
-      score: result.score,
-      status: result.status,
-      feedback: result.feedback,
-      note: result.note,
-      assessmentStatus: result.status === 'fluent' ? 'fluent' : 'needsReview',
-      assessedAt: now(),
-    });
+    throw httpError(410, 'assessment_disabled');
   }
 
   if (method === 'POST' && path === '/assessments/ai') {
-    console.log('[API] AI Assessment requested');
-    const authedParent = await authenticateRequest(request);
-    const attemptId = requiredBody(body, 'attemptId');
-    console.log('[API] Attempt ID:', attemptId);
-
-    const attempt = await db.findAttemptById(attemptId);
-    if (!attempt) {
-      console.log('[API] Attempt not found:', attemptId);
-      throw httpError(404, 'attempt_not_found');
-    }
-    await enforceChildOwnership(authedParent.id, attempt.childId);
-
-    // Get audio file
-    const audioPath = attempt.audioPath;
-    console.log('[API] Audio path from DB:', audioPath);
-
-    if (!audioPath) {
-      console.log('[API] No audio recorded for attempt:', attemptId);
-      throw httpError(400, 'no_audio_recorded');
-    }
-
-    // Read audio file
-    const audioFileName = audioPath.split('/').pop();
-    const audioFullPath = resolve('uploads/audio', audioFileName);
-    console.log('[API] Looking for audio at:', audioFullPath);
-
-    let audioBuffer;
-    try {
-      audioBuffer = await readFile(audioFullPath);
-      console.log('[API] Audio file read successfully, size:', audioBuffer.length);
-    } catch (err) {
-      console.log('[API] Audio file not found:', audioFullPath, err.message);
-      throw httpError(404, 'audio_file_not_found');
-    }
-
-    // Get target lines
-    const targetLines = Array.isArray(body.targetLines) ? body.targetLines : [];
-
-    // Call MiMo AI for assessment
-    const result = await assessWithMiMo({
-      audioBuffer,
-      targetLines,
-      pageNumber: attempt.pageNumber,
-      bookId: attempt.bookId,
-    });
-
-    return db.updateAttempt(attempt.id, {
-      score: result.score,
-      status: result.status,
-      feedback: result.feedback,
-      note: result.note,
-      assessmentStatus: result.status === 'fluent' ? 'fluent' : 'needsReview',
-      assessedAt: now(),
-    });
+    throw httpError(410, 'assessment_disabled');
   }
 
   if (method === 'POST' && path === '/subscriptions/activate') {
@@ -780,6 +701,12 @@ async function route(method, url, body, request) {
 
     // Mark attempt as approved
     await db.updateAttemptReview(attemptId, 'approved', authedParent.id);
+    await db.upsertProgress({
+      childId: attempt.childId,
+      bookId: attempt.bookId,
+      pageNumber: attempt.pageNumber,
+      status: 'fluent',
+    });
 
     // Update progress status
     await db.updateProgressReview(
@@ -804,14 +731,26 @@ async function route(method, url, body, request) {
     const authedParent = await authenticateRequest(request);
     const attemptId = requiredBody(body, 'attemptId');
     const fromPage = Number(body.fromPage);
+    if (!Number.isInteger(fromPage) || fromPage < 1) {
+      throw httpError(400, 'invalid_repeat_page');
+    }
     const attempt = await db.findAttemptById(attemptId);
     if (!attempt) {
       throw httpError(404, 'attempt_not_found');
     }
     await enforceChildOwnership(authedParent.id, attempt.childId);
+    if (fromPage > attempt.pageNumber) {
+      throw httpError(400, 'invalid_repeat_page');
+    }
 
     // Mark attempt as needs repeat
     await db.updateAttemptReview(attemptId, 'needs_repeat', authedParent.id);
+    await db.upsertProgress({
+      childId: attempt.childId,
+      bookId: attempt.bookId,
+      pageNumber: attempt.pageNumber,
+      status: 'review',
+    });
 
     // Set repeat from page
     await db.setRepeatFromPage(attempt.childId, attempt.bookId, fromPage);
@@ -1079,233 +1018,6 @@ async function enforceChildLimit(parentId) {
   if (count >= limit) {
     throw httpError(402, 'child_limit_requires_plus');
   }
-}
-
-function scoreAttempt({ pageNumber, durationSeconds, targetLines }) {
-  // More realistic mock scoring with randomness
-  const baseScore = 50;
-  const durationScore = Math.min(Math.max(durationSeconds, 1), 30) * 0.5;
-  const pageScore = (pageNumber % 3) * 2;
-  const materialBonus = targetLines.length > 0 ? 5 : 0;
-  const randomVariation = Math.floor(Math.random() * 11) - 5; // -5 to +5
-
-  const score = Math.round(Math.min(Math.max(baseScore + durationScore + pageScore + materialBonus + randomVariation, 40), 95));
-  const passed = score >= 75;
-
-  return {
-    score,
-    status: passed ? 'fluent' : 'review',
-    feedback: passed
-      ? 'Bacaan sudah cukup lancar. Pertahankan tempo dan lanjutkan dengan percaya diri.'
-      : 'Sudah bagus berani membaca. Ulangi pelan-pelan bagian yang masih tersendat.',
-    note: passed
-      ? 'Hasil penilaian: lancar dengan toleransi latihan anak.'
-      : 'Hasil penilaian: perlu ulang agar bacaan makin mantap.',
-  };
-}
-
-async function assessWithMiMo({ audioBuffer, targetLines, pageNumber, bookId }) {
-  if (!MIMO_API_KEY) {
-    console.warn('[AI] MIMO_API_KEY not set, falling back to mock scoring');
-    return scoreAttempt({ pageNumber, durationSeconds: 10, targetLines });
-  }
-
-  try {
-    console.log('[AI] Starting assessment...');
-    console.log('[AI] Audio size:', audioBuffer.length, 'bytes');
-    console.log('[AI] Target lines:', targetLines.length);
-
-    // Step 1: Transcribe audio using MiMo ASR
-    console.log('[AI] Transcribing audio with MiMo ASR...');
-    const transcribedText = await transcribeWithMiMoASR(audioBuffer);
-    console.log('[AI] Transcribed text:', transcribedText.substring(0, 100) + '...');
-
-    // Step 2: Compare and generate feedback using MiMo Pro
-    const targetText = targetLines.map(line => line.join(' ')).join('\n');
-    console.log('[AI] Generating feedback with MiMo Pro...');
-    const feedback = await generateFeedbackWithMiMo(transcribedText, targetText, pageNumber, bookId);
-
-    // Calculate score based on comparison
-    const similarity = calculateSimilarity(transcribedText, targetText);
-    const score = Math.round(60 + (similarity * 36)); // Scale 0-1 to 60-96
-    const passed = score >= 80;
-
-    console.log('[AI] Similarity:', similarity, 'Score:', score, 'Passed:', passed);
-
-    return {
-      score,
-      status: passed ? 'fluent' : 'review',
-      feedback: feedback.feedback,
-      note: feedback.note,
-    };
-  } catch (error) {
-    console.error('[AI] MiMo AI assessment failed:', error.message);
-    console.error('[AI] Falling back to mock scoring');
-    return scoreAttempt({ pageNumber, durationSeconds: 10, targetLines });
-  }
-}
-
-async function transcribeWithMiMoASR(audioBuffer) {
-  // Convert audio to wav using ffmpeg
-  const tmpDir = '/tmp/iqroku_audio';
-  await mkdir(tmpDir, { recursive: true });
-
-  const tmpInput = resolve(tmpDir, `input_${Date.now()}.m4a`);
-  const tmpOutput = resolve(tmpDir, `output_${Date.now()}.wav`);
-
-  try {
-    // Write input file
-    await writeFile(tmpInput, audioBuffer);
-
-    // Convert to wav (16kHz, mono)
-    execSync(`ffmpeg -i ${tmpInput} -ar 16000 -ac 1 -f wav ${tmpOutput} -y`, {
-      stdio: 'pipe',
-    });
-
-    // Read converted file
-    const wavBuffer = await readFile(tmpOutput);
-    const base64Audio = wavBuffer.toString('base64');
-    const dataUrl = `data:audio/wav;base64,${base64Audio}`;
-
-    const response = await fetch(`${MIMO_API_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${MIMO_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MIMO_ASR_MODEL,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'input_audio',
-                input_audio: {
-                  data: dataUrl,
-                  format: 'wav',
-                },
-              },
-            ],
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`MiMo ASR failed: ${response.status} - ${error}`);
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
-  } finally {
-    // Cleanup temp files
-    try {
-      await unlink(tmpInput).catch(() => {});
-      await unlink(tmpOutput).catch(() => {});
-    } catch (_) {
-      // Ignore cleanup errors
-    }
-  }
-}
-
-async function generateFeedbackWithMiMo(transcribed, target, pageNumber, bookId) {
-  const response = await fetch(`${MIMO_API_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${MIMO_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MIMO_PRO_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: `Kamu adalah guru ngaji yang sabar dan mendukung untuk anak-anak. Tugasmu adalah menilai bacaan Iqro dengan detail dan memberikan umpan balik yang membangun.
-
-TUGASAN: Iqro ${bookId}, Halaman ${pageNumber}
-
-FORMAT RESPONSE (JSON):
-{
-  "score": <angka 0-100>,
-  "correct_parts": "<bagian yang benar, misal: 'Alif (✓), Ba (✓)'",
-  "wrong_parts": "<bagian yang salah dengan koreksi, misal: 'ب dibaca ت - seharusnya Ba bukan Ta'",
-  "feedback": "<umpan balik untuk anak: 2-3 kalimat, positif, sebutkan huruf Arab dan Latinnya>",
-  "note": "<catatan untuk orang tua: detail teknis kesalahan dan saran perbaikan>"
-}
-
-ATURAN PENILAIAN:
-- Perhatikan setiap huruf yang dibaca anak
-- Bandingkan dengan teks target huruf per huruf
-- Jika ada huruf yang salah sebut, sebutkan huruf yang benar
-- Berikan pujian untuk bagian yang benar
-- Koreksi bagian yang salah dengan cara yang lembut
-- Skor: 90-100 = Sangat Lancar, 70-89 = Lancar, 40-69 = Perlu Belajar, 0-39 = Perlu Ulang
-- Gunakan nama Latin huruf (Alif, Ba, Ta, dll) agar anak mudah paham
-
-CONTOH RESPONSE:
-{
-  "score": 65,
-  "correct_parts": "Alif (✓) dan Lam (✓) sudah benar",
-  "wrong_parts": "ب (Ba) salah dibaca ت (Ta) - coba rapatkan bibir",
-  "feedback": "Alhamdulillah, Alif dan Lam sudah benar! Untuk ب (Ba), coba rapatkan bibir atas dan bawah ya. Ulangi lagi!",
-  "note": "Anak masih tertukar ب dan ت. Perlu latihan pembedaan huruf yang mirip. Fokus pada posisi bibir untuk Ba."
-}`,
-        },
-        {
-          role: 'user',
-          content: `Teks target (yang seharusnya dibaca):\n${target}\n\nHasil rekaman anak:\n${transcribed}\n\nBandingkan huruf per huruf. Berikan penilaian detail.`,
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`MiMo Pro failed: ${response.status} - ${error}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
-
-  try {
-    // Try to parse JSON response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-  } catch (_) {
-    // Fallback if JSON parsing fails
-  }
-
-  return {
-    feedback: 'Bacaan sudah bagus. Terus berlatih ya!',
-    note: 'Perlu evaluasi lebih lanjut.',
-  };
-}
-
-function calculateSimilarity(text1, text2) {
-  if (!text1 || !text2) return 0;
-
-  // Normalize Arabic text
-  const normalize = (t) => t.replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]/g, '').trim();
-  const a = normalize(text1);
-  const b = normalize(text2);
-
-  if (a === b) return 1;
-  if (!a || !b) return 0;
-
-  // Simple character-based similarity
-  let matches = 0;
-  const maxLen = Math.max(a.length, b.length);
-  const minLen = Math.min(a.length, b.length);
-
-  for (let i = 0; i < minLen; i++) {
-    if (a[i] === b[i]) matches++;
-  }
-
-  return matches / maxLen;
 }
 
 function publicPrayer(prayer) {
@@ -1778,7 +1490,7 @@ function renderAdminDashboard(metrics) {
       <header>
         <div>
           <h1>IqroKu Admin</h1>
-          <p>Prototype dashboard untuk user, subscription, revenue, rekaman, dan assessment.</p>
+          <p>Prototype dashboard untuk user, subscription, revenue, rekaman, dan review.</p>
         </div>
         <div>
           <span class="badge">Generated ${escapeHtml(formatDateTime(metrics.generatedAt))}</span>
@@ -2131,7 +1843,7 @@ function renderSubscriptionsTable(subscriptions, parents) {
 function renderAttemptsTable(attempts) {
   return `<section>
     <div class="section-head">
-      <h2>Rekaman & Assessment Terbaru</h2>
+      <h2>Rekaman & Review Terbaru</h2>
       <span class="muted">${attempts.length} terbaru</span>
     </div>
     ${attempts.length ? `<table>
@@ -2141,7 +1853,6 @@ function renderAttemptsTable(attempts) {
           <th>Parent</th>
           <th>Materi</th>
           <th>Status</th>
-          <th>Skor</th>
           <th>Created</th>
         </tr>
       </thead>
@@ -2152,7 +1863,6 @@ function renderAttemptsTable(attempts) {
             <td>${escapeHtml(attempt.parentEmail)}</td>
             <td>Iqro ${attempt.bookId} - Halaman ${attempt.pageNumber}</td>
             <td>${renderAttemptStatus(attempt.assessmentStatus)}</td>
-            <td>${attempt.score ?? '-'}</td>
             <td>${escapeHtml(formatDateTime(attempt.createdAt ?? attempt.assessedAt))}</td>
           </tr>
         `).join('')}

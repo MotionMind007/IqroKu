@@ -4,7 +4,6 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../core/assets/app_assets.dart';
-import '../data/assessment_service.dart';
 import '../data/audio_playback_service.dart';
 import '../data/auth_api_service.dart';
 import '../data/daily_prayer_api_service.dart';
@@ -12,7 +11,6 @@ import '../data/dummy_iqroku_repository.dart';
 import '../data/islamic_activity_service.dart';
 import '../data/iqro_content_repository.dart';
 import '../data/local_app_storage.dart';
-import '../data/mimo_assessment_service.dart';
 import '../data/quran_api_service.dart';
 import '../data/voice_recording_service.dart';
 import '../models/iqro_models.dart';
@@ -36,7 +34,6 @@ class IqrokuState extends ChangeNotifier {
     required this.repository,
     LocalAppStorage? storage,
     this.iqroContentRepository = const IqroContentRepository(),
-    this.assessmentService = const MockAssessmentService(),
     AuthApiService? authService,
     this.dailyPrayerApiService = const DailyPrayerApiService(),
     this.quranApiService = const QuranApiService(),
@@ -73,7 +70,6 @@ class IqrokuState extends ChangeNotifier {
   final DummyIqrokuRepository repository;
   final LocalAppStorage storage;
   final IqroContentRepository iqroContentRepository;
-  final AssessmentService assessmentService;
   final AuthApiService authService;
   final DailyPrayerApiService dailyPrayerApiService;
   final QuranApiService quranApiService;
@@ -98,13 +94,6 @@ class IqrokuState extends ChangeNotifier {
 
   AppLaunchStage launchStage = AppLaunchStage.onboarding;
   int selectedTab = 0;
-
-  AssessmentService get _activeAssessmentService {
-    if (authToken != null && authToken!.isNotEmpty) {
-      return MiMoAssessmentService(authService: authService);
-    }
-    return assessmentService;
-  }
 
   int selectedIqroBook = 1;
   int selectedIqroPage = 8;
@@ -1085,7 +1074,7 @@ class IqrokuState extends ChangeNotifier {
 
   void selectIqroPage(int page) {
     if (!_canAccessIqroPage(selectedIqroBook, page)) {
-      _showSubscriptionNotice();
+      _showIqroAccessNotice(selectedIqroBook, page);
       return;
     }
     unawaited(cancelVoicePractice());
@@ -1186,7 +1175,7 @@ class IqrokuState extends ChangeNotifier {
       audioPath: audioPath,
       note: audioPath == null
           ? 'Percobaan baca suara tersimpan tanpa file audio.'
-          : 'Rekaman tersimpan. Menunggu penilaian bacaan.',
+          : 'Rekaman tersimpan. Menunggu review orang tua.',
     );
     learningAttempts.insert(0, attempt);
 
@@ -1197,7 +1186,6 @@ class IqrokuState extends ChangeNotifier {
     _persist();
     notifyListeners();
     unawaited(_syncLearningAttempt(attempt));
-    unawaited(_runAssessment(attempt.id));
   }
 
   Future<void> cancelVoicePractice() async {
@@ -1342,7 +1330,7 @@ class IqrokuState extends ChangeNotifier {
       assessmentStatus: ReadingAssessmentStatus.recorded,
       audioPath: audioPath,
       note:
-          'Rekaman hafalan ${selectedSurahData.name} tersimpan. Penilaian AI hafalan akan disambungkan di tahap berikutnya.',
+          'Rekaman hafalan ${selectedSurahData.name} tersimpan. Menunggu review orang tua.',
     );
     learningAttempts.insert(0, attempt);
 
@@ -1362,7 +1350,7 @@ class IqrokuState extends ChangeNotifier {
 
     final nextPage = selectedIqroPage + 1;
     if (!_canAccessIqroPage(selectedIqroBook, nextPage)) {
-      _showSubscriptionNotice();
+      _showIqroAccessNotice(selectedIqroBook, nextPage);
       return;
     }
 
@@ -1537,14 +1525,29 @@ class IqrokuState extends ChangeNotifier {
   }
 
   bool _canAccessIqroPage(int bookId, int pageNumber) {
+    final child = selectedChild;
+    if (bookId == child.repeatFromBook && pageNumber < child.repeatFromPage) {
+      return false;
+    }
+
     return familyPlusActive ||
         (bookId == freeIqroBookLimit && pageNumber <= freeIqroPageLimit);
   }
 
-  void _showSubscriptionNotice() {
-    subscriptionNotice =
-        'Akun Free hanya sampai Iqro 1 halaman 10. Aktifkan IqroKu Plus $subscriptionPriceLabel untuk lanjut belajar.';
+  void _showIqroAccessNotice(int bookId, int pageNumber) {
+    final child = selectedChild;
+    if (bookId == child.repeatFromBook && pageNumber < child.repeatFromPage) {
+      subscriptionNotice =
+          'Orang tua meminta ulang dari Iqro ${child.repeatFromBook} halaman ${child.repeatFromPage}. Mulai dari halaman itu dulu.';
+    } else {
+      subscriptionNotice =
+          'Akun Free hanya sampai Iqro 1 halaman 10. Aktifkan IqroKu Plus $subscriptionPriceLabel untuk lanjut belajar.';
+    }
     notifyListeners();
+  }
+
+  void _showSubscriptionNotice() {
+    _showIqroAccessNotice(selectedIqroBook, selectedIqroPage);
   }
 
   void _ensureSelectedIqroAccess() {
@@ -1552,107 +1555,15 @@ class IqrokuState extends ChangeNotifier {
       return;
     }
 
+    final child = selectedChild;
+    if (selectedIqroBook == child.repeatFromBook &&
+        selectedIqroPage < child.repeatFromPage) {
+      selectedIqroPage = child.repeatFromPage.clamp(1, selectedIqroTotalPages);
+      return;
+    }
+
     selectedIqroBook = freeIqroBookLimit;
     selectedIqroPage = selectedIqroPage.clamp(1, freeIqroPageLimit);
-  }
-
-  Future<void> _runAssessment(String attemptId) async {
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    final assessing = _replaceLearningAttempt(
-      attemptId,
-      (attempt) => attempt.copyWith(
-        assessmentStatus: ReadingAssessmentStatus.assessing,
-        note: 'Sedang menilai kelancaran, durasi, dan konsistensi bacaan.',
-      ),
-    );
-    if (assessing == null) {
-      return;
-    }
-    _persist();
-    notifyListeners();
-
-    final currentAttempt = learningAttempts.firstWhere(
-      (attempt) => attempt.id == attemptId,
-      orElse: () => assessing,
-    );
-    final result = await _activeAssessmentService.assess(
-      AssessmentRequest(
-        childId: currentAttempt.childId,
-        bookId: currentAttempt.bookId,
-        pageNumber: currentAttempt.pageNumber,
-        targetLines: _targetLinesFor(
-          currentAttempt.bookId,
-          currentAttempt.pageNumber,
-        ),
-        audioPath: currentAttempt.audioPath,
-        durationSeconds: currentAttempt.durationSeconds,
-        attemptId: attemptId,
-      ),
-    );
-    final assessed = _replaceLearningAttempt(attemptId, (attempt) {
-      return attempt.copyWith(
-        status: result.status,
-        assessmentStatus: result.status == LearningStatus.fluent
-            ? ReadingAssessmentStatus.fluent
-            : ReadingAssessmentStatus.needsReview,
-        score: result.score,
-        feedback: result.feedback,
-        note: result.note,
-      );
-    });
-    if (assessed == null) {
-      return;
-    }
-
-    _progressForBook(assessed.childId, assessed.bookId)[assessed.pageNumber] =
-        assessed.status;
-    _syncChildProgress(assessed.childId, assessed.bookId);
-    _prependAssessmentLearningNote(assessed);
-    _persist();
-    _syncProgressToBackend(
-      childId: assessed.childId,
-      bookId: assessed.bookId,
-      pageNumber: assessed.pageNumber,
-      status: assessed.status,
-    );
-    notifyListeners();
-  }
-
-  LearningAttempt? _replaceLearningAttempt(
-    String attemptId,
-    LearningAttempt Function(LearningAttempt attempt) update,
-  ) {
-    final index = learningAttempts.indexWhere((attempt) {
-      return attempt.id == attemptId;
-    });
-    if (index == -1) {
-      return null;
-    }
-
-    final updated = update(learningAttempts[index]);
-    learningAttempts[index] = updated;
-    return updated;
-  }
-
-  void _prependAssessmentLearningNote(LearningAttempt attempt) {
-    final title = 'Iqro ${attempt.bookId} - Halaman ${attempt.pageNumber}';
-    final scoreText = attempt.score == null
-        ? ''
-        : ' Skor ${attempt.score}/100.';
-    learningNotes.removeWhere((note) => note.title == title);
-    learningNotes.insert(
-      0,
-      LearningNote(
-        title: title,
-        date: _todayLabel(),
-        status: attempt.status,
-        note: '$scoreText ${attempt.feedback ?? attempt.note ?? ''}'.trim(),
-      ),
-    );
-
-    if (learningNotes.length > 20) {
-      learningNotes.removeRange(20, learningNotes.length);
-    }
   }
 
   void _prependLearningNote(LearningStatus status) {
@@ -1770,18 +1681,49 @@ class IqrokuState extends ChangeNotifier {
     return null;
   }
 
-  List<List<String>> _targetLinesFor(int bookId, int pageNumber) {
-    final book = _materialBookFor(bookId);
-    if (book == null) {
-      return const [];
+  Future<void> refreshChildrenFromBackend() async {
+    final parent = parentAccount;
+    if (parent == null || authToken == null || authToken!.isEmpty) {
+      return;
     }
 
-    for (final page in book.pages) {
-      if (page.pageNumber == pageNumber) {
-        return page.lines;
+    try {
+      final previousChildId = selectedChildId;
+      final remoteChildren = await authService.loadChildren(parent.id);
+      childProfiles
+        ..clear()
+        ..addAll(remoteChildren);
+      _iqroProgress.clear();
+
+      if (childProfiles.isEmpty) {
+        selectedChildId = '';
+        currentChildAccount = null;
+        childSetupCompleted = false;
+      } else {
+        selectedChildId =
+            childProfiles.any((child) => child.id == previousChildId)
+            ? previousChildId
+            : childProfiles.first.id;
+        for (final child in childProfiles) {
+          _seedIqroProgressForChild(child.id, currentPage: 1);
+          await _loadRemoteProgressForChild(child.id);
+          _syncChildProgress(child.id, 1);
+        }
+        selectedIqroPage = _firstActivePageForBook(selectedIqroBook);
+        _ensureSelectedIqroAccess();
+        childSetupCompleted = true;
       }
+
+      _persist();
+      notifyListeners();
+    } on AuthApiException catch (error) {
+      if (error.statusCode == 401) {
+        _handleTokenExpired();
+      }
+      debugPrint('Children refresh failed: ${error.code}');
+    } catch (error) {
+      debugPrint('Children refresh failed: $error');
     }
-    return const [];
   }
 
   Future<void> _finishAuth(AuthResult result) async {
