@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/assets/app_assets.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/ad_banner.dart';
 import '../../core/widgets/app_chrome.dart';
 import '../../models/prayer_models.dart';
 
@@ -45,6 +46,10 @@ class PrayerScheduleScreen extends StatelessWidget {
             trailing: Icons.tune,
             onBack: onBack ?? state.goHome,
           ),
+          if (state.shouldShowAds) ...[
+            const SizedBox(height: 12),
+            const IqrokuAdBanner(),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [
@@ -318,6 +323,10 @@ class QiblaCompassScreen extends StatelessWidget {
               ),
             ],
           ),
+          if (state.shouldShowAds) ...[
+            const SizedBox(height: 12),
+            const IqrokuAdBanner(),
+          ],
           const SizedBox(height: 28),
           Row(
             children: [

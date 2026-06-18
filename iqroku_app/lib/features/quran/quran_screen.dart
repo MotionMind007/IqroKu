@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/assets/app_assets.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/ad_banner.dart';
 import '../../core/widgets/app_chrome.dart';
 import '../../core/widgets/asset_icon.dart';
 import '../../models/quran_models.dart';
@@ -74,7 +75,7 @@ class QuranSurahListScreen extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _QuranModeCard(
-                  asset: AppAssets.bookmark,
+                  asset: AppAssets.hafalan,
                   title: 'Hafalan',
                   subtitle: 'Rekam suara',
                   selected: state.memorizationMode,
@@ -128,6 +129,10 @@ class MurottalScreen extends StatelessWidget {
             trailing: Icons.volume_up_outlined,
             onBack: onBack ?? state.goHome,
           ),
+          if (state.shouldShowAds) ...[
+            const SizedBox(height: 12),
+            const IqrokuAdBanner(),
+          ],
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(18),

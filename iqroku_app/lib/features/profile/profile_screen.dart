@@ -255,14 +255,14 @@ class _PlanNoticeCard extends StatelessWidget {
                 Text(
                   familyPlusActive
                       ? 'IqroKu Plus aktif'
-                      : 'Akun Free: 1 anak + Iqro 1 halaman 1-10',
+                      : 'Akun Free: 1 anak + Iqro jilid 1',
                   style: AppText.bodyStrong,
                 ),
                 const SizedBox(height: 4),
                 Text(
                   familyPlusActive
                       ? 'Semua materi Iqro terbuka dan kamu bisa memantau beberapa anak.'
-                      : 'Kuota anak $childCount/$childLimit. Lanjut setelah halaman 10 perlu subscription Rp49.000/bulan.',
+                      : 'Kuota anak $childCount/$childLimit. Iqro jilid 2 sampai 6 perlu subscription Rp49.000/bulan.',
                   style: AppText.caption,
                 ),
                 if (familyPlusActive) ...[

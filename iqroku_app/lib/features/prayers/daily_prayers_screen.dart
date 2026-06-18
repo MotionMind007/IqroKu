@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/assets/app_assets.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/ad_banner.dart';
 import '../../core/widgets/app_chrome.dart';
 import '../../models/prayer_models.dart';
 
@@ -27,6 +28,10 @@ class DailyPrayersScreen extends StatelessWidget {
             onBack: onBack ?? state.goHome,
             onTrailing: () => state.loadDailyPrayers(forceRefresh: true),
           ),
+          if (state.shouldShowAds) ...[
+            const SizedBox(height: 12),
+            const IqrokuAdBanner(),
+          ],
           const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.all(18),

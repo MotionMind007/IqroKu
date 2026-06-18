@@ -18,11 +18,7 @@ void main() {
     });
 
     test('fromJson with null values uses defaults', () {
-      final json = <String, Object?>{
-        'id': null,
-        'name': null,
-        'email': null,
-      };
+      final json = <String, Object?>{'id': null, 'name': null, 'email': null};
 
       final account = ParentAccount.fromJson(json);
 
@@ -54,10 +50,7 @@ void main() {
           'name': 'Ahmad',
           'email': 'ahmad@example.com',
         },
-        'session': {
-          'token': 'session_abc123',
-          'type': 'password',
-        },
+        'session': {'token': 'session_abc123', 'type': 'password'},
       };
 
       final result = AuthResult.fromJson(json);
@@ -139,6 +132,32 @@ void main() {
 
       expect(exception.statusCode, 401);
       expect(exception.code, 'unauthorized');
+    });
+  });
+
+  group('AuthApiService helpers', () {
+    test('backendUrl resolves relative media URLs', () {
+      final service = AuthApiService(baseUrl: 'https://iqroku.example');
+
+      expect(
+        service.backendUrl('/uploads/audio/attempt.m4a'),
+        'https://iqroku.example/uploads/audio/attempt.m4a',
+      );
+      expect(
+        service.backendUrl('https://cdn.example/audio.m4a'),
+        'https://cdn.example/audio.m4a',
+      );
+    });
+
+    test('audioPlaybackHeaders includes bearer token when available', () {
+      final service = AuthApiService(baseUrl: 'https://iqroku.example');
+
+      expect(service.audioPlaybackHeaders(), isEmpty);
+
+      service.authToken = 'session-token';
+      expect(service.audioPlaybackHeaders(), {
+        'authorization': 'Bearer session-token',
+      });
     });
   });
 }

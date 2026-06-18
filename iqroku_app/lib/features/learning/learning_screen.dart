@@ -383,14 +383,6 @@ class ReadingPracticeCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _StatusIndicator(
-                  label: 'Belajar Lagi',
-                  active: status == LearningStatus.learning,
-                  color: AppColors.gold,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _StatusIndicator(
                   label: 'Lancar',
                   active: status == LearningStatus.fluent,
                   color: AppColors.primary,
@@ -399,13 +391,6 @@ class ReadingPracticeCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          if (latestAttempt != null) ...[
-            Text(
-              'Hasil bacaan akan ditentukan orang tua setelah review.',
-              style: AppText.caption.copyWith(color: AppColors.muted),
-            ),
-            const SizedBox(height: 12),
-          ],
           Text(
             '$completedPages / $totalPages halaman lancar',
             style: AppText.caption,
@@ -735,13 +720,13 @@ class VoicePracticePanel extends StatelessWidget {
                         isRecording ? 'Merekam bacaan...' : 'Baca dengan suara',
                         style: AppText.bodyStrong,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isRecording
-                            ? 'Durasi ${_formatDuration(recordingSeconds)}'
-                            : 'Rekam bacaan, lalu IqroKu bantu beri penilaian awal.',
-                        style: AppText.caption,
-                      ),
+                      if (isRecording) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Durasi ${_formatDuration(recordingSeconds)}',
+                          style: AppText.caption,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -803,11 +788,6 @@ class VoicePracticePanel extends StatelessWidget {
                   ),
                 ),
               ),
-            const SizedBox(height: 8),
-            const Text(
-              'Penilaian Otomatis berdasarkan rekaman suara.',
-              style: AppText.caption,
-            ),
           ],
         ),
       ),

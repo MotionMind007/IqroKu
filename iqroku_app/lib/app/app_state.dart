@@ -63,7 +63,6 @@ class IqrokuState extends ChangeNotifier {
 
   static const freeChildLimit = 1;
   static const freeIqroBookLimit = 1;
-  static const freeIqroPageLimit = 10;
   static const quranMemorizationBookId = 99;
   static const subscriptionPriceLabel = 'Rp49.000/bulan';
 
@@ -161,6 +160,8 @@ class IqrokuState extends ChangeNotifier {
   String get planLabel => familyPlusActive ? 'IqroKu Plus' : 'Free';
   String get childQuotaLabel => '${childProfiles.length}/$childLimit anak';
   bool get subscriptionActive => familyPlusActive;
+
+  bool get shouldShowAds => !familyPlusActive;
   bool get currentChildHasPin {
     // For now, assume child has PIN if they exist in the system
     // In real implementation, this should check the backend
@@ -1062,7 +1063,7 @@ class IqrokuState extends ChangeNotifier {
 
   void selectIqroBook(int bookId) {
     if (!_canAccessIqroBook(bookId)) {
-      _showSubscriptionNotice();
+      _showIqroAccessNotice(bookId, 1);
       return;
     }
     unawaited(cancelVoicePractice());
@@ -1229,6 +1230,41 @@ class IqrokuState extends ChangeNotifier {
     } catch (_) {
       playingAttemptId = null;
       playbackError = 'Rekaman belum bisa diputar. Coba rekam ulang.';
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleReviewPlayback({
+    required String attemptId,
+    required String? audioPath,
+  }) async {
+    if (audioPath == null || audioPath.isEmpty) {
+      playbackError = 'File rekaman belum tersedia untuk review ini.';
+      notifyListeners();
+      return;
+    }
+
+    if (playingAttemptId == attemptId) {
+      await audioPlaybackService.stop();
+      playingAttemptId = null;
+      playbackError = null;
+      notifyListeners();
+      return;
+    }
+
+    try {
+      await audioPlaybackService.stop();
+      playingAttemptId = attemptId;
+      playingQuranAudioUrl = null;
+      playbackError = null;
+      notifyListeners();
+      await audioPlaybackService.play(
+        authService.backendUrl(audioPath),
+        headers: authService.audioPlaybackHeaders(),
+      );
+    } catch (_) {
+      playingAttemptId = null;
+      playbackError = 'Rekaman belum bisa diputar. Coba muat ulang review.';
       notifyListeners();
     }
   }
@@ -1521,7 +1557,7 @@ class IqrokuState extends ChangeNotifier {
   }
 
   bool _canAccessIqroBook(int bookId) {
-    return familyPlusActive || bookId <= freeIqroBookLimit;
+    return familyPlusActive || bookId == freeIqroBookLimit;
   }
 
   bool _canAccessIqroPage(int bookId, int pageNumber) {
@@ -1530,18 +1566,21 @@ class IqrokuState extends ChangeNotifier {
       return false;
     }
 
-    return familyPlusActive ||
-        (bookId == freeIqroBookLimit && pageNumber <= freeIqroPageLimit);
+    return _canAccessIqroBook(bookId);
   }
 
   void _showIqroAccessNotice(int bookId, int pageNumber) {
     final child = selectedChild;
-    if (bookId == child.repeatFromBook && pageNumber < child.repeatFromPage) {
+    if (!_canAccessIqroBook(bookId)) {
+      subscriptionNotice =
+          'Akun Free bisa belajar seluruh Iqro jilid 1. Aktifkan IqroKu Plus $subscriptionPriceLabel untuk membuka jilid 2 sampai 6.';
+    } else if (bookId == child.repeatFromBook &&
+        pageNumber < child.repeatFromPage) {
       subscriptionNotice =
           'Orang tua meminta ulang dari Iqro ${child.repeatFromBook} halaman ${child.repeatFromPage}. Mulai dari halaman itu dulu.';
     } else {
       subscriptionNotice =
-          'Akun Free hanya sampai Iqro 1 halaman 10. Aktifkan IqroKu Plus $subscriptionPriceLabel untuk lanjut belajar.';
+          'Halaman ini belum bisa dibuka. Cek progress belajar atau status subscription.';
     }
     notifyListeners();
   }
@@ -1563,7 +1602,7 @@ class IqrokuState extends ChangeNotifier {
     }
 
     selectedIqroBook = freeIqroBookLimit;
-    selectedIqroPage = selectedIqroPage.clamp(1, freeIqroPageLimit);
+    selectedIqroPage = selectedIqroPage.clamp(1, selectedIqroTotalPages);
   }
 
   void _prependLearningNote(LearningStatus status) {

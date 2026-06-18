@@ -361,6 +361,7 @@ class _ReviewTabState extends State<_ReviewTab> {
         itemBuilder: (context, index) {
           final review = _pendingReviews[index];
           return _ReviewCard(
+            state: widget.state,
             review: review,
             onApprove: () => _approveReview(review),
             onRepeat: (fromPage) => _repeatReview(review, fromPage),
@@ -414,11 +415,13 @@ class _ReviewTabState extends State<_ReviewTab> {
 
 class _ReviewCard extends StatelessWidget {
   const _ReviewCard({
+    required this.state,
     required this.review,
     required this.onApprove,
     required this.onRepeat,
   });
 
+  final IqrokuState state;
   final Map<String, Object?> review;
   final VoidCallback onApprove;
   final Function(int fromPage) onRepeat;
@@ -429,76 +432,104 @@ class _ReviewCard extends StatelessWidget {
     final bookId = review['book_id'] as int? ?? 1;
     final pageNumber = review['page_number'] as int? ?? 1;
     final duration = review['duration_seconds'] as int? ?? 0;
+    final attemptId = review['id'] as String? ?? '';
+    final audioPath =
+        review['audio_path'] as String? ?? review['audio_url'] as String?;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return AnimatedBuilder(
+      animation: state,
+      builder: (context, _) {
+        final isPlaying = state.playingAttemptId == attemptId;
+        final canPlay = attemptId.isNotEmpty && audioPath != null;
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.child_care, color: AppColors.primary),
-                const SizedBox(width: 8),
-                Expanded(child: Text(childName, style: AppText.bodyStrong)),
-                Text(
-                  'Iqro $bookId - Hal $pageNumber',
-                  style: AppText.caption.copyWith(color: AppColors.primary),
+                Row(
+                  children: [
+                    const Icon(Icons.child_care, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(childName, style: AppText.bodyStrong)),
+                    Text(
+                      'Iqro $bookId - Hal $pageNumber',
+                      style: AppText.caption.copyWith(color: AppColors.primary),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text('Durasi: ${duration}s', style: AppText.caption),
-            const SizedBox(height: 12),
-            // Audio player placeholder
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.play_arrow),
-                    onPressed: () {
-                      // TODO: Play audio
-                    },
+                const SizedBox(height: 8),
+                Text('Durasi: ${duration}s', style: AppText.caption),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  Expanded(
-                    child: Text('Putar rekaman', style: AppText.caption),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          isPlaying ? Icons.stop_circle : Icons.play_arrow,
+                        ),
+                        color: AppColors.primary,
+                        onPressed: canPlay
+                            ? () => state.toggleReviewPlayback(
+                                attemptId: attemptId,
+                                audioPath: audioPath,
+                              )
+                            : null,
+                      ),
+                      Expanded(
+                        child: Text(
+                          canPlay
+                              ? isPlaying
+                                    ? 'Memutar rekaman'
+                                    : 'Putar rekaman'
+                              : 'Rekaman belum tersedia',
+                          style: AppText.caption,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (state.playbackError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    state.playbackError!,
+                    style: AppText.caption.copyWith(color: AppColors.coral),
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Action buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showRepeatDialog(context),
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Ulangi'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.coral,
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showRepeatDialog(context),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Perlu Ulang'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.coral,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: onApprove,
-                    icon: const Icon(Icons.check),
-                    label: const Text('Lancar'),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: onApprove,
+                        icon: const Icon(Icons.check),
+                        label: const Text('Lancar'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

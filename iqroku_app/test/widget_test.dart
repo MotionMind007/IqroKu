@@ -286,7 +286,7 @@ void main() {
     expect(state.selectedTab, 0);
   });
 
-  test('Free plan locks learning after Iqro 1 page 10', () async {
+  test('Free plan allows Iqro 1 and locks Iqro 2+', () async {
     SharedPreferences.setMockInitialValues({});
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
@@ -298,18 +298,19 @@ void main() {
     expect(state.selectedIqroPage, 10);
 
     state.goToNextIqroPage();
-    expect(state.selectedIqroPage, 10);
-    expect(state.subscriptionNotice, contains('halaman 10'));
+    expect(state.selectedIqroPage, 11);
+    expect(state.subscriptionNotice, isNull);
 
     state.selectIqroBook(2);
     expect(state.selectedIqroBook, 1);
+    expect(state.subscriptionNotice, contains('jilid 2'));
 
     state.activateFamilyPlus();
     expect(state.subscriptionActivatedAt, isNotNull);
     expect(state.subscriptionRenewalLabel, isNot('Belum aktif'));
 
-    state.goToNextIqroPage();
-    expect(state.selectedIqroPage, 11);
+    state.selectIqroBook(2);
+    expect(state.selectedIqroBook, 2);
   });
 
   test('Remote progress is restored after login', () async {
@@ -573,18 +574,21 @@ class FakeAudioPlaybackService implements AudioPlaybackService {
   final StreamController<void> _completeController =
       StreamController<void>.broadcast();
   String? playingPath;
+  Map<String, String>? playingHeaders;
 
   @override
   Stream<void> get onComplete => _completeController.stream;
 
   @override
-  Future<void> play(String path) async {
+  Future<void> play(String path, {Map<String, String>? headers}) async {
     playingPath = path;
+    playingHeaders = headers;
   }
 
   @override
   Future<void> stop() async {
     playingPath = null;
+    playingHeaders = null;
   }
 
   @override

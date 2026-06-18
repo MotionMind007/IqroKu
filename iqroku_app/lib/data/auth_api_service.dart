@@ -271,6 +271,25 @@ class AuthApiService {
     await _post('/notifications/read-all', body);
   }
 
+  String backendUrl(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    final root = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    return '$root$normalizedPath';
+  }
+
+  Map<String, String> audioPlaybackHeaders() {
+    final token = authToken;
+    if (token == null || token.isEmpty) {
+      return const {};
+    }
+    return {'authorization': 'Bearer $token'};
+  }
+
   Map<String, String> _authHeaders() {
     final token = authToken;
     if (token == null || token.isEmpty) {

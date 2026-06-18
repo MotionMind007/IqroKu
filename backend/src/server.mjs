@@ -1340,7 +1340,7 @@ function renderAdminDashboard(metrics) {
     ['MRR Estimasi', rupiah(metrics.totals.monthlyRevenue)],
     ['Rekaman Bacaan', metrics.totals.attempts],
     ['Assessment Selesai', metrics.totals.assessedAttempts],
-    ['Pending Assessment', metrics.totals.pendingAttempts],
+    ['Pending Review', metrics.totals.pendingAttempts],
     ['Parent Aktif Hari Ini', metrics.totals.activeParentsToday],
     ['Halaman Lancar', metrics.totals.fluentPages],
     ['Perlu Ulang', metrics.totals.reviewPages],
