@@ -73,6 +73,7 @@ class LearningScreen extends StatelessWidget {
           if (state.subscriptionNotice != null) ...[
             SubscriptionAccessBanner(
               message: state.subscriptionNotice!,
+              showUpgradeAction: state.isPremiumAccessNotice,
               onUpgrade: () => showIqrokuPlusSheet(
                 context: context,
                 onConfirm: state.activateFamilyPlus,
@@ -99,6 +100,10 @@ class LearningScreen extends StatelessWidget {
                 page: page,
                 selected: page.pageNumber == state.selectedIqroPage,
                 locked: state.isIqroPageLocked(page.bookId, page.pageNumber),
+                premiumLocked: state.isIqroPagePremiumLocked(
+                  page.bookId,
+                  page.pageNumber,
+                ),
                 onTap: () => state.selectIqroPage(page.pageNumber),
               );
             },
@@ -150,12 +155,14 @@ class PageTile extends StatelessWidget {
     required this.page,
     required this.selected,
     required this.locked,
+    required this.premiumLocked,
     required this.onTap,
   });
 
   final IqroPage page;
   final bool selected;
   final bool locked;
+  final bool premiumLocked;
   final VoidCallback onTap;
 
   @override
@@ -196,7 +203,7 @@ class PageTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      locked ? 'Plus' : page.status.shortLabel,
+                      premiumLocked ? 'Plus' : page.status.shortLabel,
                       style: AppText.mini.copyWith(color: color),
                     ),
                   ],
@@ -220,11 +227,13 @@ class SubscriptionAccessBanner extends StatelessWidget {
   const SubscriptionAccessBanner({
     super.key,
     required this.message,
+    required this.showUpgradeAction,
     required this.onUpgrade,
     required this.onClose,
   });
 
   final String message;
+  final bool showUpgradeAction;
   final VoidCallback onUpgrade;
   final VoidCallback onClose;
 
@@ -236,30 +245,37 @@ class SubscriptionAccessBanner extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.lock_open, color: AppColors.gold),
+          Icon(
+            showUpgradeAction ? Icons.lock_open : Icons.info_outline,
+            color: showUpgradeAction ? AppColors.gold : AppColors.primary,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Lanjut dengan IqroKu Plus',
+                Text(
+                  showUpgradeAction
+                      ? 'Lanjut dengan IqroKu Plus'
+                      : 'Ikuti arahan orang tua',
                   style: AppText.bodyStrong,
                 ),
                 const SizedBox(height: 3),
                 Text(message, style: AppText.caption),
-                const SizedBox(height: 8),
-                FilledButton(
-                  onPressed: onUpgrade,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    minimumSize: const Size(double.infinity, 42),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                if (showUpgradeAction) ...[
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    onPressed: onUpgrade,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      minimumSize: const Size(double.infinity, 42),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
+                    child: const Text('Aktifkan Rp49.000/bulan'),
                   ),
-                  child: const Text('Aktifkan Rp49.000/bulan'),
-                ),
+                ],
               ],
             ),
           ),

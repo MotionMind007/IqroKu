@@ -748,7 +748,7 @@ async function route(method, url, body, request) {
     await db.upsertProgress({
       childId: attempt.childId,
       bookId: attempt.bookId,
-      pageNumber: attempt.pageNumber,
+      pageNumber: fromPage,
       status: 'review',
     });
 
@@ -757,7 +757,7 @@ async function route(method, url, body, request) {
 
     // Update progress status
     await db.updateProgressReview(
-      attempt.childId, attempt.bookId, attempt.pageNumber,
+      attempt.childId, attempt.bookId, fromPage,
       'needs_repeat', authedParent.id,
     );
 

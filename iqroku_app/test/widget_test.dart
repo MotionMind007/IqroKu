@@ -354,6 +354,12 @@ void main() {
         ReadingAssessmentStatus.needsReview,
       );
       expect(state.statusForIqroPage(1, 8), LearningStatus.review);
+      expect(state.statusForIqroPage(1, 1), LearningStatus.fluent);
+      expect(state.isIqroPageLocked(1, 1), isFalse);
+      expect(state.isIqroPageLocked(1, 7), isFalse);
+      expect(state.isIqroPageLocked(1, 8), isFalse);
+      expect(state.isIqroPagePremiumLocked(1, 1), isFalse);
+      expect(state.isIqroPagePremiumLocked(2, 1), isTrue);
       expect(state.selectedChild.repeatFromPage, 8);
     },
   );

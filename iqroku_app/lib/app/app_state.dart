@@ -255,8 +255,16 @@ class IqrokuState extends ChangeNotifier {
     return !_canAccessIqroPage(bookId, pageNumber);
   }
 
+  bool isIqroPagePremiumLocked(int bookId, int pageNumber) {
+    return !_canAccessIqroBook(bookId);
+  }
+
   bool isIqroBookPremiumLocked(int bookId) {
     return !_canAccessIqroBook(bookId);
+  }
+
+  bool get isPremiumAccessNotice {
+    return subscriptionNotice != null && !_canAccessIqroBook(selectedIqroBook);
   }
 
   bool get isSelectedIqroPageLocked {
@@ -391,6 +399,7 @@ class IqrokuState extends ChangeNotifier {
     selectedIqroBook = bookId;
     selectedIqroPage = pageNumber.clamp(1, _totalPagesForBook(bookId));
     selectedTab = 1;
+    subscriptionNotice = null;
     _persist();
     notifyListeners();
   }
@@ -1003,9 +1012,8 @@ class IqrokuState extends ChangeNotifier {
     final child = currentChildAccount;
     if (child == null) return true;
 
-    // Check if page is at or after repeat_from_page
     if (bookId == child.repeatFromBook && pageNumber < child.repeatFromPage) {
-      return false;
+      return statusForIqroPage(bookId, pageNumber) == LearningStatus.fluent;
     }
 
     // Check if page is sequential (no skipping)
@@ -1093,6 +1101,7 @@ class IqrokuState extends ChangeNotifier {
     }
     unawaited(cancelVoicePractice());
     selectedIqroPage = page.clamp(1, selectedIqroTotalPages);
+    subscriptionNotice = null;
     _persist();
     notifyListeners();
   }
@@ -1120,8 +1129,8 @@ class IqrokuState extends ChangeNotifier {
           : 'Orang tua meminta mengulang dari halaman ${repeatFromPage ?? attempt.pageNumber}.',
     );
     learningAttempts[index] = updatedAttempt;
-    _progressForBook(attempt.childId, attempt.bookId)[attempt.pageNumber] =
-        status;
+    final reviewedPage = repeatFromPage ?? attempt.pageNumber;
+    _progressForBook(attempt.childId, attempt.bookId)[reviewedPage] = status;
 
     if (repeatFromPage != null) {
       final childIndex = childProfiles.indexWhere((child) {
@@ -1618,12 +1627,16 @@ class IqrokuState extends ChangeNotifier {
   }
 
   bool _canAccessIqroPage(int bookId, int pageNumber) {
-    final child = selectedChild;
-    if (bookId == child.repeatFromBook && pageNumber < child.repeatFromPage) {
+    if (!_canAccessIqroBook(bookId)) {
       return false;
     }
 
-    return _canAccessIqroBook(bookId);
+    final child = selectedChild;
+    if (bookId == child.repeatFromBook && pageNumber < child.repeatFromPage) {
+      return statusForIqroPage(bookId, pageNumber) == LearningStatus.fluent;
+    }
+
+    return true;
   }
 
   void _showIqroAccessNotice(int bookId, int pageNumber) {
