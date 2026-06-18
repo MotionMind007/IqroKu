@@ -255,6 +255,10 @@ class IqrokuState extends ChangeNotifier {
     return !_canAccessIqroPage(bookId, pageNumber);
   }
 
+  bool isIqroBookPremiumLocked(int bookId) {
+    return !_canAccessIqroBook(bookId);
+  }
+
   bool get isSelectedIqroPageLocked {
     return isIqroPageLocked(selectedIqroBook, selectedIqroPage);
   }
@@ -1062,24 +1066,77 @@ class IqrokuState extends ChangeNotifier {
   }
 
   void selectIqroBook(int bookId) {
-    if (!_canAccessIqroBook(bookId)) {
-      _showIqroAccessNotice(bookId, 1);
-      return;
-    }
     unawaited(cancelVoicePractice());
     selectedIqroBook = bookId;
-    selectedIqroPage = _firstActivePageForBook(bookId);
+    selectedIqroPage = _canAccessIqroBook(bookId)
+        ? _firstActivePageForBook(bookId)
+        : 1;
+    if (!_canAccessIqroBook(bookId)) {
+      _showIqroAccessNotice(bookId, 1);
+    } else {
+      subscriptionNotice = null;
+    }
     _persist();
     notifyListeners();
   }
 
   void selectIqroPage(int page) {
+    if (isIqroBookPremiumLocked(selectedIqroBook)) {
+      selectedIqroPage = page.clamp(1, selectedIqroTotalPages);
+      _showIqroAccessNotice(selectedIqroBook, selectedIqroPage);
+      _persist();
+      return;
+    }
     if (!_canAccessIqroPage(selectedIqroBook, page)) {
       _showIqroAccessNotice(selectedIqroBook, page);
       return;
     }
     unawaited(cancelVoicePractice());
     selectedIqroPage = page.clamp(1, selectedIqroTotalPages);
+    _persist();
+    notifyListeners();
+  }
+
+  void applyParentReviewResult({
+    required String attemptId,
+    required LearningStatus status,
+    int? repeatFromPage,
+  }) {
+    final index = learningAttempts.indexWhere((attempt) {
+      return attempt.id == attemptId;
+    });
+    if (index == -1) {
+      return;
+    }
+
+    final attempt = learningAttempts[index];
+    final updatedAttempt = attempt.copyWith(
+      status: status,
+      assessmentStatus: status == LearningStatus.fluent
+          ? ReadingAssessmentStatus.fluent
+          : ReadingAssessmentStatus.needsReview,
+      note: status == LearningStatus.fluent
+          ? 'Bacaan disetujui orang tua. Lanjut ke halaman berikutnya.'
+          : 'Orang tua meminta mengulang dari halaman ${repeatFromPage ?? attempt.pageNumber}.',
+    );
+    learningAttempts[index] = updatedAttempt;
+    _progressForBook(attempt.childId, attempt.bookId)[attempt.pageNumber] =
+        status;
+
+    if (repeatFromPage != null) {
+      final childIndex = childProfiles.indexWhere((child) {
+        return child.id == attempt.childId;
+      });
+      if (childIndex != -1) {
+        childProfiles[childIndex] = childProfiles[childIndex].copyWith(
+          repeatFromBook: attempt.bookId,
+          repeatFromPage: repeatFromPage,
+        );
+      }
+    }
+
+    _syncChildProgress(attempt.childId, attempt.bookId);
+    subscriptionNotice = null;
     _persist();
     notifyListeners();
   }
@@ -1728,6 +1785,8 @@ class IqrokuState extends ChangeNotifier {
 
     try {
       final previousChildId = selectedChildId;
+      final previousBook = selectedIqroBook;
+      final previousPage = selectedIqroPage;
       final remoteChildren = await authService.loadChildren(parent.id);
       childProfiles
         ..clear()
@@ -1748,11 +1807,13 @@ class IqrokuState extends ChangeNotifier {
           await _loadRemoteProgressForChild(child.id);
           _syncChildProgress(child.id, 1);
         }
-        selectedIqroPage = _firstActivePageForBook(selectedIqroBook);
+        selectedIqroBook = previousBook;
+        selectedIqroPage = previousPage.clamp(1, selectedIqroTotalPages);
         _ensureSelectedIqroAccess();
         childSetupCompleted = true;
       }
 
+      subscriptionNotice = null;
       _persist();
       notifyListeners();
     } on AuthApiException catch (error) {

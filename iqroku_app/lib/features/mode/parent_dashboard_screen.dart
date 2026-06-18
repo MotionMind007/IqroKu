@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../features/activity/activity_screen.dart';
 import '../../features/prayers/daily_prayers_screen.dart';
 import '../../features/quran/quran_screen.dart';
+import '../../models/learning_status.dart';
 import '../../models/profile_models.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
@@ -375,6 +376,10 @@ class _ReviewTabState extends State<_ReviewTab> {
     try {
       await widget.state.authService.approveReview(review['id'] as String);
       if (!mounted) return;
+      widget.state.applyParentReviewResult(
+        attemptId: review['id'] as String,
+        status: LearningStatus.fluent,
+      );
       await widget.state.refreshChildrenFromBackend();
       if (!mounted) return;
       _loadPendingReviews();
@@ -396,6 +401,11 @@ class _ReviewTabState extends State<_ReviewTab> {
         fromPage: fromPage,
       );
       if (!mounted) return;
+      widget.state.applyParentReviewResult(
+        attemptId: review['id'] as String,
+        status: LearningStatus.review,
+        repeatFromPage: fromPage,
+      );
       await widget.state.refreshChildrenFromBackend();
       if (!mounted) return;
       _loadPendingReviews();

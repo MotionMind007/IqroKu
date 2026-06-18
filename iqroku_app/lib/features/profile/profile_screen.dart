@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_chrome.dart';
+import '../../core/widgets/legal_documents.dart';
 import '../../core/widgets/subscription_sheet.dart';
 import '../../models/learning_status.dart';
 import '../../models/profile_models.dart' as profile;
@@ -68,6 +69,10 @@ class ProfileScreen extends StatelessWidget {
             onManagePlan: () => _showUpgradeSheet(context),
             onResetProgress: () => _confirmResetProgress(context),
             onLogout: () => _confirmLogout(context),
+            onOpenTerms: () =>
+                showLegalDocument(context, LegalDocumentType.terms),
+            onOpenPrivacy: () =>
+                showLegalDocument(context, LegalDocumentType.privacy),
           ),
           const SizedBox(height: 24),
         ],
@@ -999,6 +1004,8 @@ class ParentSettingsCard extends StatelessWidget {
     required this.onManagePlan,
     required this.onResetProgress,
     required this.onLogout,
+    required this.onOpenTerms,
+    required this.onOpenPrivacy,
   });
 
   final bool familyPlusActive;
@@ -1006,6 +1013,8 @@ class ParentSettingsCard extends StatelessWidget {
   final VoidCallback onManagePlan;
   final VoidCallback onResetProgress;
   final VoidCallback onLogout;
+  final VoidCallback onOpenTerms;
+  final VoidCallback onOpenPrivacy;
 
   @override
   Widget build(BuildContext context) {
@@ -1031,6 +1040,20 @@ class ParentSettingsCard extends StatelessWidget {
             subtitle: 'Kembalikan progress anak terpilih ke awal.',
             color: AppColors.coral,
             onTap: onResetProgress,
+          ),
+          const Divider(color: AppColors.line),
+          _SettingsAction(
+            icon: Icons.description_outlined,
+            title: 'Syarat & Ketentuan',
+            subtitle: 'Aturan penggunaan IqroKu.',
+            onTap: onOpenTerms,
+          ),
+          const Divider(color: AppColors.line),
+          _SettingsAction(
+            icon: Icons.privacy_tip_outlined,
+            title: 'Kebijakan Privasi',
+            subtitle: 'Cara IqroKu mengelola data akun, anak, dan rekaman.',
+            onTap: onOpenPrivacy,
           ),
           const Divider(color: AppColors.line),
           _SettingsAction(

@@ -22,6 +22,11 @@ class LearningScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final books = state.iqroBooks;
     final pages = state.selectedIqroPages;
+    final latestAttempt = state.selectedPageLatestAttempt;
+    final displayStatus = _reviewAwareStatus(
+      state.selectedIqroStatus,
+      latestAttempt,
+    );
 
     return AppPage(
       child: ListView(
@@ -105,13 +110,14 @@ class LearningScreen extends StatelessWidget {
             bookId: state.selectedIqroBook,
             page: state.selectedIqroPage,
             status: state.selectedIqroStatus,
+            displayStatus: displayStatus,
             completedPages: state.selectedIqroCompletedPages,
             totalPages: state.selectedIqroTotalPages,
             materialPage: state.selectedIqroMaterialPage,
             isVoiceRecording: state.isVoiceRecording,
             voiceRecordingSeconds: state.voiceRecordingSeconds,
             voiceRecordingError: state.voiceRecordingError,
-            latestAttempt: state.selectedPageLatestAttempt,
+            latestAttempt: latestAttempt,
             playingAttemptId: state.playingAttemptId,
             playbackError: state.playbackError,
             onStartVoice: state.startVoicePractice,
@@ -124,6 +130,18 @@ class LearningScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+LearningStatus _reviewAwareStatus(
+  LearningStatus status,
+  LearningAttempt? latestAttempt,
+) {
+  final attemptStatus = latestAttempt?.assessmentStatus;
+  return switch (attemptStatus) {
+    ReadingAssessmentStatus.fluent => LearningStatus.fluent,
+    ReadingAssessmentStatus.needsReview => LearningStatus.review,
+    _ => status,
+  };
 }
 
 class PageTile extends StatelessWidget {
@@ -284,6 +302,7 @@ class ReadingPracticeCard extends StatelessWidget {
     required this.bookId,
     required this.page,
     required this.status,
+    required this.displayStatus,
     required this.completedPages,
     required this.totalPages,
     required this.materialPage,
@@ -303,6 +322,7 @@ class ReadingPracticeCard extends StatelessWidget {
   final int bookId;
   final int page;
   final LearningStatus status;
+  final LearningStatus displayStatus;
   final int completedPages;
   final int totalPages;
   final IqroMaterialPage? materialPage;
@@ -376,7 +396,7 @@ class ReadingPracticeCard extends StatelessWidget {
               Expanded(
                 child: _StatusIndicator(
                   label: 'Perlu Ulang',
-                  active: status == LearningStatus.review,
+                  active: displayStatus == LearningStatus.review,
                   color: AppColors.coral,
                 ),
               ),
@@ -384,7 +404,7 @@ class ReadingPracticeCard extends StatelessWidget {
               Expanded(
                 child: _StatusIndicator(
                   label: 'Lancar',
-                  active: status == LearningStatus.fluent,
+                  active: displayStatus == LearningStatus.fluent,
                   color: AppColors.primary,
                 ),
               ),

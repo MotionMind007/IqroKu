@@ -6,6 +6,7 @@ import '../../app/app_state.dart';
 import '../../core/assets/app_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_chrome.dart';
+import '../../core/widgets/legal_documents.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key, required this.state});
@@ -93,7 +94,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'Nama Lengkap',
                             prefixIcon: Icon(Icons.person_outline),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(14),
+                              ),
                             ),
                           ),
                         ),
@@ -105,7 +108,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'Email',
                             prefixIcon: Icon(Icons.mail_outline),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(14),
+                              ),
                             ),
                           ),
                         ),
@@ -117,7 +122,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'No. Telepon',
                             prefixIcon: Icon(Icons.phone_outlined),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(14),
+                              ),
                             ),
                           ),
                         ),
@@ -129,11 +136,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'Password',
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
-                              onPressed: () => setState(() => obscurePassword = !obscurePassword),
-                              icon: Icon(obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                              onPressed: () => setState(
+                                () => obscurePassword = !obscurePassword,
+                              ),
+                              icon: Icon(
+                                obscurePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
                             ),
                             border: const OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(14),
+                              ),
                             ),
                           ),
                         ),
@@ -145,20 +160,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'Konfirmasi Password',
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
-                              onPressed: () => setState(() => obscureConfirm = !obscureConfirm),
-                              icon: Icon(obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                              onPressed: () => setState(
+                                () => obscureConfirm = !obscureConfirm,
+                              ),
+                              icon: Icon(
+                                obscureConfirm
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
                             ),
                             border: const OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(14),
+                              ),
                             ),
                           ),
                         ),
                         const SizedBox(height: 20),
                         const Divider(),
                         const SizedBox(height: 12),
-                        Text('PIN Orang Tua (4 digit)', style: AppText.bodyStrong),
+                        Text(
+                          'PIN Orang Tua (4 digit)',
+                          style: AppText.bodyStrong,
+                        ),
                         const SizedBox(height: 4),
-                        Text('Digunakan untuk akses mode orang tua', style: AppText.caption),
+                        Text(
+                          'Digunakan untuk akses mode orang tua',
+                          style: AppText.caption,
+                        ),
                         const SizedBox(height: 12),
                         TextField(
                           controller: pinController,
@@ -169,7 +198,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'PIN (4 digit)',
                             prefixIcon: Icon(Icons.pin_outlined),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(14),
+                              ),
                             ),
                           ),
                         ),
@@ -183,25 +214,64 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'Konfirmasi PIN',
                             prefixIcon: Icon(Icons.pin_outlined),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(14)),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(14),
+                              ),
                             ),
                           ),
                         ),
                         const SizedBox(height: 14),
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Checkbox(
                               value: agreedToTerms,
-                              onChanged: (value) => setState(() => agreedToTerms = value ?? false),
+                              onChanged: (value) => setState(
+                                () => agreedToTerms = value ?? false,
+                              ),
                               activeColor: AppColors.primary,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
                             ),
                             Expanded(
-                              child: GestureDetector(
-                                onTap: () => setState(() => agreedToTerms = !agreedToTerms),
-                                child: Text(
-                                  'Saya setuju dengan Syarat & Ketentuan dan Kebijakan Privasi',
-                                  style: AppText.caption.copyWith(color: AppColors.text),
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () => setState(
+                                        () => agreedToTerms = !agreedToTerms,
+                                      ),
+                                      child: Text(
+                                        'Saya setuju dengan ',
+                                        style: AppText.caption.copyWith(
+                                          color: AppColors.text,
+                                        ),
+                                      ),
+                                    ),
+                                    _LegalLink(
+                                      label: 'Syarat & Ketentuan',
+                                      onTap: () => showLegalDocument(
+                                        context,
+                                        LegalDocumentType.terms,
+                                      ),
+                                    ),
+                                    Text(
+                                      ' dan ',
+                                      style: AppText.caption.copyWith(
+                                        color: AppColors.text,
+                                      ),
+                                    ),
+                                    _LegalLink(
+                                      label: 'Kebijakan Privasi',
+                                      onTap: () => showLegalDocument(
+                                        context,
+                                        LegalDocumentType.privacy,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -217,43 +287,67 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ? () {
                                   final email = emailController.text.trim();
                                   final password = passwordController.text;
-                                  final confirmPassword = confirmPasswordController.text;
+                                  final confirmPassword =
+                                      confirmPasswordController.text;
                                   final pin = pinController.text;
                                   final confirmPin = confirmPinController.text;
 
                                   if (nameController.text.trim().isEmpty) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Nama wajib diisi.')),
+                                      const SnackBar(
+                                        content: Text('Nama wajib diisi.'),
+                                      ),
                                     );
                                     return;
                                   }
-                                  if (email.isEmpty || !email.contains('@') || !email.contains('.')) {
+                                  if (email.isEmpty ||
+                                      !email.contains('@') ||
+                                      !email.contains('.')) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Email tidak valid.')),
+                                      const SnackBar(
+                                        content: Text('Email tidak valid.'),
+                                      ),
                                     );
                                     return;
                                   }
                                   if (password.length < 6) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Password minimal 6 karakter.')),
+                                      const SnackBar(
+                                        content: Text(
+                                          'Password minimal 6 karakter.',
+                                        ),
+                                      ),
                                     );
                                     return;
                                   }
                                   if (password != confirmPassword) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Konfirmasi password belum sama.')),
+                                      const SnackBar(
+                                        content: Text(
+                                          'Konfirmasi password belum sama.',
+                                        ),
+                                      ),
                                     );
                                     return;
                                   }
-                                  if (pin.length != 4 || !RegExp(r'^\d{4}$').hasMatch(pin)) {
+                                  if (pin.length != 4 ||
+                                      !RegExp(r'^\d{4}$').hasMatch(pin)) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('PIN harus 4 digit angka.')),
+                                      const SnackBar(
+                                        content: Text(
+                                          'PIN harus 4 digit angka.',
+                                        ),
+                                      ),
                                     );
                                     return;
                                   }
                                   if (pin != confirmPin) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Konfirmasi PIN belum sama.')),
+                                      const SnackBar(
+                                        content: Text(
+                                          'Konfirmasi PIN belum sama.',
+                                        ),
+                                      ),
                                     );
                                     return;
                                   }
@@ -277,42 +371,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           child: Text(
                             isLoading ? 'Mendaftarkan...' : 'Daftar',
                             style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Divider(color: AppColors.line),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
-                              child: Text('atau', style: AppText.caption),
-                            ),
-                            const Expanded(
-                              child: Divider(color: AppColors.line),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: null,
-                          icon: Image.asset(
-                            AppAssets.googleLogo,
-                            width: 22,
-                            height: 22,
-                            fit: BoxFit.contain,
-                          ),
-                          label: const Text('Daftar dengan Google (segera)'),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(double.infinity, 50),
-                            foregroundColor: AppColors.text,
-                            side: const BorderSide(color: AppColors.line),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
                           ),
                         ),
                       ],
@@ -340,6 +398,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LegalLink extends StatelessWidget {
+  const _LegalLink({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Text(
+        label,
+        style: AppText.caption.copyWith(
+          color: AppColors.primary,
+          fontWeight: FontWeight.w800,
+          decoration: TextDecoration.underline,
         ),
       ),
     );

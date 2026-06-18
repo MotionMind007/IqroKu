@@ -615,10 +615,24 @@ export async function updateProgressReview(childId, bookId, pageNumber, reviewSt
 }
 
 export async function updateAttemptReview(attemptId, reviewStatus, reviewedBy) {
+  const assessmentStatus = reviewStatus === 'approved'
+    ? 'fluent'
+    : reviewStatus === 'needs_repeat'
+      ? 'needsReview'
+      : 'recorded';
+  const status = reviewStatus === 'approved'
+    ? 'fluent'
+    : reviewStatus === 'needs_repeat'
+      ? 'review'
+      : 'learning';
   const row = await queryOne(
-    `UPDATE attempts SET review_status = $1, reviewed_at = NOW()
-     WHERE id = $2 RETURNING *`,
-    [reviewStatus, attemptId],
+    `UPDATE attempts
+     SET review_status = $1,
+         reviewed_at = NOW(),
+         assessment_status = $2,
+         status = $3
+     WHERE id = $4 RETURNING *`,
+    [reviewStatus, assessmentStatus, status, attemptId],
   );
   return row;
 }

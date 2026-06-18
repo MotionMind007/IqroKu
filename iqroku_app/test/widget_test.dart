@@ -302,7 +302,9 @@ void main() {
     expect(state.subscriptionNotice, isNull);
 
     state.selectIqroBook(2);
-    expect(state.selectedIqroBook, 1);
+    expect(state.selectedIqroBook, 2);
+    expect(state.selectedIqroPage, 1);
+    expect(state.isIqroPageLocked(2, 1), isTrue);
     expect(state.subscriptionNotice, contains('jilid 2'));
 
     state.activateFamilyPlus();
@@ -311,7 +313,50 @@ void main() {
 
     state.selectIqroBook(2);
     expect(state.selectedIqroBook, 2);
+    expect(state.isIqroPageLocked(2, 1), isFalse);
   });
+
+  test(
+    'Parent review result updates attempt and page status locally',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final state = IqrokuState(
+        repository: const DummyIqrokuRepository(),
+        voiceRecordingService: FakeVoiceRecordingService(),
+        audioPlaybackService: FakeAudioPlaybackService(),
+      );
+
+      await state.startVoicePractice();
+      await state.finishVoicePractice();
+      final attemptId = state.learningAttempts.first.id;
+
+      state.applyParentReviewResult(
+        attemptId: attemptId,
+        status: LearningStatus.fluent,
+      );
+
+      expect(state.learningAttempts.first.status, LearningStatus.fluent);
+      expect(
+        state.learningAttempts.first.assessmentStatus,
+        ReadingAssessmentStatus.fluent,
+      );
+      expect(state.statusForIqroPage(1, 8), LearningStatus.fluent);
+
+      state.applyParentReviewResult(
+        attemptId: attemptId,
+        status: LearningStatus.review,
+        repeatFromPage: 8,
+      );
+
+      expect(state.learningAttempts.first.status, LearningStatus.review);
+      expect(
+        state.learningAttempts.first.assessmentStatus,
+        ReadingAssessmentStatus.needsReview,
+      );
+      expect(state.statusForIqroPage(1, 8), LearningStatus.review);
+      expect(state.selectedChild.repeatFromPage, 8);
+    },
+  );
 
   test('Remote progress is restored after login', () async {
     SharedPreferences.setMockInitialValues({});
