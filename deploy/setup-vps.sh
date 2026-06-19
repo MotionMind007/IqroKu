@@ -112,6 +112,10 @@ PASSWORD_RESET_TTL_MINUTES=30
 RATE_WINDOW_MS=60000
 RATE_MAX_AUTH=10
 RATE_MAX_GENERAL=120
+# Optional FCM push notification service account.
+# Prefer a root-readable file and set FIREBASE_SERVICE_ACCOUNT_PATH.
+# FIREBASE_SERVICE_ACCOUNT_PATH=${APP_DIR}/secrets/firebase-service-account.json
+# FIREBASE_SERVICE_ACCOUNT_JSON=
 EOF
 
 chmod 600 "${APP_DIR}/backend/.env"

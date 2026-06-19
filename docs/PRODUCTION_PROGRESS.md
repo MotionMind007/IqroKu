@@ -165,6 +165,30 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Menambahkan receiver Android untuk scheduled notification dan reschedule setelah device boot/package update.
 - Setting adzan disimpan di local storage agar tetap aktif setelah app dibuka ulang.
 
+### 10. FCM Push Notification Foundation
+
+- Menambahkan dependency Flutter:
+  - `firebase_core`
+  - `firebase_messaging`
+- Menambahkan `PushNotificationService` untuk:
+  - initialize Firebase Messaging
+  - meminta izin notifikasi
+  - mengambil token FCM
+  - register token ke backend setelah login/session restore
+  - unregister token saat logout
+- Menambahkan migration:
+  - `deploy/migrations/005_device_tokens.sql`
+- Menambahkan tabel `device_tokens` untuk token perangkat parent/child.
+- Menambahkan endpoint backend:
+  - `POST /devices/register`
+  - `POST /devices/unregister`
+- Menambahkan sender FCM HTTP v1 di backend tanpa dependency `firebase-admin`.
+- Backend bisa membaca Firebase service account dari:
+  - `FIREBASE_SERVICE_ACCOUNT_JSON`
+  - `FIREBASE_SERVICE_ACCOUNT_PATH`
+  - `GOOGLE_APPLICATION_CREDENTIALS`
+- Event `new_recording` dan `review_result` sudah disambungkan ke push sender. Jika service account belum ada, pengiriman push di-skip dengan log.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
@@ -176,6 +200,8 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Restore script sudah ada, tetapi restore drill nyata di VPS/staging belum dijalankan dan dicatat hasilnya.
 - Suara adzan masih memakai default notification sound perangkat. File adzan custom belum ditambahkan ke repo.
 - Jadwal adzan memakai mode inexact-while-idle. Jika nanti butuh alarm presisi menit, tambahkan flow izin exact alarm dan validasi kebijakan store.
+- Service account Firebase Admin belum dipasang di VPS. Push token sudah bisa tersimpan, tetapi pengiriman push butuh env service account.
+- Token child belum otomatis diregister saat masuk mode anak; foundation saat ini memprioritaskan token parent.
 
 ## Cara Jalankan Migration
 

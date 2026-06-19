@@ -15,6 +15,7 @@ import 'package:iqroku/data/daily_prayer_api_service.dart';
 import 'package:iqroku/data/dummy_iqroku_repository.dart';
 import 'package:iqroku/data/islamic_activity_service.dart';
 import 'package:iqroku/data/prayer_reminder_service.dart';
+import 'package:iqroku/data/push_notification_service.dart';
 import 'package:iqroku/data/quran_api_service.dart';
 import 'package:iqroku/data/voice_recording_service.dart';
 import 'package:iqroku/models/iqro_models.dart';
@@ -85,6 +86,7 @@ void main() {
         quranApiService: const FakeQuranApiService(),
         islamicActivityService: const FakeIslamicActivityService(),
         prayerReminderService: FakePrayerReminderService(),
+        pushNotificationService: const NoopPushNotificationService(),
         voiceRecordingService: FakeVoiceRecordingService(),
         audioPlaybackService: FakeAudioPlaybackService(),
       ),
@@ -443,6 +445,7 @@ void main() {
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
       authService: authService,
+      pushNotificationService: const NoopPushNotificationService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -466,6 +469,7 @@ void main() {
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
       authService: authService,
+      pushNotificationService: const NoopPushNotificationService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );

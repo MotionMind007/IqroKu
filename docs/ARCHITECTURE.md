@@ -57,6 +57,7 @@ Service penting:
 
 ```text
 PrayerReminderService        scheduler notifikasi adzan lokal
+PushNotificationService      register token FCM dari app ke backend
 IslamicActivityService       jadwal sholat dan arah kiblat
 AudioPlaybackService         playback rekaman dan audio Qur'an
 VoiceRecordingService        rekaman bacaan anak
@@ -134,6 +135,7 @@ progress       status halaman Iqro per anak
 attempts       rekaman bacaan anak dan hasil review
 subscriptions  status paket/premium
 notifications  notifikasi untuk parent
+device_tokens  token FCM perangkat untuk push notification
 daily_prayers  jadwal doa harian/admin content
 ```
 
@@ -145,6 +147,38 @@ Catatan penting:
 - Jika parent memilih perlu ulang dari halaman tertentu, progress halaman itu menjadi `review` dan anak wajib mulai dari halaman tersebut.
 - Approve/repeat review dijalankan dalam transaksi database agar update attempt, progress, repeat pointer, dan notifikasi konsisten.
 - Status utama di `progress`, `attempts`, `auth_tokens`, dan `notifications` dibatasi oleh database constraint dari migration `002_security_constraints.sql`.
+
+## Push Notification
+
+Push notification memakai Firebase Cloud Messaging (FCM).
+
+Flutter:
+
+- `firebase_core`
+- `firebase_messaging`
+- `PushNotificationService`
+- Setelah login/restore session, app mencoba mengambil token FCM dan mengirimnya ke `POST /devices/register`.
+
+Backend:
+
+- `POST /devices/register` menyimpan token perangkat.
+- `POST /devices/unregister` menonaktifkan token saat logout.
+- Token tersimpan di tabel `device_tokens`.
+- Backend mengirim FCM HTTP v1 langsung memakai service account Firebase dan `node:crypto`, tanpa dependency `firebase-admin`.
+- Jika env service account belum dipasang, backend tetap berjalan dan push akan di-skip dengan log.
+
+Env production/staging:
+
+```text
+FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+# atau
+FIREBASE_SERVICE_ACCOUNT_PATH=/opt/iqroku/secrets/firebase-service-account.json
+```
+
+Event yang sudah disiapkan untuk push:
+
+- `new_recording` ke parent
+- `review_result` ke child jika token child sudah diregister
 
 ## Asset
 

@@ -315,6 +315,24 @@ class AuthApiService {
     await _post('/notifications/read-all', body);
   }
 
+  Future<void> registerDeviceToken({
+    required String token,
+    required String platform,
+    String userType = 'parent',
+    String? childId,
+  }) async {
+    await _post('/devices/register', {
+      'token': token,
+      'platform': platform,
+      'userType': userType,
+      if (childId != null && childId.isNotEmpty) 'childId': childId,
+    });
+  }
+
+  Future<void> unregisterDeviceToken(String token) async {
+    await _post('/devices/unregister', {'token': token});
+  }
+
   String backendUrl(String path) {
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return path;

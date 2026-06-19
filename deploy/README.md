@@ -96,6 +96,8 @@ AUTH_LINK_BASE_URL=https://iqroku.motionmind.store
 RATE_WINDOW_MS=60000
 RATE_MAX_AUTH=10
 RATE_MAX_GENERAL=120
+# Optional for FCM push notification sending:
+FIREBASE_SERVICE_ACCOUNT_PATH=/opt/iqroku/secrets/firebase-service-account.json
 ```
 
 ## Backup and Restore

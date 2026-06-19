@@ -149,6 +149,35 @@ Catatan:
 - Android 13+ membutuhkan izin notifikasi dari user.
 - Android exact alarm belum dipakai supaya tidak perlu izin alarm khusus. Waktu notifikasi bisa mengikuti kebijakan idle/battery perangkat.
 
+## Flow Push Notification
+
+Push notification dipakai untuk notifikasi dari backend ke perangkat user.
+
+1. User login atau session dipulihkan.
+2. App menginisialisasi Firebase Messaging.
+3. App meminta izin notifikasi perangkat.
+4. App mengambil token FCM.
+5. App mengirim token ke backend lewat:
+
+```text
+POST /devices/register
+```
+
+6. Backend menyimpan token di tabel `device_tokens`.
+7. Saat ada event seperti rekaman baru atau hasil review, backend membuat record `notifications`, lalu mencoba mengirim push lewat FCM.
+8. Jika token ditolak FCM karena sudah tidak valid, backend menonaktifkan token itu.
+9. Saat logout, app memanggil:
+
+```text
+POST /devices/unregister
+```
+
+Catatan:
+
+- Push akan aktif penuh setelah service account Firebase dipasang di env VPS.
+- Kalau env belum ada, backend tetap aman dan hanya melewati pengiriman push.
+- Untuk tahap awal token yang diregister adalah token parent. Token child bisa ditambah nanti saat flow mode anak butuh push khusus.
+
 ## Flow Legal Docs
 
 Legal docs bisa dibuka dari:

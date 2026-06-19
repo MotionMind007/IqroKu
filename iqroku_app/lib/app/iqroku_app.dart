@@ -7,6 +7,7 @@ import '../data/daily_prayer_api_service.dart';
 import '../data/dummy_iqroku_repository.dart';
 import '../data/islamic_activity_service.dart';
 import '../data/prayer_reminder_service.dart';
+import '../data/push_notification_service.dart';
 import '../data/quran_api_service.dart';
 import '../data/voice_recording_service.dart';
 import '../features/auth/login_screen.dart';
@@ -32,6 +33,7 @@ class IqrokuApp extends StatefulWidget {
     this.quranApiService = const QuranApiService(),
     this.islamicActivityService = const IslamicActivityService(),
     this.prayerReminderService,
+    this.pushNotificationService,
     this.voiceRecordingService,
     this.audioPlaybackService,
   }) : authService = authService ?? AuthApiService();
@@ -42,6 +44,7 @@ class IqrokuApp extends StatefulWidget {
   final QuranApiService quranApiService;
   final IslamicActivityService islamicActivityService;
   final PrayerReminderService? prayerReminderService;
+  final PushNotificationService? pushNotificationService;
   final VoiceRecordingService? voiceRecordingService;
   final AudioPlaybackService? audioPlaybackService;
 
@@ -62,6 +65,7 @@ class _IqrokuAppState extends State<IqrokuApp> {
       quranApiService: widget.quranApiService,
       islamicActivityService: widget.islamicActivityService,
       prayerReminderService: widget.prayerReminderService,
+      pushNotificationService: widget.pushNotificationService,
       voiceRecordingService: widget.voiceRecordingService,
       audioPlaybackService: widget.audioPlaybackService,
     );

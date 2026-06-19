@@ -12,6 +12,7 @@ import '../data/islamic_activity_service.dart';
 import '../data/iqro_content_repository.dart';
 import '../data/local_app_storage.dart';
 import '../data/prayer_reminder_service.dart';
+import '../data/push_notification_service.dart';
 import '../data/quran_api_service.dart';
 import '../data/voice_recording_service.dart';
 import '../models/iqro_models.dart';
@@ -40,6 +41,7 @@ class IqrokuState extends ChangeNotifier {
     this.quranApiService = const QuranApiService(),
     this.islamicActivityService = const IslamicActivityService(),
     PrayerReminderService? prayerReminderService,
+    PushNotificationService? pushNotificationService,
     VoiceRecordingService? voiceRecordingService,
     AudioPlaybackService? audioPlaybackService,
   }) : storage = storage ?? LocalAppStorage(),
@@ -51,6 +53,8 @@ class IqrokuState extends ChangeNotifier {
            voiceRecordingService ?? LocalVoiceRecordingService(),
        prayerReminderService =
            prayerReminderService ?? LocalPrayerReminderService(),
+       pushNotificationService =
+           pushNotificationService ?? FirebasePushNotificationService(),
        audioPlaybackService =
            audioPlaybackService ?? LocalAudioPlaybackService() {
     if (childProfiles.isNotEmpty && selectedChildId.isEmpty) {
@@ -78,6 +82,7 @@ class IqrokuState extends ChangeNotifier {
   final QuranApiService quranApiService;
   final IslamicActivityService islamicActivityService;
   final PrayerReminderService prayerReminderService;
+  final PushNotificationService pushNotificationService;
   final VoiceRecordingService voiceRecordingService;
   final AudioPlaybackService audioPlaybackService;
   final List<ChildProfile> childProfiles;
@@ -645,6 +650,7 @@ class IqrokuState extends ChangeNotifier {
     if (adzanReminderEnabled && _prayerSchedule != null) {
       await _scheduleAdzanReminder();
     }
+    unawaited(_syncPushToken());
 
     notifyListeners();
   }
@@ -924,6 +930,9 @@ class IqrokuState extends ChangeNotifier {
   }
 
   void logout() {
+    final logoutAuthService = AuthApiService(baseUrl: authService.baseUrl)
+      ..authToken = authToken;
+    unawaited(pushNotificationService.unregisterDevice(logoutAuthService));
     launchStage = AppLaunchStage.welcome;
     selectedTab = 0;
     parentAccount = null;
@@ -2119,7 +2128,15 @@ class IqrokuState extends ChangeNotifier {
     selectedTab = 0;
     selectedIqroBook = 1;
     selectedIqroPage = childProfiles.isEmpty ? 1 : _firstActivePageForBook(1);
+    unawaited(_syncPushToken());
     _persist();
+  }
+
+  Future<void> _syncPushToken() async {
+    if (authToken == null || authToken!.isEmpty) {
+      return;
+    }
+    await pushNotificationService.registerParentDevice(authService);
   }
 
   bool _shouldShowEmailVerification(AuthResult result) {
@@ -2353,6 +2370,7 @@ class IqrokuState extends ChangeNotifier {
     _cancelVoiceTimer();
     unawaited(_playbackCompleteSubscription?.cancel());
     audioPlaybackService.dispose();
+    pushNotificationService.dispose();
     voiceRecordingService.dispose();
     super.dispose();
   }

@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import * as db from './db.mjs';
+import * as push from './push.mjs';
 
 // Initialize PostgreSQL connection
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -642,7 +643,7 @@ async function route(method, url, body, request) {
     try {
       const child = await db.findChildById(childId);
       if (child) {
-        await db.createNotification({
+        const notification = await db.createNotification({
           userId: child.parentId,
           userType: 'parent',
           type: 'new_recording',
@@ -650,6 +651,7 @@ async function route(method, url, body, request) {
           message: `${child.name} telah membaca Iqro ${bookId} halaman ${pageNumber}`,
           data: { childId, bookId, pageNumber, attemptId },
         });
+        queuePushNotification(notification);
       }
     } catch (err) {
       console.error('Failed to create notification:', err);
@@ -799,10 +801,11 @@ async function route(method, url, body, request) {
     }
     await enforceChildOwnership(authedParent.id, attempt.childId);
 
-    await db.approveReview({
+    const notification = await db.approveReview({
       attempt,
       reviewedBy: authedParent.id,
     });
+    queuePushNotification(notification);
     return { ok: true, status: 'approved' };
   }
 
@@ -822,12 +825,50 @@ async function route(method, url, body, request) {
       throw httpError(400, 'invalid_repeat_page');
     }
 
-    await db.repeatReview({
+    const notification = await db.repeatReview({
       attempt,
       reviewedBy: authedParent.id,
       fromPage,
     });
+    queuePushNotification(notification);
     return { ok: true, status: 'needs_repeat', fromPage };
+  }
+
+  // --- Device tokens for push notifications ---
+  if (method === 'POST' && path === '/devices/register') {
+    const authedParent = await authenticateRequest(request);
+    const token = normalizeDeviceToken(requiredBody(body, 'token'));
+    const platform = normalizeDevicePlatform(body.platform);
+    const userType = cleanString(body.userType) || 'parent';
+    const childId = cleanString(body.childId);
+
+    if (!['parent', 'child'].includes(userType)) {
+      throw httpError(400, 'invalid_user_type');
+    }
+    if (userType === 'child') {
+      if (!childId) {
+        throw httpError(400, 'missing_childId');
+      }
+      await enforceChildOwnership(authedParent.id, childId);
+    }
+
+    await db.upsertDeviceToken({
+      parentId: authedParent.id,
+      childId: userType === 'child' ? childId : null,
+      userType,
+      token,
+      platform,
+      appVersion: truncateString(cleanString(body.appVersion)).slice(0, 80),
+      deviceModel: truncateString(cleanString(body.deviceModel)).slice(0, 200),
+    });
+    return { ok: true, pushConfigured: push.pushConfigured() };
+  }
+
+  if (method === 'POST' && path === '/devices/unregister') {
+    const authedParent = await authenticateRequest(request);
+    const token = normalizeDeviceToken(requiredBody(body, 'token'));
+    await db.disableDeviceToken({ parentId: authedParent.id, token });
+    return { ok: true };
   }
 
   // --- Notifications ---
@@ -985,6 +1026,19 @@ function clampNumber(value, min, max) {
   return Math.max(min, Math.min(max, num));
 }
 
+function normalizeDeviceToken(value) {
+  const token = cleanString(value);
+  if (token.length < 20 || token.length > 4096 || /[\s\x00-\x1F]/.test(token)) {
+    throw httpError(400, 'invalid_device_token');
+  }
+  return token;
+}
+
+function normalizeDevicePlatform(value) {
+  const platform = cleanString(value).toLowerCase() || 'unknown';
+  return ['android', 'ios', 'web'].includes(platform) ? platform : 'unknown';
+}
+
 async function enforceChildOwnership(parentId, childId) {
   const child = await db.findChildById(childId);
   if (!child || child.parentId !== parentId) {
@@ -1105,6 +1159,40 @@ function emitAuthFlowToken({ type, email, token, path }) {
     token,
     link,
   }));
+}
+
+function queuePushNotification(notification) {
+  if (!notification) {
+    return;
+  }
+  sendPushNotification(notification).catch((error) => {
+    console.error('Failed to send push notification:', error.message);
+  });
+}
+
+async function sendPushNotification(notification) {
+  const userId = notification.user_id ?? notification.userId;
+  const userType = notification.user_type ?? notification.userType;
+  if (!userId || !userType) {
+    return;
+  }
+
+  const devices = await db.getActiveDeviceTokens(userId, userType);
+  const result = await push.sendPushToTokens({
+    tokens: devices.map((device) => device.token),
+    title: notification.title,
+    body: notification.message,
+    data: {
+      notificationId: notification.id,
+      type: notification.type,
+      userType,
+      ...(notification.data ?? {}),
+    },
+  });
+
+  await Promise.all(
+    result.invalidTokens.map((token) => db.disableDeviceTokenByToken(token)),
+  );
 }
 
 function publicParent(parent) {

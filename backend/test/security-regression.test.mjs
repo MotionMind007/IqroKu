@@ -17,6 +17,11 @@ const reviewFlowMigration = await readFile(
   new URL('../../deploy/migrations/004_review_flow_columns.sql', import.meta.url),
   'utf8',
 );
+const deviceTokensMigration = await readFile(
+  new URL('../../deploy/migrations/005_device_tokens.sql', import.meta.url),
+  'utf8',
+);
+const pushSource = await readFile(new URL('../src/push.mjs', import.meta.url), 'utf8');
 
 test('demo login is explicitly gated and does not issue deterministic parent-id tokens', () => {
   assert.match(serverSource, /ENABLE_DEMO_LOGIN\s*=\s*process\.env\.ENABLE_DEMO_LOGIN === 'true'/);
@@ -117,6 +122,21 @@ test('database constraints cover persisted status and reviewer references', () =
   assert.match(constraintsMigration, /notifications_user_type_check/);
 });
 
+test('device token routes require auth and validate child ownership', () => {
+  assert.match(serverSource, /path === '\/devices\/register'/);
+  assert.match(serverSource, /path === '\/devices\/unregister'/);
+  assert.match(serverSource, /const authedParent = await authenticateRequest\(request\);/);
+  assert.match(serverSource, /normalizeDeviceToken\(requiredBody\(body, 'token'\)\)/);
+  assert.match(serverSource, /await enforceChildOwnership\(authedParent\.id, childId\);/);
+});
+
+test('push sender uses FCM HTTP v1 without firebase-admin dependency', () => {
+  assert.match(pushSource, /https:\/\/fcm\.googleapis\.com\/v1\/projects\/\$\{projectId\}\/messages:send/);
+  assert.match(pushSource, /createSign\('RSA-SHA256'\)/);
+  assert.match(pushSource, /FIREBASE_SERVICE_ACCOUNT_JSON/);
+  assert.doesNotMatch(pushSource, /firebase-admin/);
+});
+
 test('migrations backfill onboarding profile columns used by runtime code', () => {
   assert.match(onboardingProfileMigration, /ALTER TABLE parents[\s\S]*ADD COLUMN IF NOT EXISTS pin_hash TEXT/);
   assert.match(onboardingProfileMigration, /ALTER TABLE children[\s\S]*ADD COLUMN IF NOT EXISTS pin_hash TEXT/);
@@ -134,4 +154,13 @@ test('migrations backfill review flow columns used by runtime code', () => {
   assert.match(reviewFlowMigration, /ADD COLUMN IF NOT EXISTS audio_file_name VARCHAR\(200\)/);
   assert.match(reviewFlowMigration, /ALTER TABLE children[\s\S]*ADD COLUMN IF NOT EXISTS repeat_from_page INTEGER/);
   assert.match(reviewFlowMigration, /ADD COLUMN IF NOT EXISTS repeat_from_book INTEGER/);
+});
+
+test('migration creates device token storage for FCM push notifications', () => {
+  assert.match(deviceTokensMigration, /CREATE TABLE IF NOT EXISTS device_tokens/);
+  assert.match(deviceTokensMigration, /token TEXT NOT NULL UNIQUE/);
+  assert.match(deviceTokensMigration, /REFERENCES parents\(id\) ON DELETE CASCADE/);
+  assert.match(deviceTokensMigration, /REFERENCES children\(id\) ON DELETE CASCADE/);
+  assert.match(deviceTokensMigration, /user_type IN \('parent', 'child'\)/);
+  assert.match(deviceTokensMigration, /idx_device_tokens_user/);
 });

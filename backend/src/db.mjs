@@ -814,7 +814,7 @@ export async function approveReview({ attempt, reviewedBy }) {
       'approved',
       reviewedBy,
     );
-    await createNotificationWith(tx, {
+    return createNotificationWith(tx, {
       userId: attempt.childId,
       userType: 'child',
       type: 'review_result',
@@ -848,7 +848,7 @@ export async function repeatReview({ attempt, reviewedBy, fromPage }) {
       'needs_repeat',
       reviewedBy,
     );
-    await createNotificationWith(tx, {
+    return createNotificationWith(tx, {
       userId: attempt.childId,
       userType: 'child',
       type: 'review_result',
@@ -936,6 +936,108 @@ export async function countUnreadNotifications(userId, userType) {
     [userId, userType],
   );
   return row?.count ?? 0;
+}
+
+// =============================================================================
+// DEVICE TOKENS
+// =============================================================================
+
+export async function upsertDeviceToken({
+  parentId,
+  childId,
+  userType,
+  token,
+  platform,
+  appVersion,
+  deviceModel,
+}) {
+  const row = await queryOne(
+    `INSERT INTO device_tokens (
+       parent_id,
+       child_id,
+       user_type,
+       token,
+       platform,
+       app_version,
+       device_model,
+       enabled,
+       last_seen_at,
+       updated_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NOW(), NOW())
+     ON CONFLICT (token)
+     DO UPDATE SET
+       parent_id = EXCLUDED.parent_id,
+       child_id = EXCLUDED.child_id,
+       user_type = EXCLUDED.user_type,
+       platform = EXCLUDED.platform,
+       app_version = EXCLUDED.app_version,
+       device_model = EXCLUDED.device_model,
+       enabled = TRUE,
+       last_seen_at = NOW(),
+       updated_at = NOW()
+     RETURNING *`,
+    [
+      parentId,
+      childId ?? null,
+      userType,
+      token,
+      platform,
+      appVersion ?? null,
+      deviceModel ?? null,
+    ],
+  );
+  return rowToDeviceToken(row);
+}
+
+export async function disableDeviceToken({ parentId, token }) {
+  const row = await queryOne(
+    `UPDATE device_tokens
+     SET enabled = FALSE, updated_at = NOW()
+     WHERE parent_id = $1 AND token = $2
+     RETURNING *`,
+    [parentId, token],
+  );
+  return row ? rowToDeviceToken(row) : null;
+}
+
+export async function disableDeviceTokenByToken(token) {
+  await query(
+    `UPDATE device_tokens
+     SET enabled = FALSE, updated_at = NOW()
+     WHERE token = $1`,
+    [token],
+  );
+}
+
+export async function getActiveDeviceTokens(userId, userType) {
+  const rows = await queryAll(
+    `SELECT *
+     FROM device_tokens
+     WHERE user_type = $1
+       AND enabled = TRUE
+       AND COALESCE(child_id, parent_id) = $2
+     ORDER BY last_seen_at DESC`,
+    [userType, userId],
+  );
+  return rows.map(rowToDeviceToken);
+}
+
+function rowToDeviceToken(row) {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    childId: row.child_id ?? undefined,
+    userType: row.user_type,
+    token: row.token,
+    platform: row.platform,
+    appVersion: row.app_version ?? undefined,
+    deviceModel: row.device_model ?? undefined,
+    enabled: row.enabled === true,
+    lastSeenAt: row.last_seen_at?.toISOString(),
+    createdAt: row.created_at?.toISOString(),
+    updatedAt: row.updated_at?.toISOString(),
+  };
 }
 
 // =============================================================================

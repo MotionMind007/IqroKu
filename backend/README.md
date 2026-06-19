@@ -34,7 +34,11 @@ IQROKU_ADMIN_TOKEN
 IQROKU_UPLOAD_ROOT
 REQUIRE_EMAIL_VERIFICATION
 AUTH_LINK_BASE_URL
+FIREBASE_SERVICE_ACCOUNT_PATH
+FIREBASE_SERVICE_ACCOUNT_JSON
 ```
+
+`FIREBASE_SERVICE_ACCOUNT_PATH` atau `FIREBASE_SERVICE_ACCOUNT_JSON` hanya diperlukan jika backend harus mengirim push notification FCM. Tanpa env ini, endpoint token tetap aktif tetapi pengiriman push akan di-skip.
 
 ## Authentication
 
