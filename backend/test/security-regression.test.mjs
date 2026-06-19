@@ -91,6 +91,19 @@ test('auth verification and reset use one-time hashed tokens', () => {
   assert.doesNotMatch(serverSource, /INSERT INTO auth_tokens[\s\S]*token\s*,/);
 });
 
+test('email provider sends auth flow tokens without production token logs', () => {
+  assert.match(serverSource, /const EMAIL_PROVIDER =/);
+  assert.match(serverSource, /RESEND_API_KEY/);
+  assert.match(serverSource, /EMAIL_FROM/);
+  assert.match(serverSource, /async function sendAuthFlowEmail/);
+  assert.match(serverSource, /https:\/\/api\.resend\.com\/emails/);
+  assert.match(serverSource, /'authorization': `Bearer \$\{RESEND_API_KEY\}`/);
+  assert.match(serverSource, /process\.env\.NODE_ENV !== 'production'[\s\S]*payload\.token = token/);
+  assert.match(envTemplateSource, /EMAIL_PROVIDER=none/);
+  assert.match(envTemplateSource, /RESEND_API_KEY=/);
+  assert.match(envTemplateSource, /EMAIL_FROM=/);
+});
+
 test('session tokens and auth cleanup avoid credential exposure', () => {
   assert.match(serverSource, /function createSessionToken\(\)/);
   assert.match(serverSource, /session_\$\{randomBytes\(32\)\.toString\('base64url'\)\}/);

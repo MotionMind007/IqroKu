@@ -119,6 +119,10 @@ MAX_AUDIO_UPLOAD_BYTES=5242880
 IQROKU_UPLOAD_ROOT=/opt/iqroku/uploads
 REQUIRE_EMAIL_VERIFICATION=false
 AUTH_LINK_BASE_URL=https://iqroku.motionmind.store
+EMAIL_PROVIDER=none
+RESEND_API_KEY=
+EMAIL_FROM=IqroKu <noreply@iqroku.motionmind.store>
+EMAIL_REPLY_TO=
 RATE_WINDOW_MS=60000
 RATE_MAX_AUTH=10
 RATE_MAX_GENERAL=120
@@ -150,6 +154,21 @@ Auth/session cleanup:
 - Backend menjalankan cleanup sessions dan auth tokens expired otomatis tiap 6 jam.
 - `setup-vps.sh` juga memasang cron cleanup sebagai backup.
 - Interval app bisa diubah dengan `CLEANUP_EXPIRED_AUTH_INTERVAL_MS`; set `0` hanya jika cleanup ditangani scheduler eksternal.
+
+Email provider:
+
+- Default `EMAIL_PROVIDER=none` agar production tidak bergantung pada email sebelum DNS/API key siap.
+- Untuk Resend, verifikasi domain dulu di dashboard Resend, lalu set:
+
+```bash
+EMAIL_PROVIDER=resend
+RESEND_API_KEY=re_xxx
+EMAIL_FROM=IqroKu <noreply@iqroku.motionmind.store>
+EMAIL_REPLY_TO=support@iqroku.motionmind.store
+```
+
+- Setelah email terkirim end-to-end untuk register, resend verification, dan forgot password, baru pertimbangkan `REQUIRE_EMAIL_VERIFICATION=true`.
+- Email saat ini mengirim kode manual karena app belum memakai universal/deep link.
 
 ## Backup and Restore
 

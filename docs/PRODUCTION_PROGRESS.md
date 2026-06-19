@@ -248,10 +248,24 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Restore drill non-destruktif tersedia lewat `deploy/restore-drill.sh`.
 - Deploy docs sudah menambahkan command drill untuk memvalidasi backup database dan archive uploads tanpa menyentuh DB production.
 
+### 16. Email Provider Foundation
+
+- Menambahkan env email:
+  - `EMAIL_PROVIDER`
+  - `RESEND_API_KEY`
+  - `EMAIL_FROM`
+  - `EMAIL_REPLY_TO`
+  - `EMAIL_SEND_TIMEOUT_MS`
+- Backend bisa mengirim email verifikasi dan reset password lewat Resend REST API tanpa dependency tambahan.
+- Jika email provider belum lengkap, backend tetap membuat token dan mencatat event tanpa membocorkan token di production.
+- Di development, token tetap muncul sebagai `devToken` response dan log untuk testing manual.
+- Email berisi kode manual karena app belum memakai universal/deep link.
+- `deploy/README.md` sudah menambahkan langkah konfigurasi Resend dan catatan untuk tetap memakai `REQUIRE_EMAIL_VERIFICATION=false` sampai email end-to-end sudah dites.
+
 ## Belum Selesai
 
-- Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
-- Email verification dan forgot password UI sudah ada, tetapi belum memakai deep link email otomatis.
+- Email provider foundation sudah ada, tetapi Resend API key/domain DNS belum dikonfigurasi dan dites di VPS.
+- Email verification dan forgot password UI sudah ada, tetapi email saat ini memakai kode manual dan belum memakai deep link otomatis.
 - `REQUIRE_EMAIL_VERIFICATION` sebaiknya tetap `false` sampai email delivery dan UI sudah siap end-to-end.
 - Audio masih disimpan di filesystem persistent path. Untuk scale lebih besar, pindahkan ke object storage/private bucket.
 - Rate limit saat ini masih in-memory per proses. Untuk production multi-instance, pindahkan ke Redis atau provider rate limit terpusat.

@@ -20,6 +20,11 @@ const REQUIRE_EMAIL_VERIFICATION = process.env.REQUIRE_EMAIL_VERIFICATION === 't
 const AUTH_LINK_BASE_URL = process.env.AUTH_LINK_BASE_URL || ALLOWED_ORIGIN;
 const EMAIL_VERIFICATION_TTL_MINUTES = Number(process.env.EMAIL_VERIFICATION_TTL_MINUTES ?? 60 * 24);
 const PASSWORD_RESET_TTL_MINUTES = Number(process.env.PASSWORD_RESET_TTL_MINUTES ?? 30);
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const EMAIL_PROVIDER = String(process.env.EMAIL_PROVIDER || (RESEND_API_KEY ? 'resend' : 'none')).toLowerCase();
+const EMAIL_FROM = process.env.EMAIL_FROM || '';
+const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || '';
+const EMAIL_SEND_TIMEOUT_MS = Number(process.env.EMAIL_SEND_TIMEOUT_MS ?? 10_000);
 
 // Google Sign-In: the audience the client's idToken must be issued for.
 // Defaults to the serverClientId used by the Flutter app.
@@ -472,10 +477,11 @@ async function route(method, url, body, request) {
       passwordHash: hashPassword(password),
     });
     const verification = await createAuthFlowToken(parent, 'email_verification', EMAIL_VERIFICATION_TTL_MINUTES);
-    emitAuthFlowToken({
+    await sendAuthFlowEmail({
       type: 'email_verification',
       email,
       token: verification.token,
+      expiresAt: verification.expiresAt,
       path: '/auth/verify-email',
     });
     const token = createSessionToken();
@@ -569,10 +575,11 @@ async function route(method, url, body, request) {
       await db.revokeAuthTokens(parent.id, 'email_verification');
       const verification = await createAuthFlowToken(parent, 'email_verification', EMAIL_VERIFICATION_TTL_MINUTES);
       flow = authFlowResponse(verification);
-      emitAuthFlowToken({
+      await sendAuthFlowEmail({
         type: 'email_verification',
         email,
         token: verification.token,
+        expiresAt: verification.expiresAt,
         path: '/auth/verify-email',
       });
     }
@@ -587,10 +594,11 @@ async function route(method, url, body, request) {
       await db.revokeAuthTokens(parent.id, 'password_reset');
       const reset = await createAuthFlowToken(parent, 'password_reset', PASSWORD_RESET_TTL_MINUTES);
       flow = authFlowResponse(reset);
-      emitAuthFlowToken({
+      await sendAuthFlowEmail({
         type: 'password_reset',
         email,
         token: reset.token,
+        expiresAt: reset.expiresAt,
         path: '/auth/password-reset/confirm',
       });
     }
@@ -1180,26 +1188,120 @@ function authFlowResponse(flow, extra = {}) {
   };
 }
 
-function emitAuthFlowToken({ type, email, token, path }) {
+async function sendAuthFlowEmail({ type, email, token, expiresAt, path }) {
   const link = `${AUTH_LINK_BASE_URL.replace(/\/$/, '')}${path}?token=${encodeURIComponent(token)}`;
-  if (process.env.NODE_ENV === 'production') {
-    console.log(JSON.stringify({
-      ts: new Date().toISOString(),
-      event: 'auth_token_created',
+  const message = authEmailMessage({ type, token, expiresAt, link });
+  const configured = EMAIL_PROVIDER === 'resend' && RESEND_API_KEY && EMAIL_FROM;
+  if (!configured) {
+    logAuthFlowToken({
       type,
       email,
-      delivery: 'pending_email_provider',
-    }));
+      token,
+      link,
+      delivery: EMAIL_PROVIDER === 'none' ? 'email_provider_not_configured' : 'email_provider_incomplete',
+    });
     return;
   }
-  console.log(JSON.stringify({
+
+  try {
+    await sendResendEmail({
+      to: email,
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+    });
+    console.log(JSON.stringify({
+      ts: new Date().toISOString(),
+      event: 'auth_email_sent',
+      provider: EMAIL_PROVIDER,
+      type,
+      email,
+    }));
+  } catch (error) {
+    console.error(JSON.stringify({
+      ts: new Date().toISOString(),
+      event: 'auth_email_failed',
+      provider: EMAIL_PROVIDER,
+      type,
+      email,
+      error: error.message,
+    }));
+  }
+}
+
+function logAuthFlowToken({ type, email, token, link, delivery }) {
+  const payload = {
     ts: new Date().toISOString(),
     event: 'auth_token_created',
     type,
     email,
-    token,
-    link,
-  }));
+    delivery,
+  };
+  if (process.env.NODE_ENV !== 'production') {
+    payload.token = token;
+    payload.link = link;
+  }
+  console.log(JSON.stringify(payload));
+}
+
+function authEmailMessage({ type, token, expiresAt, link }) {
+  const isReset = type === 'password_reset';
+  const title = isReset ? 'Reset Password IqroKu' : 'Verifikasi Email IqroKu';
+  const intro = isReset
+    ? 'Gunakan kode di bawah ini untuk mengatur ulang password akun IqroKu.'
+    : 'Gunakan kode di bawah ini untuk memverifikasi email akun IqroKu.';
+  const outro = isReset
+    ? 'Abaikan email ini jika kamu tidak meminta reset password.'
+    : 'Abaikan email ini jika kamu tidak membuat akun IqroKu.';
+  const expiry = formatDateTime(expiresAt);
+  return {
+    subject: title,
+    text: `${intro}\n\nKode: ${token}\nBerlaku sampai: ${expiry}\n\n${outro}`,
+    html: `<!doctype html>
+<html lang="id">
+  <body style="margin:0;padding:24px;background:#f8f6ef;color:#17201b;font-family:Arial,sans-serif;">
+    <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e7e1d6;border-radius:16px;padding:24px;">
+      <h1 style="margin:0 0 12px;font-size:24px;color:#0f5b39;">${escapeHtml(title)}</h1>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.5;">${escapeHtml(intro)}</p>
+      <div style="font-size:22px;font-weight:800;letter-spacing:2px;background:#e7f5ec;color:#0f5b39;border-radius:12px;padding:16px;text-align:center;word-break:break-all;">
+        ${escapeHtml(token)}
+      </div>
+      <p style="margin:18px 0 0;font-size:13px;color:#6d756f;">Berlaku sampai: ${escapeHtml(expiry)}</p>
+      <p style="margin:10px 0 0;font-size:13px;color:#6d756f;">${escapeHtml(outro)}</p>
+      <p style="margin:18px 0 0;font-size:12px;color:#6d756f;">Link teknis: ${escapeHtml(link)}</p>
+    </div>
+  </body>
+</html>`,
+  };
+}
+
+async function sendResendEmail({ to, subject, html, text }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), EMAIL_SEND_TIMEOUT_MS);
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'authorization': `Bearer ${RESEND_API_KEY}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: EMAIL_FROM,
+        to: [to],
+        subject,
+        html,
+        text,
+        ...(EMAIL_REPLY_TO ? { reply_to: EMAIL_REPLY_TO } : {}),
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(`resend_${response.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function queuePushNotification(notification) {
