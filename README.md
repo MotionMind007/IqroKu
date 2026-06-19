@@ -1,5 +1,7 @@
 # IqroKu
 
+[![CI](https://github.com/MotionMind007/IqroKu/actions/workflows/ci.yml/badge.svg)](https://github.com/MotionMind007/IqroKu/actions/workflows/ci.yml)
+
 IqroKu adalah aplikasi belajar Iqro untuk anak dan orang tua. Anak bisa belajar halaman Iqro, merekam bacaan, lalu orang tua yang menentukan hasilnya: lancar atau perlu ulang. Fitur pendukung seperti jadwal sholat, Al-Quran, kiblat, doa-doa, dan murottal tetap tersedia untuk pengguna free.
 
 ## Struktur Repo

@@ -101,6 +101,26 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Menambahkan `deploy/restore-backup.sh` untuk restore drill database dan uploads dengan konfirmasi eksplisit `CONFIRM_RESTORE=YES`.
 - Memperkuat `deploy/backup.sh` agar app dir, backup dir, DB name, dan retention bisa dioverride via env serta hasil gzip diverifikasi.
 
+### 6. CI Foundation
+
+- Menambahkan GitHub Actions workflow `.github/workflows/ci.yml`.
+- CI berjalan untuk push dan pull request ke `main`.
+- Job backend menjalankan:
+  - install dependency
+  - PostgreSQL service
+  - migration `001` dan `002`
+  - migration status
+  - syntax check
+  - backend test
+  - `npm audit --omit=dev --audit-level=high`
+- Job Flutter menjalankan:
+  - `flutter pub get`
+  - `flutter analyze`
+  - `flutter test`
+- Job deploy scripts menjalankan:
+  - bash syntax check untuk script deploy/backup/restore/smoke
+  - whitespace check
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.

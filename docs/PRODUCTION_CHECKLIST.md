@@ -70,6 +70,7 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 
 ## Backend Release
 
+- Pastikan GitHub Actions CI hijau di `main`.
 - Jalankan `npm run check`.
 - Jalankan `npm test`.
 - Jalankan `npm audit --omit=dev --audit-level=high`.

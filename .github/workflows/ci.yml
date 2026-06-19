@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: iqroku_db
+          POSTGRES_USER: iqroku
+          POSTGRES_PASSWORD: iqroku123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U iqroku -d iqroku_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://iqroku:iqroku123@localhost:5432/iqroku_db
+      NODE_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Apply database schema
+        working-directory: backend
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          import pg from 'pg';
+
+          const { Pool } = pg;
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+          const schema = await readFile('../deploy/schema.sql', 'utf8');
+          try {
+            await pool.query(schema);
+          } finally {
+            await pool.end();
+          }
+          NODE
+
+      - name: Run database migrations
+        run: npm run migrate --prefix backend
+
+      - name: Check migration status
+        run: npm run migrate:status --prefix backend
+
+      - name: Check backend syntax
+        run: npm run check --prefix backend
+
+      - name: Test backend
+        run: npm test --prefix backend
+
+      - name: Audit backend production dependencies
+        run: npm audit --prefix backend --omit=dev --audit-level=high
+
+  flutter:
+    name: Flutter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.2
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: iqroku_app
+        run: flutter pub get
+
+      - name: Analyze Flutter
+        working-directory: iqroku_app
+        run: flutter analyze
+
+      - name: Test Flutter
+        working-directory: iqroku_app
+        run: flutter test
+
+  deploy-scripts:
+    name: Deploy Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check shell syntax
+        run: bash -n deploy/setup-vps.sh deploy/deploy.sh deploy/backup.sh deploy/restore-backup.sh deploy/smoke-test.sh
+
+      - name: Check whitespace
+        run: git diff --check
