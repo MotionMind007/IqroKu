@@ -121,15 +121,34 @@ Pastikan:
 
 ## Menambah Payment Gateway
 
-Disarankan memakai flow subscription resmi:
+Flow DOKU Checkout sudah punya fondasi backend:
 
 1. App meminta checkout/session ke backend.
-2. Backend membuat checkout di payment gateway.
-3. User membayar di halaman gateway.
-4. Gateway memanggil webhook backend.
-5. Backend memverifikasi signature webhook.
-6. Backend update tabel `subscriptions`.
-7. App refresh subscription dan membuka premium.
+2. Backend membuat invoice di `payment_orders`.
+3. Backend membuat DOKU Checkout dan mengembalikan `checkoutUrl`.
+4. User membayar di halaman hosted DOKU.
+5. DOKU memanggil `POST /payments/doku/webhook`.
+6. Backend memverifikasi signature webhook dan menyimpan `payment_events`.
+7. Jika order valid berubah menjadi `paid`, backend mengaktifkan `subscriptions`.
+8. App refresh subscription/status dan membuka premium.
+
+Endpoint backend:
+
+```text
+POST /payments/doku/checkout
+POST /payments/doku/webhook
+GET  /payments/status/:invoiceNumber
+```
+
+Env production:
+
+```text
+DOKU_ENV=sandbox
+DOKU_CLIENT_ID=
+DOKU_SECRET_KEY=
+DOKU_BASE_URL=https://api-sandbox.doku.com
+DOKU_NOTIFICATION_URL=https://iqroku.motionmind.store/payments/doku/webhook
+```
 
 File yang kemungkinan disentuh:
 
@@ -137,6 +156,7 @@ File yang kemungkinan disentuh:
 backend/src/server.mjs
 backend/src/db.mjs
 deploy/schema.sql
+deploy/migrations/007_doku_payments.sql
 iqroku_app/lib/app/app_state.dart
 iqroku_app/lib/core/widgets/subscription_sheet.dart
 iqroku_app/lib/features/profile/profile_screen.dart

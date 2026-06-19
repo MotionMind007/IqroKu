@@ -36,9 +36,14 @@ REQUIRE_EMAIL_VERIFICATION
 AUTH_LINK_BASE_URL
 FIREBASE_SERVICE_ACCOUNT_PATH
 FIREBASE_SERVICE_ACCOUNT_JSON
+DOKU_CLIENT_ID
+DOKU_SECRET_KEY
+DOKU_NOTIFICATION_URL
 ```
 
 `FIREBASE_SERVICE_ACCOUNT_PATH` atau `FIREBASE_SERVICE_ACCOUNT_JSON` hanya diperlukan jika backend harus mengirim push notification FCM. Tanpa env ini, endpoint token tetap aktif tetapi pengiriman push akan di-skip.
+
+`DOKU_CLIENT_ID` dan `DOKU_SECRET_KEY` diperlukan untuk membuat DOKU Checkout dan menerima webhook payment.
 
 ## Authentication
 
@@ -49,6 +54,16 @@ Authorization: Bearer <session_token>
 ```
 
 Token dikembalikan oleh `/auth/register`, `/auth/login`, dan `/auth/google`.
+
+## Payments
+
+```text
+POST /payments/doku/checkout
+POST /payments/doku/webhook
+GET  /payments/status/:invoiceNumber
+```
+
+Checkout/status memakai bearer token parent. Webhook DOKU public tetapi wajib valid signature sebelum subscription diaktifkan.
 
 ## Admin Dashboard
 

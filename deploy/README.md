@@ -126,6 +126,14 @@ EMAIL_REPLY_TO=
 RATE_WINDOW_MS=60000
 RATE_MAX_AUTH=10
 RATE_MAX_GENERAL=120
+DOKU_ENV=sandbox
+DOKU_CLIENT_ID=
+DOKU_SECRET_KEY=
+DOKU_BASE_URL=https://api-sandbox.doku.com
+DOKU_CHECKOUT_RETURN_URL=https://iqroku.motionmind.store/payments/doku/return
+DOKU_CHECKOUT_FAILED_URL=https://iqroku.motionmind.store/payments/doku/failed
+DOKU_NOTIFICATION_URL=https://iqroku.motionmind.store/payments/doku/webhook
+DOKU_CHECKOUT_AMOUNT=49000
 # Optional for FCM push notification sending:
 FIREBASE_SERVICE_ACCOUNT_PATH=/opt/iqroku/secrets/firebase-service-account.json
 ```
@@ -168,6 +176,13 @@ EMAIL_REPLY_TO=support@iqroku.motionmind.store
 ```
 
 - Setelah email terkirim end-to-end untuk register, resend verification, dan forgot password, baru pertimbangkan `REQUIRE_EMAIL_VERIFICATION=true`.
+
+DOKU Checkout:
+
+- Mulai dari sandbox: isi `DOKU_CLIENT_ID` dan `DOKU_SECRET_KEY` dari dashboard DOKU sandbox.
+- Pastikan `DOKU_NOTIFICATION_URL` mengarah ke domain public backend: `https://iqroku.motionmind.store/payments/doku/webhook`.
+- Jalankan migration setelah pull: `npm run migrate --prefix backend`.
+- Production premium aktif hanya dari webhook DOKU valid signature; client tidak boleh mengaktifkan subscription langsung.
 - Email saat ini mengirim kode manual karena app belum memakai universal/deep link.
 
 ## Backup and Restore

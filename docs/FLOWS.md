@@ -130,7 +130,22 @@ POST /subscriptions/activate
 subscriptions table
 ```
 
-Endpoint activate sekarang masih fondasi/prototype. Payment gateway production perlu webhook resmi.
+Endpoint activate adalah admin-only untuk override manual/internal. Flow production memakai DOKU Checkout:
+
+```text
+POST /payments/doku/checkout
+payment_orders table
+POST /payments/doku/webhook
+payment_events table
+subscriptions table
+GET /payments/status/:invoiceNumber
+```
+
+Catatan:
+
+- Client hanya boleh meminta checkout dan membaca status order miliknya.
+- Premium aktif hanya setelah webhook DOKU valid signature mengubah order menjadi `paid`.
+- Webhook disimpan idempotent memakai `provider + request_id` supaya retry DOKU tidak menggandakan masa aktif.
 
 ## Flow Jadwal Solat dan Adzan
 

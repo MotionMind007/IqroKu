@@ -28,6 +28,10 @@ const deviceTokenRolesMigration = await readFile(
   new URL('../../deploy/migrations/006_device_token_roles.sql', import.meta.url),
   'utf8',
 );
+const dokuPaymentsMigration = await readFile(
+  new URL('../../deploy/migrations/007_doku_payments.sql', import.meta.url),
+  'utf8',
+);
 const pushSource = await readFile(new URL('../src/push.mjs', import.meta.url), 'utf8');
 const upsertDeviceTokenSource =
   dbSource.match(/export async function upsertDeviceToken[\s\S]*?export async function disableDeviceToken/)?.[0] ??
@@ -138,6 +142,26 @@ test('admin routes support optional backend IP allowlist', () => {
   assert.match(envTemplateSource, /ADMIN_ALLOWED_IPS=/);
 });
 
+test('DOKU payment foundation verifies webhooks and keeps premium server-side', () => {
+  assert.match(serverSource, /const DOKU_CLIENT_ID =/);
+  assert.match(serverSource, /const DOKU_SECRET_KEY =/);
+  assert.match(serverSource, /const DOKU_CHECKOUT_PATH = '\/checkout\/v1\/payment'/);
+  assert.match(serverSource, /path === '\/payments\/doku\/checkout'/);
+  assert.match(serverSource, /const authedParent = await authenticateRequest\(request\);[\s\S]*return createDokuCheckout\(authedParent\);/);
+  assert.match(serverSource, /path === DOKU_WEBHOOK_PATH/);
+  assert.match(serverSource, /function verifyDokuSignature\(request\)/);
+  assert.match(serverSource, /createHmac\('sha256', DOKU_SECRET_KEY\)/);
+  assert.match(serverSource, /Client-Id:\$\{DOKU_CLIENT_ID\}/);
+  assert.match(serverSource, /request\.rawBody \?\? ''/);
+  assert.match(serverSource, /await db\.applyPaymentNotification/);
+  assert.match(dbSource, /export async function applyPaymentNotification/);
+  assert.match(dbSource, /ON CONFLICT \(provider, request_id\) DO NOTHING/);
+  assert.match(dbSource, /previousStatus !== 'paid'/);
+  assert.match(envTemplateSource, /DOKU_CLIENT_ID=/);
+  assert.match(envTemplateSource, /DOKU_SECRET_KEY=/);
+  assert.match(envTemplateSource, /DOKU_NOTIFICATION_URL=https:\/\/iqroku\.motionmind\.store\/payments\/doku\/webhook/);
+});
+
 test('review decisions are applied through one database transaction', () => {
   assert.match(dbSource, /async function withTransaction\(work\)/);
   assert.match(dbSource, /await client\.query\('BEGIN'\)/);
@@ -234,4 +258,14 @@ test('migration allows one FCM token to be registered for parent and child roles
   assert.match(deviceTokenRolesMigration, /idx_device_tokens_child_token/);
   assert.match(upsertDeviceTokenSource, /SELECT id[\s\S]*FROM device_tokens[\s\S]*WHERE token = \$1/);
   assert.doesNotMatch(upsertDeviceTokenSource, /ON CONFLICT \(token\)/);
+});
+
+test('migration creates idempotent DOKU payment order and event storage', () => {
+  assert.match(dokuPaymentsMigration, /CREATE TABLE IF NOT EXISTS payment_orders/);
+  assert.match(dokuPaymentsMigration, /invoice_number VARCHAR\(120\) NOT NULL UNIQUE/);
+  assert.match(dokuPaymentsMigration, /status IN \('pending', 'paid', 'failed', 'expired', 'cancelled'\)/);
+  assert.match(dokuPaymentsMigration, /CREATE TABLE IF NOT EXISTS payment_events/);
+  assert.match(dokuPaymentsMigration, /UNIQUE \(provider, request_id\)/);
+  assert.match(dokuPaymentsMigration, /signature_valid BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(dokuPaymentsMigration, /REFERENCES parents\(id\) ON DELETE CASCADE/);
 });

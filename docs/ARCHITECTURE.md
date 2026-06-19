@@ -95,6 +95,9 @@ POST /attempts/:id/audio
 POST /assessments/mock      disabled, returns 410
 POST /assessments/ai        disabled, returns 410
 POST /subscriptions/activate
+POST /payments/doku/checkout
+POST /payments/doku/webhook
+GET  /payments/status/:invoiceNumber
 POST /auth/set-parent-pin
 POST /auth/verify-parent-pin
 POST /auth/child-login
@@ -134,6 +137,8 @@ children       profil anak, gender, PIN anak, jadwal
 progress       status halaman Iqro per anak
 attempts       rekaman bacaan anak dan hasil review
 subscriptions  status paket/premium
+payment_orders checkout DOKU dan status invoice
+payment_events webhook DOKU idempotent
 notifications  notifikasi untuk parent
 device_tokens  token FCM perangkat untuk push notification
 daily_prayers  jadwal doa harian/admin content
@@ -147,6 +152,8 @@ Catatan penting:
 - Jika parent memilih perlu ulang dari halaman tertentu, progress halaman itu menjadi `review` dan anak wajib mulai dari halaman tersebut.
 - Approve/repeat review dijalankan dalam transaksi database agar update attempt, progress, repeat pointer, dan notifikasi konsisten.
 - Status utama di `progress`, `attempts`, `auth_tokens`, dan `notifications` dibatasi oleh database constraint dari migration `002_security_constraints.sql`.
+- Subscription premium production harus berasal dari webhook payment yang valid, bukan dari input client.
+- DOKU webhook diverifikasi dengan signature HMAC dan disimpan idempotent memakai `(provider, request_id)`.
 
 ## Push Notification
 

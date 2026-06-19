@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import * as db from './db.mjs';
@@ -25,6 +25,22 @@ const EMAIL_PROVIDER = String(process.env.EMAIL_PROVIDER || (RESEND_API_KEY ? 'r
 const EMAIL_FROM = process.env.EMAIL_FROM || '';
 const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || '';
 const EMAIL_SEND_TIMEOUT_MS = Number(process.env.EMAIL_SEND_TIMEOUT_MS ?? 10_000);
+const DOKU_ENV = String(process.env.DOKU_ENV || 'sandbox').toLowerCase();
+const DOKU_CLIENT_ID = process.env.DOKU_CLIENT_ID || '';
+const DOKU_SECRET_KEY = process.env.DOKU_SECRET_KEY || '';
+const DOKU_BASE_URL = (process.env.DOKU_BASE_URL || (
+  DOKU_ENV === 'production' ? 'https://api.doku.com' : 'https://api-sandbox.doku.com'
+)).replace(/\/$/, '');
+const DOKU_CHECKOUT_RETURN_URL = process.env.DOKU_CHECKOUT_RETURN_URL || `${ALLOWED_ORIGIN}/payments/doku/return`;
+const DOKU_CHECKOUT_FAILED_URL = process.env.DOKU_CHECKOUT_FAILED_URL || `${ALLOWED_ORIGIN}/payments/doku/failed`;
+const DOKU_NOTIFICATION_URL = process.env.DOKU_NOTIFICATION_URL || `${ALLOWED_ORIGIN}/payments/doku/webhook`;
+const DOKU_CHECKOUT_AMOUNT = Number(process.env.DOKU_CHECKOUT_AMOUNT ?? 49_000);
+const DOKU_CHECKOUT_DUE_MINUTES = Number(process.env.DOKU_CHECKOUT_DUE_MINUTES ?? 60);
+const DOKU_SEND_TIMEOUT_MS = Number(process.env.DOKU_SEND_TIMEOUT_MS ?? 15_000);
+const DOKU_SIGNATURE_TOLERANCE_MS = Number(process.env.DOKU_SIGNATURE_TOLERANCE_MS ?? 15 * 60 * 1000);
+const DOKU_PROVIDER = 'doku';
+const DOKU_CHECKOUT_PATH = '/checkout/v1/payment';
+const DOKU_WEBHOOK_PATH = '/payments/doku/webhook';
 
 // Google Sign-In: the audience the client's idToken must be issued for.
 // Defaults to the serverClientId used by the Flutter app.
@@ -341,6 +357,10 @@ async function route(method, url, body, request) {
     } catch (_) {
       return { ok: false, service: 'iqroku-backend', store: 'postgresql', error: 'db_unreachable', timestamp: new Date().toISOString() };
     }
+  }
+
+  if (method === 'POST' && path === DOKU_WEBHOOK_PATH) {
+    return handleDokuWebhook(body, request);
   }
 
   // --- Admin routes (require admin token) ---
@@ -764,6 +784,24 @@ async function route(method, url, body, request) {
     });
   }
 
+  if (method === 'POST' && path === '/payments/doku/checkout') {
+    const authedParent = await authenticateRequest(request);
+    return createDokuCheckout(authedParent);
+  }
+
+  const paymentStatus = paymentStatusAction(path);
+  if (method === 'GET' && paymentStatus) {
+    const authedParent = await authenticateRequest(request);
+    const order = await db.findPaymentOrderByInvoiceNumber(paymentStatus.invoiceNumber);
+    if (!order) {
+      throw httpError(404, 'payment_order_not_found');
+    }
+    if (order.parentId !== authedParent.id) {
+      throw httpError(403, 'access_denied');
+    }
+    return publicPaymentOrder(order);
+  }
+
   // --- PIN Management ---
   if (method === 'POST' && path === '/auth/set-parent-pin') {
     const authedParent = await authenticateRequest(request);
@@ -994,12 +1032,13 @@ async function readJson(request) {
     chunks.push(chunk);
   }
   const buffer = Buffer.concat(chunks);
+  request.rawBody = buffer.toString('utf8');
   const contentType = String(request.headers['content-type'] ?? '');
   const boundary = multipartBoundary(contentType);
   if (boundary) {
     return { __multipart: parseMultipart(buffer, boundary) };
   }
-  const raw = buffer.toString('utf8').trim();
+  const raw = request.rawBody.trim();
   if (!raw) {
     return {};
   }
@@ -1063,6 +1102,13 @@ async function sendFile(response, filePath, contentType = 'application/octet-str
 
 function cleanString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function optionalString(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  return String(value).trim();
 }
 
 function truncateString(value) {
@@ -1338,6 +1384,349 @@ async function sendPushNotification(notification) {
   );
 }
 
+async function createDokuCheckout(parent) {
+  assertDokuConfigured();
+  if (!Number.isInteger(DOKU_CHECKOUT_AMOUNT) || DOKU_CHECKOUT_AMOUNT <= 0) {
+    throw httpError(500, 'payment_amount_invalid');
+  }
+
+  const invoiceNumber = createDokuInvoiceNumber();
+  const requestId = randomUUID();
+  const expiresAt = addMinutes(new Date(), DOKU_CHECKOUT_DUE_MINUTES).toISOString();
+  await db.createPaymentOrder({
+    id: randomUUID(),
+    parentId: parent.id,
+    provider: DOKU_PROVIDER,
+    invoiceNumber,
+    requestId,
+    plan: 'plus',
+    amount: DOKU_CHECKOUT_AMOUNT,
+    currency: 'IDR',
+    status: 'pending',
+    expiresAt,
+  });
+
+  const payload = buildDokuCheckoutPayload({ parent, invoiceNumber });
+  const rawBody = JSON.stringify(payload);
+  let responsePayload;
+  try {
+    responsePayload = await sendDokuRequest({
+      requestId,
+      targetPath: DOKU_CHECKOUT_PATH,
+      rawBody,
+    });
+  } catch (error) {
+    await db.updatePaymentOrderProviderResponse({
+      invoiceNumber,
+      status: 'failed',
+      rawResponse: { error: error.message },
+    });
+    throw error;
+  }
+
+  const checkoutUrl = dokuCheckoutUrl(responsePayload);
+  if (!checkoutUrl) {
+    await db.updatePaymentOrderProviderResponse({
+      invoiceNumber,
+      status: 'failed',
+      rawResponse: responsePayload,
+    });
+    throw httpError(502, 'doku_checkout_url_missing');
+  }
+
+  const order = await db.updatePaymentOrderProviderResponse({
+    invoiceNumber,
+    checkoutUrl,
+    providerOrderId: dokuProviderOrderId(responsePayload),
+    rawResponse: responsePayload,
+  });
+
+  return {
+    ok: true,
+    checkoutUrl,
+    payment: publicPaymentOrder(order),
+  };
+}
+
+async function handleDokuWebhook(body, request) {
+  assertDokuConfigured();
+  verifyDokuSignature(request);
+
+  const invoiceNumber = dokuNotificationInvoiceNumber(body);
+  if (!invoiceNumber) {
+    throw httpError(400, 'missing_invoice_number');
+  }
+
+  const requestId = requiredHeader(request, 'request-id');
+  const order = await db.findPaymentOrderByInvoiceNumber(invoiceNumber);
+  if (!order) {
+    await db.recordPaymentEvent({
+      provider: DOKU_PROVIDER,
+      requestId,
+      invoiceNumber,
+      eventType: dokuNotificationEventType(body),
+      signatureValid: true,
+      payload: body,
+    });
+    throw httpError(404, 'payment_order_not_found');
+  }
+
+  const amount = dokuNotificationAmount(body);
+  if (amount !== null && amount !== order.amount) {
+    await db.recordPaymentEvent({
+      provider: DOKU_PROVIDER,
+      requestId,
+      invoiceNumber,
+      eventType: 'amount_mismatch',
+      signatureValid: true,
+      payload: body,
+    });
+    throw httpError(400, 'payment_amount_mismatch');
+  }
+
+  const result = await db.applyPaymentNotification({
+    provider: DOKU_PROVIDER,
+    requestId,
+    invoiceNumber,
+    eventType: dokuNotificationEventType(body),
+    signatureValid: true,
+    payload: body,
+    status: dokuNotificationOrderStatus(body),
+    paidAt: dokuNotificationPaidAt(body),
+  });
+
+  return {
+    ok: true,
+    duplicate: result.duplicate,
+    payment: result.order ? publicPaymentOrder(result.order) : undefined,
+  };
+}
+
+function assertDokuConfigured() {
+  if (!DOKU_CLIENT_ID || !DOKU_SECRET_KEY) {
+    throw httpError(503, 'payment_provider_not_configured');
+  }
+}
+
+function buildDokuCheckoutPayload({ parent, invoiceNumber }) {
+  return {
+    order: {
+      amount: DOKU_CHECKOUT_AMOUNT,
+      invoice_number: invoiceNumber,
+      currency: 'IDR',
+      callback_url: DOKU_CHECKOUT_RETURN_URL,
+      callback_url_cancel: DOKU_CHECKOUT_FAILED_URL,
+      callback_url_result: DOKU_CHECKOUT_RETURN_URL,
+      auto_redirect: true,
+      line_items: [
+        {
+          name: 'IqroKu Plus 1 Bulan',
+          price: DOKU_CHECKOUT_AMOUNT,
+          quantity: 1,
+        },
+      ],
+    },
+    payment: {
+      payment_due_date: Math.max(1, Math.round(DOKU_CHECKOUT_DUE_MINUTES)),
+    },
+    customer: {
+      id: parent.id,
+      name: truncateString(parent.name || 'Orang Tua'),
+      email: parent.email,
+    },
+    additional_info: {
+      override_notification_url: DOKU_NOTIFICATION_URL,
+      integration: {
+        name: 'iqroku-backend',
+        version: '0.2.0',
+      },
+    },
+  };
+}
+
+async function sendDokuRequest({ requestId, targetPath, rawBody }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DOKU_SEND_TIMEOUT_MS);
+  const timestamp = dokuTimestamp();
+  const signature = dokuSignature({
+    requestId,
+    timestamp,
+    targetPath,
+    rawBody,
+  });
+
+  try {
+    const response = await fetch(`${DOKU_BASE_URL}${targetPath}`, {
+      method: 'POST',
+      headers: {
+        'client-id': DOKU_CLIENT_ID,
+        'request-id': requestId,
+        'request-timestamp': timestamp,
+        'request-target': targetPath,
+        'signature': signature,
+        'content-type': 'application/json',
+      },
+      body: rawBody,
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let payload;
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch (_) {
+      payload = { raw: text };
+    }
+    if (!response.ok) {
+      throw httpError(502, `doku_checkout_failed_${response.status}`);
+    }
+    return payload;
+  } catch (error) {
+    if (error.statusCode) {
+      throw error;
+    }
+    throw httpError(502, 'doku_checkout_request_failed');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function verifyDokuSignature(request) {
+  const clientId = requiredHeader(request, 'client-id');
+  if (clientId !== DOKU_CLIENT_ID) {
+    throw httpError(401, 'invalid_doku_client_id');
+  }
+  const requestId = requiredHeader(request, 'request-id');
+  const timestamp = requiredHeader(request, 'request-timestamp');
+  const signature = requiredHeader(request, 'signature');
+  const targetPath = optionalHeader(request, 'request-target')
+    || new URL(request.url ?? DOKU_WEBHOOK_PATH, `http://${request.headers.host ?? 'localhost'}`).pathname;
+  if (targetPath !== DOKU_WEBHOOK_PATH) {
+    throw httpError(401, 'invalid_doku_request_target');
+  }
+  const parsedTimestamp = Date.parse(timestamp);
+  if (!Number.isFinite(parsedTimestamp)) {
+    throw httpError(401, 'invalid_doku_timestamp');
+  }
+  if (
+    DOKU_SIGNATURE_TOLERANCE_MS > 0
+    && Math.abs(Date.now() - parsedTimestamp) > DOKU_SIGNATURE_TOLERANCE_MS
+  ) {
+    throw httpError(401, 'stale_doku_signature');
+  }
+  const expected = dokuSignature({
+    requestId,
+    timestamp,
+    targetPath,
+    rawBody: request.rawBody ?? '',
+  });
+  if (!safeStrEqual(signature, expected)) {
+    throw httpError(401, 'invalid_doku_signature');
+  }
+}
+
+function dokuSignature({ requestId, timestamp, targetPath, rawBody }) {
+  const digest = createHash('sha256').update(rawBody).digest('base64');
+  const component = [
+    `Client-Id:${DOKU_CLIENT_ID}`,
+    `Request-Id:${requestId}`,
+    `Request-Timestamp:${timestamp}`,
+    `Request-Target:${targetPath}`,
+    `Digest:${digest}`,
+  ].join('\n');
+  return `HMACSHA256=${createHmac('sha256', DOKU_SECRET_KEY).update(component).digest('base64')}`;
+}
+
+function dokuTimestamp() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function createDokuInvoiceNumber() {
+  const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+  return `IQK${stamp}${randomBytes(4).toString('hex').toUpperCase()}`;
+}
+
+function dokuCheckoutUrl(payload) {
+  return optionalString(payload?.response?.payment?.url)
+    || optionalString(payload?.payment?.url)
+    || optionalString(payload?.checkout_url)
+    || optionalString(payload?.url);
+}
+
+function dokuProviderOrderId(payload) {
+  return optionalString(payload?.response?.order?.invoice_number)
+    || optionalString(payload?.order?.invoice_number)
+    || optionalString(payload?.response?.order?.id)
+    || optionalString(payload?.order?.id);
+}
+
+function dokuNotificationInvoiceNumber(payload) {
+  return optionalString(payload?.order?.invoice_number)
+    || optionalString(payload?.order?.invoiceNumber)
+    || optionalString(payload?.invoice_number)
+    || optionalString(payload?.invoiceNumber);
+}
+
+function dokuNotificationAmount(payload) {
+  const value = payload?.order?.amount ?? payload?.order?.total_amount ?? payload?.amount ?? null;
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function dokuNotificationEventType(payload) {
+  return optionalString(payload?.transaction?.status)
+    || optionalString(payload?.transaction?.type)
+    || optionalString(payload?.payment?.type)
+    || optionalString(payload?.event)
+    || 'payment_notification';
+}
+
+function dokuNotificationOrderStatus(payload) {
+  const rawStatus = optionalString(payload?.transaction?.status || payload?.status).toLowerCase();
+  if (['success', 'capture', 'settlement', 'paid'].includes(rawStatus)) {
+    return 'paid';
+  }
+  if (['failed', 'deny', 'failure'].includes(rawStatus)) {
+    return 'failed';
+  }
+  if (['expired', 'expire'].includes(rawStatus)) {
+    return 'expired';
+  }
+  if (['cancelled', 'canceled', 'cancel'].includes(rawStatus)) {
+    return 'cancelled';
+  }
+  return 'pending';
+}
+
+function dokuNotificationPaidAt(payload) {
+  const raw = optionalString(payload?.transaction?.date)
+    || optionalString(payload?.transaction?.paid_at)
+    || optionalString(payload?.paid_at);
+  if (!raw) {
+    return null;
+  }
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function publicPaymentOrder(order) {
+  return {
+    invoiceNumber: order.invoiceNumber,
+    provider: order.provider,
+    plan: order.plan,
+    amount: order.amount,
+    currency: order.currency,
+    status: order.status,
+    checkoutUrl: order.checkoutUrl,
+    paidAt: order.paidAt,
+    expiresAt: order.expiresAt,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+  };
+}
+
 function publicParent(parent) {
   const { passwordHash, pinHash, ...safeParent } = parent;
   return {
@@ -1369,6 +1758,19 @@ function requiredQuery(url, key) {
     throw httpError(400, `missing_${key}`);
   }
   return value;
+}
+
+function requiredHeader(request, key) {
+  const normalized = optionalHeader(request, key);
+  if (!normalized) {
+    throw httpError(400, `missing_${key.replaceAll('-', '_')}`);
+  }
+  return normalized;
+}
+
+function optionalHeader(request, key) {
+  const value = request.headers?.[key] ?? request.headers?.[key.toLowerCase()];
+  return optionalString(Array.isArray(value) ? value[0] : value);
 }
 
 async function enforceChildLimit(parentId) {
@@ -1412,6 +1814,14 @@ function adminPrayerAction(path) {
     return null;
   }
   return { id: decodeURIComponent(match[1]), action: match[2] };
+}
+
+function paymentStatusAction(path) {
+  const match = /^\/payments\/status\/([^/]+)$/.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { invoiceNumber: decodeURIComponent(match[1]) };
 }
 
 function attemptAudioUpload(path) {

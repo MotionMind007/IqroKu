@@ -513,6 +513,222 @@ function rowToSubscription(row) {
 }
 
 // =============================================================================
+// PAYMENTS
+// =============================================================================
+
+export async function createPaymentOrder({
+  id,
+  parentId,
+  provider,
+  invoiceNumber,
+  requestId,
+  plan,
+  amount,
+  currency,
+  status,
+  expiresAt,
+}) {
+  const row = await queryOne(
+    `INSERT INTO payment_orders (
+       id, parent_id, provider, invoice_number, request_id, plan, amount, currency, status, expires_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING *`,
+    [id, parentId, provider, invoiceNumber, requestId, plan, amount, currency, status, expiresAt],
+  );
+  return rowToPaymentOrder(row);
+}
+
+export async function findPaymentOrderByInvoiceNumber(invoiceNumber) {
+  const row = await queryOne(
+    'SELECT * FROM payment_orders WHERE invoice_number = $1',
+    [invoiceNumber],
+  );
+  return row ? rowToPaymentOrder(row) : null;
+}
+
+export async function updatePaymentOrderProviderResponse({
+  invoiceNumber,
+  status,
+  checkoutUrl,
+  providerOrderId,
+  rawResponse,
+}) {
+  const row = await queryOne(
+    `UPDATE payment_orders
+     SET status = COALESCE($2, status),
+         checkout_url = COALESCE($3, checkout_url),
+         provider_order_id = COALESCE($4, provider_order_id),
+         raw_response = COALESCE($5::jsonb, raw_response),
+         updated_at = NOW()
+     WHERE invoice_number = $1
+     RETURNING *`,
+    [
+      invoiceNumber,
+      status ?? null,
+      checkoutUrl ?? null,
+      providerOrderId ?? null,
+      rawResponse === undefined ? null : JSON.stringify(rawResponse),
+    ],
+  );
+  return row ? rowToPaymentOrder(row) : null;
+}
+
+export async function recordPaymentEvent({
+  provider,
+  requestId,
+  invoiceNumber,
+  eventType,
+  signatureValid,
+  payload,
+}) {
+  const row = await queryOne(
+    `INSERT INTO payment_events (
+       provider, request_id, invoice_number, event_type, signature_valid, payload
+     )
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (provider, request_id) DO UPDATE
+       SET received_at = payment_events.received_at
+     RETURNING *`,
+    [provider, requestId, invoiceNumber ?? null, eventType, Boolean(signatureValid), JSON.stringify(payload ?? {})],
+  );
+  return rowToPaymentEvent(row);
+}
+
+export async function applyPaymentNotification({
+  provider,
+  requestId,
+  invoiceNumber,
+  eventType,
+  signatureValid,
+  payload,
+  status,
+  paidAt,
+}) {
+  return withTransaction(async (tx) => {
+    const event = await tx.queryOne(
+      `INSERT INTO payment_events (
+         provider, request_id, invoice_number, event_type, signature_valid, payload
+       )
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (provider, request_id) DO NOTHING
+       RETURNING *`,
+      [provider, requestId, invoiceNumber, eventType, Boolean(signatureValid), JSON.stringify(payload ?? {})],
+    );
+
+    const orderRow = await tx.queryOne(
+      `SELECT * FROM payment_orders
+       WHERE provider = $1 AND invoice_number = $2
+       FOR UPDATE`,
+      [provider, invoiceNumber],
+    );
+    if (!orderRow) {
+      return { duplicate: !event, event: event ? rowToPaymentEvent(event) : null, order: null };
+    }
+    if (!event) {
+      return { duplicate: true, event: null, order: rowToPaymentOrder(orderRow) };
+    }
+
+    const previousStatus = orderRow.status;
+    const nextStatus = previousStatus === 'paid' && status !== 'paid' ? 'paid' : status;
+    const nextPaidAt = nextStatus === 'paid'
+      ? (paidAt ?? orderRow.paid_at?.toISOString() ?? new Date().toISOString())
+      : orderRow.paid_at?.toISOString() ?? null;
+
+    let updatedOrder = await tx.queryOne(
+      `UPDATE payment_orders
+       SET status = $3,
+           paid_at = $4,
+           raw_response = $5,
+           updated_at = NOW()
+       WHERE provider = $1 AND invoice_number = $2
+       RETURNING *`,
+      [provider, invoiceNumber, nextStatus, nextPaidAt, JSON.stringify(payload ?? {})],
+    );
+
+    if (nextStatus === 'paid' && previousStatus !== 'paid') {
+      await activateSubscriptionForPaidOrder(tx, updatedOrder);
+      updatedOrder = await tx.queryOne(
+        'SELECT * FROM payment_orders WHERE id = $1',
+        [updatedOrder.id],
+      );
+    }
+
+    return {
+      duplicate: false,
+      event: rowToPaymentEvent(event),
+      order: rowToPaymentOrder(updatedOrder),
+    };
+  });
+}
+
+async function activateSubscriptionForPaidOrder(tx, orderRow) {
+  const existing = await tx.queryOne(
+    'SELECT * FROM subscriptions WHERE parent_id = $1 FOR UPDATE',
+    [orderRow.parent_id],
+  );
+  const now = new Date();
+  const existingActiveUntil = existing?.active_until instanceof Date ? existing.active_until : null;
+  const baseDate = existing?.active === true && existingActiveUntil && existingActiveUntil > now
+    ? existingActiveUntil
+    : now;
+  const activeUntil = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  await tx.queryOne(
+    `INSERT INTO subscriptions (id, parent_id, plan, price_id, active, activated_at, active_until)
+     VALUES ($1, $2, $3, $4, TRUE, NOW(), $5)
+     ON CONFLICT (parent_id)
+     DO UPDATE SET plan = $3,
+                   price_id = $4,
+                   active = TRUE,
+                   activated_at = NOW(),
+                   active_until = $5
+     RETURNING *`,
+    [
+      orderRow.id,
+      orderRow.parent_id,
+      orderRow.plan,
+      `${orderRow.provider}_${orderRow.plan}_${orderRow.amount}_monthly`,
+      activeUntil,
+    ],
+  );
+}
+
+function rowToPaymentOrder(row) {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    provider: row.provider,
+    invoiceNumber: row.invoice_number,
+    requestId: row.request_id,
+    plan: row.plan,
+    amount: row.amount,
+    currency: row.currency,
+    status: row.status,
+    checkoutUrl: row.checkout_url ?? undefined,
+    providerOrderId: row.provider_order_id ?? undefined,
+    rawResponse: row.raw_response ?? undefined,
+    paidAt: row.paid_at?.toISOString(),
+    expiresAt: row.expires_at?.toISOString(),
+    createdAt: row.created_at?.toISOString(),
+    updatedAt: row.updated_at?.toISOString(),
+  };
+}
+
+function rowToPaymentEvent(row) {
+  return {
+    id: row.id,
+    provider: row.provider,
+    requestId: row.request_id,
+    invoiceNumber: row.invoice_number ?? undefined,
+    eventType: row.event_type ?? undefined,
+    signatureValid: row.signature_valid === true,
+    payload: row.payload ?? {},
+    receivedAt: row.received_at?.toISOString(),
+  };
+}
+
+// =============================================================================
 // DAILY PRAYERS
 // =============================================================================
 

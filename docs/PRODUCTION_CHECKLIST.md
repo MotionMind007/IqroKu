@@ -45,13 +45,14 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 
 ## Subscription dan Payment
 
-- Pilih payment gateway.
-- Buat endpoint checkout/session.
-- Buat webhook payment.
-- Verifikasi signature webhook.
+- Payment gateway dipilih: DOKU Checkout.
+- Endpoint checkout/session backend tersedia: `POST /payments/doku/checkout`.
+- Webhook payment tersedia: `POST /payments/doku/webhook`.
+- Verifikasi signature webhook tersedia untuk header Non-SNAP DOKU.
 - Simpan event payment idempotent agar webhook dobel tidak merusak data.
 - Jadikan backend sebagai sumber truth subscription.
 - Uji sukses bayar, gagal bayar, expired, refund, dan cancel.
+- Integrasikan tombol premium Flutter ke DOKU checkout URL.
 
 ## Ads
 

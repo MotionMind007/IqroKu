@@ -345,3 +345,36 @@ Content-Type: application/json
 - Review parent sekarang transactional. Jika salah satu update gagal, seluruh perubahan review rollback.
 - Constraint database mencegah status di luar enum aplikasi masuk ke tabel utama.
 - Upload audio yang bukan tipe audio valid ditolak sebelum ditulis ke storage.
+
+## DOKU Payment Foundation
+
+Status: backend foundation siap, Flutter checkout UI belum disambungkan.
+
+Yang ditambahkan:
+
+- Migration `007_doku_payments.sql`.
+- Tabel `payment_orders` untuk invoice/checkout/status DOKU.
+- Tabel `payment_events` untuk webhook DOKU idempotent memakai `(provider, request_id)`.
+- Env DOKU di `deploy/.env.production`.
+- Endpoint:
+
+```text
+POST /payments/doku/checkout
+POST /payments/doku/webhook
+GET  /payments/status/:invoiceNumber
+```
+
+Security:
+
+- Checkout wajib session parent.
+- Status order hanya bisa dibaca pemilik order.
+- Webhook DOKU diverifikasi HMAC signature dari raw body.
+- Subscription premium hanya aktif saat order berubah valid menjadi `paid`.
+- Retry webhook dengan request id sama tidak memperpanjang masa aktif dua kali.
+
+Next:
+
+- Isi credential DOKU sandbox di VPS.
+- Jalankan migration `007`.
+- Test checkout sandbox dan webhook sukses/gagal/expired.
+- Sambungkan tombol premium Flutter ke `checkoutUrl`.
