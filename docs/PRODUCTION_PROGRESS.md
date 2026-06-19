@@ -196,6 +196,17 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
   - `adzan_subuh.mp3` untuk Subuh
 - Channel notifikasi adzan dipisah antara regular dan Subuh agar masing-masing bisa memakai sound yang tepat.
 
+### 11. Security Hardening dari Audit VPS
+
+- Menambahkan backend scheduler untuk cleanup auth data expired:
+  - `sessions` expired
+  - `auth_tokens` expired lebih dari 7 hari
+- `setup-vps.sh` sekarang memasang cron cleanup untuk `sessions` dan `auth_tokens`.
+- Session token tidak lagi menyertakan `parentId`; format token menjadi random opaque token.
+- `escapeHtml` admin template sekarang juga escape backtick.
+- `deploy/deploy.sh` menolak deploy jika live Nginx masih melayani `/uploads/` memakai `alias /opt/iqroku/uploads/`, karena itu bypass auth backend.
+- `deploy/README.md` menambahkan command VPS untuk sync Nginx live config dan mengunci permission Firebase service account ke `600`.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
@@ -208,6 +219,8 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Jadwal adzan memakai mode inexact-while-idle. Jika nanti butuh alarm presisi menit, tambahkan flow izin exact alarm dan validasi kebijakan store.
 - Service account Firebase Admin belum dipasang di VPS. Push token sudah bisa tersimpan, tetapi pengiriman push butuh env service account.
 - Perlu test device nyata setelah APK baru dipasang untuk memastikan permission FCM dan rendering icon sesuai variasi Android vendor.
+- Admin dashboard masih membaca beberapa dataset besar ke memory; perlu query agregasi/pagination sebelum traffic besar.
+- Admin IP restriction di Nginx masih optional dan perlu diaktifkan manual kalau IP admin sudah stabil.
 
 ## Cara Jalankan Migration
 

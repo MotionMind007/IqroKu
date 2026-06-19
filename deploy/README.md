@@ -50,6 +50,22 @@ npm test --prefix backend
 BASE_URL=https://iqroku.motionmind.store ./deploy/smoke-test.sh
 ```
 
+Pastikan live Nginx tidak melayani upload lewat `alias`. Audio harus lewat backend agar authorization tetap jalan:
+
+```bash
+sudo cp /opt/iqroku/deploy/nginx-iqroku.conf /etc/nginx/sites-available/iqroku
+sudo nginx -t
+sudo systemctl reload nginx
+sudo nginx -T | grep -A8 -n "location /uploads/"
+```
+
+Jika memakai file service account Firebase, batasi permission agar hanya owner yang bisa membaca:
+
+```bash
+sudo chown iqroku:iqroku /opt/iqroku/secrets/firebase-service-account.json
+sudo chmod 600 /opt/iqroku/secrets/firebase-service-account.json
+```
+
 Lalu tes manual dari HP:
 
 - register/login
@@ -99,6 +115,12 @@ RATE_MAX_GENERAL=120
 # Optional for FCM push notification sending:
 FIREBASE_SERVICE_ACCOUNT_PATH=/opt/iqroku/secrets/firebase-service-account.json
 ```
+
+Auth/session cleanup:
+
+- Backend menjalankan cleanup sessions dan auth tokens expired otomatis tiap 6 jam.
+- `setup-vps.sh` juga memasang cron cleanup sebagai backup.
+- Interval app bisa diubah dengan `CLEANUP_EXPIRED_AUTH_INTERVAL_MS`; set `0` hanya jika cleanup ditangani scheduler eksternal.
 
 ## Backup and Restore
 

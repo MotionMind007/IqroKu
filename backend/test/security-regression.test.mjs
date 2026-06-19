@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 const serverSource = await readFile(new URL('../src/server.mjs', import.meta.url), 'utf8');
 const dbSource = await readFile(new URL('../src/db.mjs', import.meta.url), 'utf8');
 const nginxSource = await readFile(new URL('../../deploy/nginx-iqroku.conf', import.meta.url), 'utf8');
+const deployScriptSource = await readFile(new URL('../../deploy/deploy.sh', import.meta.url), 'utf8');
+const setupVpsSource = await readFile(new URL('../../deploy/setup-vps.sh', import.meta.url), 'utf8');
 const constraintsMigration = await readFile(
   new URL('../../deploy/migrations/002_security_constraints.sql', import.meta.url),
   'utf8',
@@ -71,6 +73,8 @@ test('nginx proxies uploads through backend authorization instead of public alia
   assert.match(nginxSource, /location \/uploads\/ \{/);
   assert.match(nginxSource, /proxy_pass http:\/\/iqroku_backend;/);
   assert.doesNotMatch(nginxSource, /alias \/opt\/iqroku\/uploads\/;/);
+  assert.match(deployScriptSource, /Live nginx still serves \/uploads\/ with alias/);
+  assert.match(deployScriptSource, /alias\[\[:space:\]\]\+\/opt\/iqroku\/uploads\//);
 });
 
 test('auth verification and reset use one-time hashed tokens', () => {
@@ -81,6 +85,17 @@ test('auth verification and reset use one-time hashed tokens', () => {
   assert.match(serverSource, /db\.findValidAuthToken/);
   assert.match(serverSource, /db\.markAuthTokenUsed/);
   assert.doesNotMatch(serverSource, /INSERT INTO auth_tokens[\s\S]*token\s*,/);
+});
+
+test('session tokens and auth cleanup avoid credential exposure', () => {
+  assert.match(serverSource, /function createSessionToken\(\)/);
+  assert.match(serverSource, /session_\$\{randomBytes\(32\)\.toString\('base64url'\)\}/);
+  assert.doesNotMatch(serverSource, /session_\$\{parentId\}/);
+  assert.match(serverSource, /async function cleanupExpiredAuthData\(\)/);
+  assert.match(serverSource, /await db\.cleanupExpiredSessions\(\)/);
+  assert.match(serverSource, /await db\.cleanupExpiredAuthTokens\(\)/);
+  assert.match(setupVpsSource, /DELETE FROM sessions WHERE expires_at < NOW\(\)/);
+  assert.match(setupVpsSource, /DELETE FROM auth_tokens WHERE expires_at < NOW\(\) - INTERVAL '7 days'/);
 });
 
 test('review decisions are applied through one database transaction', () => {
@@ -115,6 +130,7 @@ test('basic HTTP response hardening is enabled for JSON, files, and admin cookie
   assert.match(serverSource, /function secureCookieAttribute\(\)/);
   assert.match(serverSource, /process\.env\.NODE_ENV === 'production' \? '; Secure' : ''/);
   assert.match(serverSource, /SameSite=Strict; Max-Age=86400\$\{secureCookieAttribute\(\)\}/);
+  assert.match(serverSource, /replaceAll\('`', '&#96;'\)/);
 });
 
 test('database constraints cover persisted status and reviewer references', () => {

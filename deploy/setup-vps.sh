@@ -175,8 +175,8 @@ cp deploy/backup.sh "${APP_DIR}/backup.sh"
 chmod +x "${APP_DIR}/backup.sh"
 (crontab -l 2>/dev/null; echo "0 3 * * * ${APP_DIR}/backup.sh >> /var/log/iqroku/backup.log 2>&1") | sort -u | crontab -
 
-# --- Setup session cleanup cron ---
-(crontab -l 2>/dev/null; echo "0 */6 * * * sudo -u postgres psql -d ${DB_NAME} -c \"DELETE FROM sessions WHERE expires_at < NOW();\"") | sort -u | crontab -
+# --- Setup auth cleanup cron ---
+(crontab -l 2>/dev/null; echo "0 */6 * * * sudo -u postgres psql -d ${DB_NAME} -c \"DELETE FROM sessions WHERE expires_at < NOW(); DELETE FROM auth_tokens WHERE expires_at < NOW() - INTERVAL '7 days';\"") | sort -u | crontab -
 
 echo ""
 echo "============================================"

@@ -40,6 +40,19 @@ echo "  New commit: $(git rev-parse --short HEAD)"
 echo "[4/7] Checking syntax..."
 node --check backend/src/server.mjs
 node --check backend/src/db.mjs
+if [ -f /etc/nginx/sites-enabled/iqroku ] || [ -f /etc/nginx/sites-available/iqroku ]; then
+    LIVE_NGINX_CONFIG="$(mktemp)"
+    if nginx -T > "$LIVE_NGINX_CONFIG" 2>/dev/null; then
+        if grep -Eq 'location[[:space:]]+/uploads/' "$LIVE_NGINX_CONFIG" \
+            && grep -Eq 'alias[[:space:]]+/opt/iqroku/uploads/' "$LIVE_NGINX_CONFIG"; then
+            rm -f "$LIVE_NGINX_CONFIG"
+            echo "  Live nginx still serves /uploads/ with alias. This bypasses backend auth."
+            echo "  Sync deploy/nginx-iqroku.conf to /etc/nginx/sites-available/iqroku before deploying."
+            exit 1
+        fi
+    fi
+    rm -f "$LIVE_NGINX_CONFIG"
+fi
 
 echo "[5/7] Installing dependencies..."
 cd backend

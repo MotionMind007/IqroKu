@@ -212,6 +212,9 @@ Backend sudah punya fondasi keamanan:
 - rate limiting dasar
 - admin token untuk dashboard admin
 - endpoint audio dilindungi untuk playback dari app
+- deploy guard menolak live Nginx `/uploads/` yang memakai direct filesystem alias
+- backend menjalankan cleanup `sessions` dan `auth_tokens` expired secara berkala
+- session token berbentuk opaque random token tanpa menyertakan parent id
 - validasi upload audio untuk ukuran, MIME/type, ekstensi, dan header dasar
 - transaksi database untuk hasil review orang tua
 - constraint database untuk status dan referensi reviewer

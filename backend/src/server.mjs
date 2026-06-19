@@ -64,6 +64,9 @@ const RATE_WINDOW_MS = Number(process.env.RATE_WINDOW_MS) || 60_000; // 1 minute
 const RATE_MAX_AUTH = Number(process.env.RATE_MAX_AUTH) || 10; // max auth attempts per IP per minute
 const RATE_MAX_DEMO = 5; // max demo-login attempts per IP per minute
 const RATE_MAX_GENERAL = Number(process.env.RATE_MAX_GENERAL) || 120; // max general requests per IP per minute
+const CLEANUP_EXPIRED_AUTH_INTERVAL_MS = Number(
+  process.env.CLEANUP_EXPIRED_AUTH_INTERVAL_MS ?? 6 * 60 * 60 * 1000,
+);
 
 function getRateLimitKey(ip, bucket) {
   return `${ip}:${bucket}`;
@@ -92,6 +95,20 @@ setInterval(() => {
     }
   }
 }, 300_000).unref();
+
+async function cleanupExpiredAuthData() {
+  try {
+    await db.cleanupExpiredSessions();
+    await db.cleanupExpiredAuthTokens();
+  } catch (error) {
+    console.error('Expired auth data cleanup failed:', error.message);
+  }
+}
+
+if (CLEANUP_EXPIRED_AUTH_INTERVAL_MS > 0) {
+  setInterval(cleanupExpiredAuthData, CLEANUP_EXPIRED_AUTH_INTERVAL_MS).unref();
+  setTimeout(cleanupExpiredAuthData, 10_000).unref();
+}
 
 // --- Session Store (PostgreSQL-backed) ---
 
@@ -1090,8 +1107,8 @@ function verifyPassword(password, encoded) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
-function createSessionToken(parentId) {
-  return `session_${parentId}_${randomBytes(24).toString('hex')}`;
+function createSessionToken() {
+  return `session_${randomBytes(32).toString('base64url')}`;
 }
 
 function createOneTimeToken() {
@@ -2186,7 +2203,8 @@ function escapeHtml(value) {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+    .replaceAll("'", '&#39;')
+    .replaceAll('`', '&#96;');
 }
 
 function httpError(statusCode, message) {
