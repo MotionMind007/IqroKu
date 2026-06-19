@@ -164,8 +164,10 @@ Backend:
 - `POST /devices/register` menyimpan token perangkat.
 - `POST /devices/unregister` menonaktifkan token saat logout.
 - Token tersimpan di tabel `device_tokens`.
+- Token perangkat boleh tersimpan untuk parent dan child sekaligus supaya perangkat yang sama tetap menerima notifikasi untuk dua mode.
 - Backend mengirim FCM HTTP v1 langsung memakai service account Firebase dan `node:crypto`, tanpa dependency `firebase-admin`.
 - Jika env service account belum dipasang, backend tetap berjalan dan push akan di-skip dengan log.
+- Android memakai small notification icon `ic_stat_iqroku_notification` dan warna `iqroku_notification_color`.
 
 Env production/staging:
 
@@ -195,9 +197,9 @@ Saat menambah asset baru, pastikan file masuk ke `iqroku_app/pubspec.yaml` dan d
 
 Audio adzan:
 
-- Fitur adzan saat ini memakai default notification sound perangkat.
-- Jika memakai file adzan custom Android, simpan file sebagai `iqroku_app/android/app/src/main/res/raw/adzan.mp3`.
-- Setelah file tersedia, update channel sound di `iqroku_app/lib/data/prayer_reminder_service.dart`.
+- Fitur adzan Android memakai raw resource `adzan.mp3` untuk Dzuhur, Ashar, Maghrib, dan Isya.
+- Subuh memakai raw resource terpisah `adzan_subuh.mp3`.
+- File audio Android berada di `iqroku_app/android/app/src/main/res/raw/`.
 - Channel Android yang sudah pernah dibuat tidak selalu mengganti sound otomatis; saat testing, reinstall app atau ganti channel id jika perlu.
 
 ## Keamanan Saat Ini

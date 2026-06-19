@@ -188,6 +188,13 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
   - `FIREBASE_SERVICE_ACCOUNT_PATH`
   - `GOOGLE_APPLICATION_CREDENTIALS`
 - Event `new_recording` dan `review_result` sudah disambungkan ke push sender. Jika service account belum ada, pengiriman push di-skip dengan log.
+- Menambahkan migration `deploy/migrations/006_device_token_roles.sql` supaya satu token FCM bisa terdaftar untuk parent dan child sekaligus.
+- Token child sekarang diregister setelah PIN mode anak berhasil.
+- Android notification small icon memakai drawable khusus `ic_stat_iqroku_notification` agar tidak tampil sebagai icon launcher kotak.
+- Menambahkan audio adzan custom Android:
+  - `adzan.mp3` untuk Dzuhur, Ashar, Maghrib, dan Isya
+  - `adzan_subuh.mp3` untuk Subuh
+- Channel notifikasi adzan dipisah antara regular dan Subuh agar masing-masing bisa memakai sound yang tepat.
 
 ## Belum Selesai
 
@@ -198,10 +205,9 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Rate limit saat ini masih in-memory per proses. Untuk production multi-instance, pindahkan ke Redis atau provider rate limit terpusat.
 - Belum ada audit dependency otomatis di CI.
 - Restore script sudah ada, tetapi restore drill nyata di VPS/staging belum dijalankan dan dicatat hasilnya.
-- Suara adzan masih memakai default notification sound perangkat. File adzan custom belum ditambahkan ke repo.
 - Jadwal adzan memakai mode inexact-while-idle. Jika nanti butuh alarm presisi menit, tambahkan flow izin exact alarm dan validasi kebijakan store.
 - Service account Firebase Admin belum dipasang di VPS. Push token sudah bisa tersimpan, tetapi pengiriman push butuh env service account.
-- Token child belum otomatis diregister saat masuk mode anak; foundation saat ini memprioritaskan token parent.
+- Perlu test device nyata setelah APK baru dipasang untuk memastikan permission FCM dan rendering icon sesuai variasi Android vendor.
 
 ## Cara Jalankan Migration
 

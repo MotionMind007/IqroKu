@@ -18,7 +18,8 @@ class LocalPrayerReminderService implements PrayerReminderService {
   LocalPrayerReminderService({FlutterLocalNotificationsPlugin? notifications})
     : _notifications = notifications ?? FlutterLocalNotificationsPlugin();
 
-  static const _channelId = 'iqroku_adzan';
+  static const _regularChannelId = 'iqroku_adzan_regular_v1';
+  static const _subuhChannelId = 'iqroku_adzan_subuh_v1';
   static const _channelName = 'Adzan';
   static const _channelDescription = 'Pengingat waktu solat IqroKu';
   static const _notificationIds = <String, int>{
@@ -99,7 +100,7 @@ class LocalPrayerReminderService implements PrayerReminderService {
         title: 'Waktu ${time.name}',
         body: 'Saatnya solat ${time.name}.',
         scheduledDate: tz.TZDateTime.from(scheduledAt, tz.local),
-        notificationDetails: _details(),
+        notificationDetails: _details(time.name),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         payload: 'adzan:${time.name}',
       );
@@ -125,7 +126,9 @@ class LocalPrayerReminderService implements PrayerReminderService {
     tz_data.initializeTimeZones();
     await _configureLocalTimezone();
 
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const android = AndroidInitializationSettings(
+      'ic_stat_iqroku_notification',
+    );
     const darwin = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
@@ -183,24 +186,30 @@ class LocalPrayerReminderService implements PrayerReminderService {
     return scheduledAt;
   }
 
-  NotificationDetails _details() {
-    return const NotificationDetails(
+  NotificationDetails _details(String prayerName) {
+    final isSubuh = prayerName == 'Subuh';
+    final channelId = isSubuh ? _subuhChannelId : _regularChannelId;
+    final soundName = isSubuh ? 'adzan_subuh' : 'adzan';
+
+    return NotificationDetails(
       android: AndroidNotificationDetails(
-        _channelId,
+        channelId,
         _channelName,
         channelDescription: _channelDescription,
+        icon: 'ic_stat_iqroku_notification',
         importance: Importance.max,
         priority: Priority.high,
         category: AndroidNotificationCategory.alarm,
+        sound: RawResourceAndroidNotificationSound(soundName),
         playSound: true,
         enableVibration: true,
       ),
-      iOS: DarwinNotificationDetails(
+      iOS: const DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
       ),
-      macOS: DarwinNotificationDetails(
+      macOS: const DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,

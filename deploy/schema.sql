@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   child_id UUID REFERENCES children(id) ON DELETE CASCADE,
   user_type VARCHAR(10) NOT NULL DEFAULT 'parent'
     CHECK (user_type IN ('parent', 'child')),
-  token TEXT NOT NULL UNIQUE,
+  token TEXT NOT NULL,
   platform VARCHAR(20) NOT NULL DEFAULT 'android'
     CHECK (platform IN ('android', 'ios', 'web', 'unknown')),
   app_version VARCHAR(80),
@@ -189,6 +189,12 @@ CREATE INDEX idx_device_tokens_parent
   ON device_tokens(parent_id, enabled, updated_at DESC);
 CREATE INDEX idx_device_tokens_user
   ON device_tokens(user_type, (COALESCE(child_id, parent_id)), enabled);
+CREATE UNIQUE INDEX idx_device_tokens_parent_token
+  ON device_tokens(parent_id, token)
+  WHERE user_type = 'parent';
+CREATE UNIQUE INDEX idx_device_tokens_child_token
+  ON device_tokens(child_id, token)
+  WHERE user_type = 'child';
 
 -- Daily prayers content
 CREATE TABLE IF NOT EXISTS daily_prayers (

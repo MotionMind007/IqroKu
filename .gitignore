@@ -28,6 +28,7 @@ eror.txt
 
 # Local/raw working assets and generated conversion outputs
 /*.png
+/*.mp3
 /Iqro_Complete_*.pdf
 /iqro_clean_report.json
 /iqro_complete_jilid_1-6*.json

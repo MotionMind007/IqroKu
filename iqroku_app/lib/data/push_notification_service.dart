@@ -23,6 +23,7 @@ Future<void> iqrokuFirebaseMessagingBackgroundHandler(
 
 abstract class PushNotificationService {
   Future<void> registerParentDevice(AuthApiService authService);
+  Future<void> registerChildDevice(AuthApiService authService, String childId);
   Future<void> unregisterDevice(AuthApiService authService);
   void dispose();
 }
@@ -34,6 +35,12 @@ class NoopPushNotificationService implements PushNotificationService {
   Future<void> registerParentDevice(AuthApiService authService) async {}
 
   @override
+  Future<void> registerChildDevice(
+    AuthApiService authService,
+    String childId,
+  ) async {}
+
+  @override
   Future<void> unregisterDevice(AuthApiService authService) async {}
 
   @override
@@ -43,11 +50,29 @@ class NoopPushNotificationService implements PushNotificationService {
 class FirebasePushNotificationService implements PushNotificationService {
   StreamSubscription<String>? _tokenRefreshSubscription;
   String? _lastToken;
+  bool _parentRegistered = false;
+  final Set<String> _registeredChildIds = <String>{};
   bool _initialized = false;
   bool _backgroundHandlerRegistered = false;
 
   @override
   Future<void> registerParentDevice(AuthApiService authService) async {
+    await _registerDevice(authService, userType: 'parent');
+  }
+
+  @override
+  Future<void> registerChildDevice(
+    AuthApiService authService,
+    String childId,
+  ) async {
+    await _registerDevice(authService, userType: 'child', childId: childId);
+  }
+
+  Future<void> _registerDevice(
+    AuthApiService authService, {
+    required String userType,
+    String? childId,
+  }) async {
     if (kIsWeb) {
       return;
     }
@@ -70,22 +95,18 @@ class FirebasePushNotificationService implements PushNotificationService {
       }
 
       _lastToken = token;
-      await authService.registerDeviceToken(
-        token: token,
-        platform: _platform,
-        userType: 'parent',
+      _rememberRegistration(userType: userType, childId: childId);
+      await _registerToken(
+        authService,
+        token,
+        userType: userType,
+        childId: childId,
       );
 
       _tokenRefreshSubscription ??= FirebaseMessaging.instance.onTokenRefresh
           .listen((nextToken) {
             _lastToken = nextToken;
-            unawaited(
-              authService.registerDeviceToken(
-                token: nextToken,
-                platform: _platform,
-                userType: 'parent',
-              ),
-            );
+            unawaited(_registerKnownDevices(authService, nextToken));
           });
     } on MissingPluginException catch (error) {
       debugPrint('Push notification plugin unavailable: $error');
@@ -104,6 +125,8 @@ class FirebasePushNotificationService implements PushNotificationService {
     }
     try {
       await authService.unregisterDeviceToken(token);
+      _parentRegistered = false;
+      _registeredChildIds.clear();
     } catch (error) {
       debugPrint('Push token unregister failed: $error');
     }
@@ -113,6 +136,50 @@ class FirebasePushNotificationService implements PushNotificationService {
   void dispose() {
     unawaited(_tokenRefreshSubscription?.cancel());
     _tokenRefreshSubscription = null;
+  }
+
+  void _rememberRegistration({required String userType, String? childId}) {
+    if (userType == 'parent') {
+      _parentRegistered = true;
+    }
+    if (userType == 'child' && childId != null && childId.isNotEmpty) {
+      _registeredChildIds.add(childId);
+    }
+  }
+
+  Future<void> _registerToken(
+    AuthApiService authService,
+    String token, {
+    required String userType,
+    String? childId,
+  }) async {
+    await authService.registerDeviceToken(
+      token: token,
+      platform: _platform,
+      userType: userType,
+      childId: childId,
+    );
+  }
+
+  Future<void> _registerKnownDevices(
+    AuthApiService authService,
+    String token,
+  ) async {
+    try {
+      if (_parentRegistered) {
+        await _registerToken(authService, token, userType: 'parent');
+      }
+      for (final childId in _registeredChildIds) {
+        await _registerToken(
+          authService,
+          token,
+          userType: 'child',
+          childId: childId,
+        );
+      }
+    } catch (error) {
+      debugPrint('Push token refresh registration failed: $error');
+    }
   }
 
   Future<void> _ensureInitialized() async {

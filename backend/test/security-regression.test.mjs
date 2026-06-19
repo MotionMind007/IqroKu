@@ -21,7 +21,14 @@ const deviceTokensMigration = await readFile(
   new URL('../../deploy/migrations/005_device_tokens.sql', import.meta.url),
   'utf8',
 );
+const deviceTokenRolesMigration = await readFile(
+  new URL('../../deploy/migrations/006_device_token_roles.sql', import.meta.url),
+  'utf8',
+);
 const pushSource = await readFile(new URL('../src/push.mjs', import.meta.url), 'utf8');
+const upsertDeviceTokenSource =
+  dbSource.match(/export async function upsertDeviceToken[\s\S]*?export async function disableDeviceToken/)?.[0] ??
+  '';
 
 test('demo login is explicitly gated and does not issue deterministic parent-id tokens', () => {
   assert.match(serverSource, /ENABLE_DEMO_LOGIN\s*=\s*process\.env\.ENABLE_DEMO_LOGIN === 'true'/);
@@ -158,9 +165,17 @@ test('migrations backfill review flow columns used by runtime code', () => {
 
 test('migration creates device token storage for FCM push notifications', () => {
   assert.match(deviceTokensMigration, /CREATE TABLE IF NOT EXISTS device_tokens/);
-  assert.match(deviceTokensMigration, /token TEXT NOT NULL UNIQUE/);
+  assert.match(deviceTokensMigration, /token TEXT NOT NULL/);
   assert.match(deviceTokensMigration, /REFERENCES parents\(id\) ON DELETE CASCADE/);
   assert.match(deviceTokensMigration, /REFERENCES children\(id\) ON DELETE CASCADE/);
   assert.match(deviceTokensMigration, /user_type IN \('parent', 'child'\)/);
   assert.match(deviceTokensMigration, /idx_device_tokens_user/);
+});
+
+test('migration allows one FCM token to be registered for parent and child roles', () => {
+  assert.match(deviceTokenRolesMigration, /DROP CONSTRAINT IF EXISTS device_tokens_token_key/);
+  assert.match(deviceTokenRolesMigration, /idx_device_tokens_parent_token/);
+  assert.match(deviceTokenRolesMigration, /idx_device_tokens_child_token/);
+  assert.match(upsertDeviceTokenSource, /SELECT id[\s\S]*FROM device_tokens[\s\S]*WHERE token = \$1/);
+  assert.doesNotMatch(upsertDeviceTokenSource, /ON CONFLICT \(token\)/);
 });

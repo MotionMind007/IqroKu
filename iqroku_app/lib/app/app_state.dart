@@ -1076,6 +1076,9 @@ class IqrokuState extends ChangeNotifier {
     try {
       final child = await authService.childLogin(selectedChildId, pin);
       enterChildMode(child);
+      unawaited(
+        pushNotificationService.registerChildDevice(authService, child.id),
+      );
       return true;
     } catch (e) {
       debugPrint('Child login failed: $e');

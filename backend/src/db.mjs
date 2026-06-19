@@ -951,33 +951,21 @@ export async function upsertDeviceToken({
   appVersion,
   deviceModel,
 }) {
-  const row = await queryOne(
-    `INSERT INTO device_tokens (
-       parent_id,
-       child_id,
-       user_type,
-       token,
-       platform,
-       app_version,
-       device_model,
-       enabled,
-       last_seen_at,
-       updated_at
-     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NOW(), NOW())
-     ON CONFLICT (token)
-     DO UPDATE SET
-       parent_id = EXCLUDED.parent_id,
-       child_id = EXCLUDED.child_id,
-       user_type = EXCLUDED.user_type,
-       platform = EXCLUDED.platform,
-       app_version = EXCLUDED.app_version,
-       device_model = EXCLUDED.device_model,
-       enabled = TRUE,
-       last_seen_at = NOW(),
-       updated_at = NOW()
-     RETURNING *`,
-    [
+  return withTransaction(async (tx) => {
+    const existing = await tx.queryOne(
+      `SELECT id
+       FROM device_tokens
+       WHERE token = $1
+         AND user_type = $2
+         AND (
+           ($2 = 'parent' AND parent_id = $3 AND child_id IS NULL)
+           OR ($2 = 'child' AND child_id = $4)
+         )
+       LIMIT 1`,
+      [token, userType, parentId, childId ?? null],
+    );
+
+    const values = [
       parentId,
       childId ?? null,
       userType,
@@ -985,9 +973,47 @@ export async function upsertDeviceToken({
       platform,
       appVersion ?? null,
       deviceModel ?? null,
-    ],
-  );
-  return rowToDeviceToken(row);
+    ];
+
+    if (existing) {
+      const row = await tx.queryOne(
+        `UPDATE device_tokens
+         SET parent_id = $1,
+             child_id = $2,
+             user_type = $3,
+             token = $4,
+             platform = $5,
+             app_version = $6,
+             device_model = $7,
+             enabled = TRUE,
+             last_seen_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $8
+         RETURNING *`,
+        [...values, existing.id],
+      );
+      return rowToDeviceToken(row);
+    }
+
+    const row = await tx.queryOne(
+      `INSERT INTO device_tokens (
+         parent_id,
+         child_id,
+         user_type,
+         token,
+         platform,
+         app_version,
+         device_model,
+         enabled,
+         last_seen_at,
+         updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NOW(), NOW())
+       RETURNING *`,
+      values,
+    );
+    return rowToDeviceToken(row);
+  });
 }
 
 export async function disableDeviceToken({ parentId, token }) {

@@ -144,8 +144,9 @@ Endpoint activate sekarang masih fondasi/prototype. Payment gateway production p
 Catatan:
 
 - Imsak dan Terbit tidak dipakai untuk suara adzan.
-- Versi sekarang memakai suara notification default perangkat pada channel `Adzan`.
-- Jika nanti file adzan resmi sudah siap, tambahkan file raw Android dan ubah sound channel di `PrayerReminderService`.
+- Android memakai file raw `adzan.mp3` untuk Dzuhur, Ashar, Maghrib, dan Isya.
+- Android memakai file raw `adzan_subuh.mp3` khusus untuk Subuh.
+- Channel adzan dipisah antara regular dan Subuh karena Android menyimpan sound di level notification channel.
 - Android 13+ membutuhkan izin notifikasi dari user.
 - Android exact alarm belum dipakai supaya tidak perlu izin alarm khusus. Waktu notifikasi bisa mengikuti kebijakan idle/battery perangkat.
 
@@ -176,7 +177,10 @@ Catatan:
 
 - Push akan aktif penuh setelah service account Firebase dipasang di env VPS.
 - Kalau env belum ada, backend tetap aman dan hanya melewati pengiriman push.
-- Untuk tahap awal token yang diregister adalah token parent. Token child bisa ditambah nanti saat flow mode anak butuh push khusus.
+- Token parent diregister setelah login/session restore.
+- Token child diregister setelah PIN mode anak berhasil.
+- Satu token perangkat bisa terdaftar sebagai parent dan child supaya HP yang sama tetap menerima notifikasi untuk dua mode.
+- Android memakai small notification icon dedicated `ic_stat_iqroku_notification`, bukan launcher icon kotak.
 
 ## Flow Legal Docs
 
