@@ -13,6 +13,10 @@ const onboardingProfileMigration = await readFile(
   new URL('../../deploy/migrations/003_onboarding_profile_columns.sql', import.meta.url),
   'utf8',
 );
+const reviewFlowMigration = await readFile(
+  new URL('../../deploy/migrations/004_review_flow_columns.sql', import.meta.url),
+  'utf8',
+);
 
 test('demo login is explicitly gated and does not issue deterministic parent-id tokens', () => {
   assert.match(serverSource, /ENABLE_DEMO_LOGIN\s*=\s*process\.env\.ENABLE_DEMO_LOGIN === 'true'/);
@@ -117,4 +121,14 @@ test('migrations backfill onboarding profile columns used by runtime code', () =
   assert.match(onboardingProfileMigration, /ADD COLUMN IF NOT EXISTS study_end_time TIME/);
   assert.match(onboardingProfileMigration, /ADD COLUMN IF NOT EXISTS study_days INTEGER\[\]/);
   assert.match(onboardingProfileMigration, /ALTER TABLE progress[\s\S]*ADD COLUMN IF NOT EXISTS reviewed_by UUID/);
+});
+
+test('migrations backfill review flow columns used by runtime code', () => {
+  assert.match(reviewFlowMigration, /ALTER TABLE progress[\s\S]*ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ/);
+  assert.match(reviewFlowMigration, /ADD COLUMN IF NOT EXISTS review_status VARCHAR\(20\)/);
+  assert.match(reviewFlowMigration, /ALTER TABLE attempts[\s\S]*ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ/);
+  assert.match(reviewFlowMigration, /ADD COLUMN IF NOT EXISTS assessment_status VARCHAR\(30\)/);
+  assert.match(reviewFlowMigration, /ADD COLUMN IF NOT EXISTS audio_file_name VARCHAR\(200\)/);
+  assert.match(reviewFlowMigration, /ALTER TABLE children[\s\S]*ADD COLUMN IF NOT EXISTS repeat_from_page INTEGER/);
+  assert.match(reviewFlowMigration, /ADD COLUMN IF NOT EXISTS repeat_from_book INTEGER/);
 });

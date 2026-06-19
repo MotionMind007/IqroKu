@@ -133,6 +133,21 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
   - `progress.reviewed_by`
 - Fix ini mencegah parent/child PIN selalu dianggap belum diset pada database lama.
 
+### 8. Review Flow Database Drift Fix
+
+- Menambahkan migration `deploy/migrations/004_review_flow_columns.sql`.
+- Migration ini membackfill kolom yang dipakai parent review dan audio attempt tetapi bisa belum ada di database production lama:
+  - `progress.reviewed_at`
+  - `progress.review_status`
+  - `attempts.reviewed_at`
+  - `attempts.review_status`
+  - `attempts.assessment_status`
+  - `attempts.status`
+  - `attempts.audio_*`
+  - `children.repeat_from_page`
+  - `children.repeat_from_book`
+- Fix ini mencegah approve/repeat review gagal karena missing column di database lama.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.

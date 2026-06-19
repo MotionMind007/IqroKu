@@ -1,0 +1,22 @@
+ALTER TABLE progress
+  ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) DEFAULT 'pending';
+
+ALTER TABLE attempts
+  ADD COLUMN IF NOT EXISTS audio_path VARCHAR(500),
+  ADD COLUMN IF NOT EXISTS audio_url VARCHAR(500),
+  ADD COLUMN IF NOT EXISTS audio_file_name VARCHAR(200),
+  ADD COLUMN IF NOT EXISTS audio_content_type VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS audio_size_bytes INTEGER,
+  ADD COLUMN IF NOT EXISTS audio_uploaded_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS assessment_status VARCHAR(30) NOT NULL DEFAULT 'recorded',
+  ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS status VARCHAR(20);
+
+ALTER TABLE children
+  ADD COLUMN IF NOT EXISTS repeat_from_page INTEGER DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS repeat_from_book INTEGER DEFAULT 1;
+
+CREATE INDEX IF NOT EXISTS idx_progress_review ON progress(review_status);
+CREATE INDEX IF NOT EXISTS idx_attempts_review ON attempts(review_status);
