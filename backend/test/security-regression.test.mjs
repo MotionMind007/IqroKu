@@ -31,6 +31,9 @@ const pushSource = await readFile(new URL('../src/push.mjs', import.meta.url), '
 const upsertDeviceTokenSource =
   dbSource.match(/export async function upsertDeviceToken[\s\S]*?export async function disableDeviceToken/)?.[0] ??
   '';
+const adminMetricsSource =
+  dbSource.match(/export async function getAdminMetrics[\s\S]*?\/\/ =============================================================================\r?\n\/\/ PIN MANAGEMENT/)?.[0] ??
+  '';
 
 test('demo login is explicitly gated and does not issue deterministic parent-id tokens', () => {
   assert.match(serverSource, /ENABLE_DEMO_LOGIN\s*=\s*process\.env\.ENABLE_DEMO_LOGIN === 'true'/);
@@ -91,11 +94,24 @@ test('session tokens and auth cleanup avoid credential exposure', () => {
   assert.match(serverSource, /function createSessionToken\(\)/);
   assert.match(serverSource, /session_\$\{randomBytes\(32\)\.toString\('base64url'\)\}/);
   assert.doesNotMatch(serverSource, /session_\$\{parentId\}/);
+  assert.doesNotMatch(serverSource, /createSessionToken\(parent\.id\)/);
   assert.match(serverSource, /async function cleanupExpiredAuthData\(\)/);
   assert.match(serverSource, /await db\.cleanupExpiredSessions\(\)/);
   assert.match(serverSource, /await db\.cleanupExpiredAuthTokens\(\)/);
   assert.match(setupVpsSource, /DELETE FROM sessions WHERE expires_at < NOW\(\)/);
   assert.match(setupVpsSource, /DELETE FROM auth_tokens WHERE expires_at < NOW\(\) - INTERVAL '7 days'/);
+});
+
+test('admin metrics use bounded SQL aggregation instead of loading full tables', () => {
+  assert.match(adminMetricsSource, /COUNT\(\*\)::int AS parents/);
+  assert.match(adminMetricsSource, /COUNT\(\*\) FILTER/);
+  assert.match(adminMetricsSource, /LIMIT \$1/);
+  assert.match(adminMetricsSource, /parentListLimit = 100/);
+  assert.match(adminMetricsSource, /attemptListLimit = 25/);
+  assert.doesNotMatch(adminMetricsSource, /getAllParents\(\)/);
+  assert.doesNotMatch(adminMetricsSource, /getAllChildren\(\)/);
+  assert.doesNotMatch(adminMetricsSource, /getAllSubscriptions\(\)/);
+  assert.doesNotMatch(adminMetricsSource, /getAllProgress\(\)/);
 });
 
 test('review decisions are applied through one database transaction', () => {

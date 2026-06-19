@@ -425,7 +425,7 @@ async function route(method, url, body, request) {
       throw httpError(409, 'demo_account_exists');
     }
     const parent = await db.createParent({ id: randomUUID(), email: demoEmail, name });
-    const token = createSessionToken(parent.id);
+    const token = createSessionToken();
     await storeSession(token, parent.id);
     return { parent: publicParent(parent), session: { token, type: 'demo' } };
   }
@@ -454,7 +454,7 @@ async function route(method, url, body, request) {
       token: verification.token,
       path: '/auth/verify-email',
     });
-    const token = createSessionToken(parent.id);
+    const token = createSessionToken();
     await storeSession(token, parent.id);
     return {
       status: 201,
@@ -479,7 +479,7 @@ async function route(method, url, body, request) {
       throw httpError(403, 'email_not_verified');
     }
 
-    const token = createSessionToken(parent.id);
+    const token = createSessionToken();
     await storeSession(token, parent.id);
     return {
       parent: publicParent(parent),
@@ -522,7 +522,7 @@ async function route(method, url, body, request) {
       });
     }
 
-    const token = createSessionToken(parent.id);
+    const token = createSessionToken();
     await storeSession(token, parent.id);
     return {
       parent: publicParent(parent),
@@ -1785,9 +1785,9 @@ function renderAdminDashboard(metrics) {
         `).join('')}
       </div>
 
-      ${renderParentsTable(metrics.parents)}
-      ${renderSubscriptionsTable(metrics.subscriptions, metrics.parents)}
-      ${renderAttemptsTable(metrics.attempts)}
+      ${renderParentsTable(metrics.parents, metrics.limits?.parents)}
+      ${renderSubscriptionsTable(metrics.subscriptions, metrics.limits?.subscriptions)}
+      ${renderAttemptsTable(metrics.attempts, metrics.limits?.attempts)}
     </main>
   </body>
 </html>`;
@@ -2054,11 +2054,11 @@ function nextPrayerSortOrder(prayers) {
   return maxSort + 10;
 }
 
-function renderParentsTable(parents) {
+function renderParentsTable(parents, limit) {
   return `<section>
     <div class="section-head">
       <h2>Users Parent</h2>
-      <span class="muted">${parents.length} user</span>
+      <span class="muted">${parents.length}${limit ? `/${limit}` : ''} terbaru</span>
     </div>
     ${parents.length ? `<table>
       <thead>
@@ -2085,12 +2085,11 @@ function renderParentsTable(parents) {
   </section>`;
 }
 
-function renderSubscriptionsTable(subscriptions, parents) {
-  const parentById = new Map(parents.map((parent) => [parent.id, parent]));
+function renderSubscriptionsTable(subscriptions, limit) {
   return `<section>
     <div class="section-head">
       <h2>Subscriptions</h2>
-      <span class="muted">${subscriptions.length} subscription</span>
+      <span class="muted">${subscriptions.length}${limit ? `/${limit}` : ''} terbaru</span>
     </div>
     ${subscriptions.length ? `<table>
       <thead>
@@ -2103,26 +2102,25 @@ function renderSubscriptionsTable(subscriptions, parents) {
         </tr>
       </thead>
       <tbody>
-        ${subscriptions.map((subscription) => {
-          const parent = parentById.get(subscription.parentId);
-          return `<tr>
-            <td>${escapeHtml(parent?.email ?? subscription.parentId)}</td>
+        ${subscriptions.map((subscription) => `
+          <tr>
+            <td>${escapeHtml(subscription.parentEmail || subscription.parentId)}</td>
             <td>${escapeHtml(subscription.plan ?? '-')}</td>
             <td><span class="pill ${subscription.active ? '' : 'free'}">${subscription.active ? 'Aktif' : 'Tidak aktif'}</span></td>
             <td>${escapeHtml(formatDateTime(subscription.activatedAt))}</td>
             <td>${escapeHtml(formatDateTime(subscription.activeUntil))}</td>
-          </tr>`;
-        }).join('')}
+          </tr>
+        `).join('')}
       </tbody>
     </table>` : '<div class="empty">Belum ada subscription.</div>'}
   </section>`;
 }
 
-function renderAttemptsTable(attempts) {
+function renderAttemptsTable(attempts, limit) {
   return `<section>
     <div class="section-head">
       <h2>Rekaman & Review Terbaru</h2>
-      <span class="muted">${attempts.length} terbaru</span>
+      <span class="muted">${attempts.length}${limit ? `/${limit}` : ''} terbaru</span>
     </div>
     ${attempts.length ? `<table>
       <thead>

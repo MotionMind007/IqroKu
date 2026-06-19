@@ -581,83 +581,139 @@ function rowToPrayer(row) {
 // =============================================================================
 
 export async function getAdminMetrics() {
+  const parentListLimit = 100;
+  const subscriptionListLimit = 100;
+  const attemptListLimit = 25;
+  const today = new Date().toISOString().slice(0, 10);
+
   const [
+    totals,
+    attemptTotals,
+    progressTotals,
+    activeToday,
     parents,
-    children,
     subscriptions,
     attempts,
-    progress,
-    prayers,
   ] = await Promise.all([
-    getAllParents(),
-    getAllChildren(),
-    getAllSubscriptions(),
-    getRecentAttempts(25),
-    getAllProgress(),
-    getAllPrayers(),
-  ]);
-
-  const allAttempts = await queryAll('SELECT COUNT(*)::int AS total FROM attempts');
-  const assessedAttempts = await queryAll(
-    `SELECT COUNT(*)::int AS total FROM attempts
-     WHERE assessed_at IS NOT NULL OR assessment_status IN ('fluent', 'needsReview')`,
-  );
-
-  const activeSubscriptions = subscriptions.filter((s) => s.active);
-  const activeParentIds = new Set(activeSubscriptions.map((s) => s.parentId));
-  const fluentPages = progress.filter((p) => p.status === 'fluent');
-  const reviewPages = progress.filter((p) => p.status === 'review');
-
-  const today = new Date().toISOString().slice(0, 10);
-  const childParentMap = new Map(children.map((c) => [c.id, c.parentId]));
-
-  // Active today: recent attempts or progress updates from today
-  const todayAttempts = await queryAll(
-    `SELECT DISTINCT child_id FROM attempts WHERE created_at::date = $1`,
-    [today],
-  );
-  const todayProgress = await queryAll(
-    `SELECT DISTINCT child_id FROM progress WHERE updated_at::date = $1`,
-    [today],
-  );
-  const activeToday = new Set([
-    ...todayAttempts.map((r) => childParentMap.get(r.child_id)).filter(Boolean),
-    ...todayProgress.map((r) => childParentMap.get(r.child_id)).filter(Boolean),
+    queryOne(
+      `SELECT
+         COUNT(*)::int AS parents,
+         COALESCE((SELECT COUNT(*)::int FROM children), 0) AS children,
+         COALESCE((SELECT COUNT(DISTINCT parent_id)::int FROM subscriptions WHERE active = TRUE), 0) AS plus_parents,
+         COALESCE((SELECT COUNT(*)::int FROM subscriptions WHERE active = TRUE), 0) AS active_subscriptions`,
+    ),
+    queryOne(
+      `SELECT
+         COUNT(*)::int AS attempts,
+         COUNT(*) FILTER (
+           WHERE assessed_at IS NOT NULL OR assessment_status IN ('fluent', 'needsReview')
+         )::int AS assessed_attempts
+       FROM attempts`,
+    ),
+    queryOne(
+      `SELECT
+         COUNT(*)::int AS progress_records,
+         COUNT(*) FILTER (WHERE status = 'fluent')::int AS fluent_pages,
+         COUNT(*) FILTER (WHERE status = 'review')::int AS review_pages
+       FROM progress`,
+    ),
+    queryOne(
+      `SELECT COUNT(DISTINCT c.parent_id)::int AS total
+       FROM children c
+       WHERE EXISTS (
+         SELECT 1 FROM attempts a
+         WHERE a.child_id = c.id AND a.created_at::date = $1
+       )
+       OR EXISTS (
+         SELECT 1 FROM progress p
+         WHERE p.child_id = c.id AND p.updated_at::date = $1
+       )`,
+      [today],
+    ),
+    queryAll(
+      `SELECT
+         p.id,
+         p.email,
+         p.name,
+         p.created_at,
+         CASE
+           WHEN active_sub.parent_id IS NULL THEN 'Free'
+           ELSE 'IqroKu Plus'
+         END AS plan,
+         COUNT(c.id)::int AS children_count
+       FROM parents p
+       LEFT JOIN (
+         SELECT DISTINCT parent_id
+         FROM subscriptions
+         WHERE active = TRUE
+       ) active_sub ON active_sub.parent_id = p.id
+       LEFT JOIN children c ON c.parent_id = p.id
+       GROUP BY p.id, p.email, p.name, p.created_at, active_sub.parent_id
+       ORDER BY p.created_at DESC
+       LIMIT $1`,
+      [parentListLimit],
+    ),
+    queryAll(
+      `SELECT s.*, p.email AS parent_email
+       FROM subscriptions s
+       LEFT JOIN parents p ON p.id = s.parent_id
+       ORDER BY s.activated_at DESC NULLS LAST
+       LIMIT $1`,
+      [subscriptionListLimit],
+    ),
+    queryAll(
+      `SELECT a.*, c.name AS child_name, p.email AS parent_email
+       FROM attempts a
+       LEFT JOIN children c ON c.id = a.child_id
+       LEFT JOIN parents p ON p.id = c.parent_id
+       ORDER BY a.created_at DESC
+       LIMIT $1`,
+      [attemptListLimit],
+    ),
   ]);
 
   return {
     generatedAt: new Date().toISOString(),
     totals: {
-      parents: parents.length,
-      children: children.length,
-      freeParents: parents.length - activeParentIds.size,
-      plusParents: activeParentIds.size,
-      activeSubscriptions: activeSubscriptions.length,
-      monthlyRevenue: activeSubscriptions.length * 49000,
-      attempts: allAttempts[0]?.total ?? 0,
-      assessedAttempts: assessedAttempts[0]?.total ?? 0,
-      pendingAttempts: Math.max((allAttempts[0]?.total ?? 0) - (assessedAttempts[0]?.total ?? 0), 0),
-      progressRecords: progress.length,
-      fluentPages: fluentPages.length,
-      reviewPages: reviewPages.length,
-      activeParentsToday: activeToday.size,
+      parents: totals?.parents ?? 0,
+      children: totals?.children ?? 0,
+      freeParents: Math.max((totals?.parents ?? 0) - (totals?.plus_parents ?? 0), 0),
+      plusParents: totals?.plus_parents ?? 0,
+      activeSubscriptions: totals?.active_subscriptions ?? 0,
+      monthlyRevenue: (totals?.active_subscriptions ?? 0) * 49000,
+      attempts: attemptTotals?.attempts ?? 0,
+      assessedAttempts: attemptTotals?.assessed_attempts ?? 0,
+      pendingAttempts: Math.max(
+        (attemptTotals?.attempts ?? 0) - (attemptTotals?.assessed_attempts ?? 0),
+        0,
+      ),
+      progressRecords: progressTotals?.progress_records ?? 0,
+      fluentPages: progressTotals?.fluent_pages ?? 0,
+      reviewPages: progressTotals?.review_pages ?? 0,
+      activeParentsToday: activeToday?.total ?? 0,
     },
-    parents: parents.map((parent) => ({
-      ...parent,
-      plan: activeParentIds.has(parent.id) ? 'IqroKu Plus' : 'Free',
-      childrenCount: children.filter((c) => c.parentId === parent.id).length,
+    limits: {
+      parents: parentListLimit,
+      subscriptions: subscriptionListLimit,
+      attempts: attemptListLimit,
+    },
+    parents: parents.map((row) => ({
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      plan: row.plan,
+      childrenCount: row.children_count,
+      createdAt: row.created_at?.toISOString(),
     })),
-    children,
-    subscriptions,
-    attempts: attempts.map((attempt) => {
-      const child = children.find((c) => c.id === attempt.childId);
-      const parentEmail = parents.find((p) => p.id === child?.parentId)?.email ?? '';
-      return {
-        ...attempt,
-        childName: child?.name ?? 'Unknown',
-        parentEmail,
-      };
-    }),
+    subscriptions: subscriptions.map((row) => ({
+      ...rowToSubscription(row),
+      parentEmail: row.parent_email ?? '',
+    })),
+    attempts: attempts.map((row) => ({
+      ...rowToAttempt(row),
+      childName: row.child_name ?? 'Unknown',
+      parentEmail: row.parent_email ?? '',
+    })),
   };
 }
 

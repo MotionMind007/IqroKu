@@ -207,6 +207,17 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - `deploy/deploy.sh` menolak deploy jika live Nginx masih melayani `/uploads/` memakai `alias /opt/iqroku/uploads/`, karena itu bypass auth backend.
 - `deploy/README.md` menambahkan command VPS untuk sync Nginx live config dan mengunci permission Firebase service account ke `600`.
 
+### 12. Admin Dashboard Query Optimization
+
+- `getAdminMetrics()` tidak lagi membaca semua parent, anak, subscription, attempt, dan progress ke memory.
+- Totals dashboard sekarang dihitung lewat SQL aggregation (`COUNT`, `COUNT FILTER`, `COUNT DISTINCT`).
+- Tabel admin dibatasi:
+  - parent terbaru 100 row
+  - subscription terbaru 100 row
+  - rekaman/review terbaru 25 row
+- Recent attempts dan subscriptions memakai join SQL untuk mengambil nama anak/email parent tanpa full-table lookup di JavaScript.
+- Security regression test ditambah supaya admin metrics tidak kembali memakai `getAllParents()`, `getAllChildren()`, `getAllSubscriptions()`, atau `getAllProgress()`.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
@@ -219,7 +230,6 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Jadwal adzan memakai mode inexact-while-idle. Jika nanti butuh alarm presisi menit, tambahkan flow izin exact alarm dan validasi kebijakan store.
 - Service account Firebase Admin belum dipasang di VPS. Push token sudah bisa tersimpan, tetapi pengiriman push butuh env service account.
 - Perlu test device nyata setelah APK baru dipasang untuk memastikan permission FCM dan rendering icon sesuai variasi Android vendor.
-- Admin dashboard masih membaca beberapa dataset besar ke memory; perlu query agregasi/pagination sebelum traffic besar.
 - Admin IP restriction di Nginx masih optional dan perlu diaktifkan manual kalau IP admin sudah stabil.
 
 ## Cara Jalankan Migration
