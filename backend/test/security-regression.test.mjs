@@ -9,6 +9,10 @@ const constraintsMigration = await readFile(
   new URL('../../deploy/migrations/002_security_constraints.sql', import.meta.url),
   'utf8',
 );
+const onboardingProfileMigration = await readFile(
+  new URL('../../deploy/migrations/003_onboarding_profile_columns.sql', import.meta.url),
+  'utf8',
+);
 
 test('demo login is explicitly gated and does not issue deterministic parent-id tokens', () => {
   assert.match(serverSource, /ENABLE_DEMO_LOGIN\s*=\s*process\.env\.ENABLE_DEMO_LOGIN === 'true'/);
@@ -104,4 +108,13 @@ test('database constraints cover persisted status and reviewer references', () =
   assert.match(constraintsMigration, /progress_reviewed_by_fkey/);
   assert.match(constraintsMigration, /auth_tokens_purpose_check/);
   assert.match(constraintsMigration, /notifications_user_type_check/);
+});
+
+test('migrations backfill onboarding profile columns used by runtime code', () => {
+  assert.match(onboardingProfileMigration, /ALTER TABLE parents[\s\S]*ADD COLUMN IF NOT EXISTS pin_hash TEXT/);
+  assert.match(onboardingProfileMigration, /ALTER TABLE children[\s\S]*ADD COLUMN IF NOT EXISTS pin_hash TEXT/);
+  assert.match(onboardingProfileMigration, /ADD COLUMN IF NOT EXISTS study_start_time TIME/);
+  assert.match(onboardingProfileMigration, /ADD COLUMN IF NOT EXISTS study_end_time TIME/);
+  assert.match(onboardingProfileMigration, /ADD COLUMN IF NOT EXISTS study_days INTEGER\[\]/);
+  assert.match(onboardingProfileMigration, /ALTER TABLE progress[\s\S]*ADD COLUMN IF NOT EXISTS reviewed_by UUID/);
 });

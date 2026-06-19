@@ -1,0 +1,11 @@
+ALTER TABLE parents
+  ADD COLUMN IF NOT EXISTS pin_hash TEXT;
+
+ALTER TABLE children
+  ADD COLUMN IF NOT EXISTS pin_hash TEXT,
+  ADD COLUMN IF NOT EXISTS study_start_time TIME,
+  ADD COLUMN IF NOT EXISTS study_end_time TIME,
+  ADD COLUMN IF NOT EXISTS study_days INTEGER[] DEFAULT '{1,2,3,4,5}';
+
+ALTER TABLE progress
+  ADD COLUMN IF NOT EXISTS reviewed_by UUID;

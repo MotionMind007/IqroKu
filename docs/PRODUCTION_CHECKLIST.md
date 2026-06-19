@@ -17,6 +17,7 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 - Jalankan migration dengan `npm run migrate --prefix backend`.
 - Cek status migration dengan `npm run migrate:status --prefix backend`.
 - Pastikan migration `002_security_constraints.sql` sudah `applied`.
+- Pastikan migration `003_onboarding_profile_columns.sql` sudah `applied`.
 - Pastikan status progress/attempt tidak memakai nilai di luar constraint schema.
 - Buat backup otomatis harian.
 - Tes restore backup memakai `deploy/restore-backup.sh` di staging.

@@ -121,6 +121,18 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
   - bash syntax check untuk script deploy/backup/restore/smoke
   - whitespace check
 
+### 7. Onboarding Database Drift Fix
+
+- Menambahkan migration `deploy/migrations/003_onboarding_profile_columns.sql`.
+- Migration ini membackfill kolom yang dipakai runtime tetapi bisa belum ada di database production lama:
+  - `parents.pin_hash`
+  - `children.pin_hash`
+  - `children.study_start_time`
+  - `children.study_end_time`
+  - `children.study_days`
+  - `progress.reviewed_by`
+- Fix ini mencegah parent/child PIN selalu dianggap belum diset pada database lama.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
