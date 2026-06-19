@@ -158,6 +158,7 @@ Flutter:
 - `firebase_messaging`
 - `PushNotificationService`
 - Setelah login/restore session, app mencoba mengambil token FCM dan mengirimnya ke `POST /devices/register`.
+- Android build membutuhkan `iqroku_app/android/app/google-services.json` lokal. File asli di-ignore; template aman ada di `google-services.example.json`.
 
 Backend:
 

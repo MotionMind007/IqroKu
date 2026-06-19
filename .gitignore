@@ -44,6 +44,7 @@ backend/data/dev-store.json
 
 # Production secrets (template is committed, actual .env is not)
 backend/.env
+iqroku_app/android/app/google-services.json
 deploy/backups/
 node_modules/
 backend/node_modules/

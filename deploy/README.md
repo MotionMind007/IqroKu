@@ -66,6 +66,14 @@ sudo chown iqroku:iqroku /opt/iqroku/secrets/firebase-service-account.json
 sudo chmod 600 /opt/iqroku/secrets/firebase-service-account.json
 ```
 
+Untuk build Android dengan Firebase/FCM, file client config asli harus ada lokal di app:
+
+```bash
+cp iqroku_app/android/app/google-services.example.json iqroku_app/android/app/google-services.json
+```
+
+Lalu isi/ganti dengan file asli dari Firebase Console. File asli `google-services.json` di-ignore dan tidak boleh di-commit, terutama saat repo masih public.
+
 Lalu tes manual dari HP:
 
 - register/login
@@ -116,6 +124,13 @@ RATE_MAX_GENERAL=120
 # Optional for FCM push notification sending:
 FIREBASE_SERVICE_ACCOUNT_PATH=/opt/iqroku/secrets/firebase-service-account.json
 ```
+
+Firebase Android client config:
+
+- `iqroku_app/android/app/google-services.json` diperlukan untuk build APK/AAB yang memakai Firebase.
+- File asli tidak di-track git.
+- Template aman ada di `iqroku_app/android/app/google-services.example.json`.
+- Kalau repo pernah public dan file asli pernah ter-commit, batasi Android API key di Google Cloud/Firebase Console ke package name dan SHA certificate app.
 
 Admin IP restriction:
 

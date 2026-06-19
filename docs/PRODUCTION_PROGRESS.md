@@ -226,6 +226,14 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - IP client dibaca dari `X-Forwarded-For` saat `TRUST_PROXY=true` dan dinormalisasi dari format IPv4-mapped (`::ffff:x.x.x.x`).
 - `deploy/.env.production` dan `deploy/README.md` sudah menambahkan cara konfigurasi.
 
+### 14. Firebase Android Config Hygiene
+
+- `iqroku_app/android/app/google-services.json` dilepas dari git tracking dan ditambahkan ke `.gitignore`.
+- File asli tetap boleh ada di local machine untuk build APK/AAB.
+- Menambahkan template aman `iqroku_app/android/app/google-services.example.json`.
+- Dokumentasi deploy menjelaskan bahwa file asli harus diambil dari Firebase Console dan tidak boleh di-commit.
+- Karena repo pernah public, Android API key sebaiknya dibatasi di Google Cloud/Firebase Console ke package name dan SHA certificate app.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
