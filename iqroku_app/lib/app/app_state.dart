@@ -561,6 +561,7 @@ class IqrokuState extends ChangeNotifier {
     parentAccount = stored.parentAccount;
     authToken = stored.authToken;
     authService.authToken = stored.authToken;
+    hasParentPin = parentAccount?.hasPin ?? false;
     childSetupCompleted = stored.childSetupCompleted;
     selectedIqroBook = stored.selectedIqroBook;
     selectedIqroPage = stored.selectedIqroPage;
@@ -568,7 +569,11 @@ class IqrokuState extends ChangeNotifier {
       _ensureSelectedIqroAccess();
     }
 
-    if (authToken != null && childSetupCompleted && childProfiles.isNotEmpty) {
+    if (authToken != null && !hasParentPin) {
+      launchStage = AppLaunchStage.setupParentPin;
+    } else if (authToken != null &&
+        childSetupCompleted &&
+        childProfiles.isNotEmpty) {
       launchStage = AppLaunchStage.authenticated;
     } else if (authToken != null) {
       launchStage = AppLaunchStage.setupChild;
@@ -652,15 +657,14 @@ class IqrokuState extends ChangeNotifier {
 
       // Set parent PIN if provided
       if (pin != null && pin.isNotEmpty) {
-        try {
-          await setParentPin(pin);
-        } catch (e) {
-          debugPrint('Failed to set PIN during registration: $e');
-        }
+        await setParentPin(pin);
       }
       _captureEmailVerification(result);
-      if (result.emailVerification != null && !result.parent.emailVerified) {
+      if (_shouldShowEmailVerification(result)) {
         launchStage = AppLaunchStage.emailVerification;
+        _persist();
+      } else if (launchStage == AppLaunchStage.setupParentPin && hasParentPin) {
+        launchStage = AppLaunchStage.setupChild;
         _persist();
       }
     } catch (error) {
@@ -763,13 +767,8 @@ class IqrokuState extends ChangeNotifier {
               avatarAsset: avatarAsset,
             );
 
-      // Set child PIN if provided
       if (childPin != null && childPin.isNotEmpty) {
-        try {
-          await authService.setChildPin(child.id, childPin);
-        } catch (e) {
-          debugPrint('Failed to set child PIN: $e');
-        }
+        await authService.setChildPin(child.id, childPin);
       }
 
       // Set child schedule if provided
@@ -949,10 +948,31 @@ class IqrokuState extends ChangeNotifier {
     try {
       await authService.setParentPin(pin);
       hasParentPin = true;
+      parentAccount = parentAccount?.copyWith(hasPin: true);
+      _persist();
       notifyListeners();
     } catch (e) {
       debugPrint('Failed to set parent PIN: $e');
       rethrow;
+    }
+  }
+
+  Future<void> completeParentPinSetup(String pin) async {
+    authLoading = true;
+    authError = null;
+    notifyListeners();
+
+    try {
+      await setParentPin(pin);
+      launchStage = childSetupCompleted || childProfiles.isNotEmpty
+          ? AppLaunchStage.authenticated
+          : AppLaunchStage.setupChild;
+      _persist();
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
     }
   }
 
@@ -962,11 +982,7 @@ class IqrokuState extends ChangeNotifier {
       return result;
     } catch (e) {
       debugPrint('Failed to verify parent PIN: $e');
-      // If pin_not_set, return false but log the issue
-      if (e.toString().contains('pin_not_set')) {
-        debugPrint('Parent PIN is not set in database');
-      }
-      return false;
+      rethrow;
     }
   }
 
@@ -1141,8 +1157,8 @@ class IqrokuState extends ChangeNotifier {
   }
 
   Future<void> resendEmailVerification({String? email}) async {
-    final targetEmail = (email ?? pendingVerificationEmail ?? parentAccount?.email)
-        ?.trim();
+    final targetEmail =
+        (email ?? pendingVerificationEmail ?? parentAccount?.email)?.trim();
     if (targetEmail == null || targetEmail.isEmpty) {
       authError = 'Email wajib diisi.';
       notifyListeners();
@@ -1200,7 +1216,9 @@ class IqrokuState extends ChangeNotifier {
   void continueAfterEmailVerification() {
     authError = null;
     authMessage = null;
-    launchStage = childSetupCompleted || childProfiles.isNotEmpty
+    launchStage = !hasParentPin
+        ? AppLaunchStage.setupParentPin
+        : childSetupCompleted || childProfiles.isNotEmpty
         ? AppLaunchStage.authenticated
         : AppLaunchStage.setupChild;
     _persist();
@@ -1999,6 +2017,7 @@ class IqrokuState extends ChangeNotifier {
 
   Future<void> _finishAuth(AuthResult result) async {
     parentAccount = result.parent;
+    hasParentPin = result.parent.hasPin;
     authToken = result.sessionToken;
     authService.authToken = result.sessionToken;
     authError = null;
@@ -2009,7 +2028,11 @@ class IqrokuState extends ChangeNotifier {
       ..addAll(remoteChildren);
     _iqroProgress.clear();
 
-    if (childProfiles.isEmpty) {
+    if (!hasParentPin) {
+      selectedChildId = childProfiles.isEmpty ? '' : childProfiles.first.id;
+      childSetupCompleted = childProfiles.isNotEmpty;
+      launchStage = AppLaunchStage.setupParentPin;
+    } else if (childProfiles.isEmpty) {
       selectedChildId = '';
       childSetupCompleted = false;
       launchStage = AppLaunchStage.setupChild;
@@ -2027,6 +2050,12 @@ class IqrokuState extends ChangeNotifier {
     selectedIqroBook = 1;
     selectedIqroPage = childProfiles.isEmpty ? 1 : _firstActivePageForBook(1);
     _persist();
+  }
+
+  bool _shouldShowEmailVerification(AuthResult result) {
+    return result.emailVerification != null &&
+        !result.parent.emailVerified &&
+        (emailVerificationRequired || emailVerificationDevToken != null);
   }
 
   void _captureEmailVerification(AuthResult result) {
@@ -2283,6 +2312,7 @@ enum AppLaunchStage {
   register,
   emailVerification,
   passwordReset,
+  setupParentPin,
   setupChild,
   authenticated,
 }

@@ -412,6 +412,29 @@ void main() {
     expect(state.selectedIqroCompletedPages, 2);
     expect(state.selectedChild.currentLesson, 'Iqro 1 - Halaman 3');
   });
+
+  test('Login without parent PIN requires parent PIN setup first', () async {
+    SharedPreferences.setMockInitialValues({});
+    final authService = FakeAuthApiService(parentHasPin: false);
+
+    final state = IqrokuState(
+      repository: const DummyIqrokuRepository(),
+      authService: authService,
+      voiceRecordingService: FakeVoiceRecordingService(),
+      audioPlaybackService: FakeAudioPlaybackService(),
+    );
+
+    await state.loginWithEmail(email: 'parent@iqroku.test', password: 'secret');
+
+    expect(state.launchStage, AppLaunchStage.setupParentPin);
+    expect(state.hasParentPin, isFalse);
+
+    await state.completeParentPinSetup('1234');
+
+    expect(state.hasParentPin, isTrue);
+    expect(state.parentAccount?.hasPin, isTrue);
+    expect(state.launchStage, AppLaunchStage.setupChild);
+  });
 }
 
 class FakeQuranApiService extends QuranApiService {
@@ -496,12 +519,15 @@ class FakeIslamicActivityService extends IslamicActivityService {
 }
 
 class FakeAuthApiService extends AuthApiService {
-  FakeAuthApiService();
+  FakeAuthApiService({bool parentHasPin = true}) {
+    parent = parent.copyWith(hasPin: parentHasPin);
+  }
 
-  final parent = const ParentAccount(
+  ParentAccount parent = const ParentAccount(
     id: 'parent-test',
     name: 'Parent Test',
     email: 'parent@iqroku.test',
+    hasPin: true,
   );
   final children = <ChildProfile>[];
   final childPins = <String, String>{};
@@ -556,6 +582,16 @@ class FakeAuthApiService extends AuthApiService {
   @override
   Future<void> setChildPin(String childId, String pin) async {
     childPins[childId] = pin;
+  }
+
+  @override
+  Future<void> setParentPin(String pin) async {
+    parent = parent.copyWith(hasPin: true);
+  }
+
+  @override
+  Future<bool> verifyParentPin(String pin) async {
+    return parent.hasPin;
   }
 
   @override

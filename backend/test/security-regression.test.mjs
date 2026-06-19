@@ -18,6 +18,7 @@ test('demo login is explicitly gated and does not issue deterministic parent-id 
 
 test('public serializers strip PIN hashes from parent and child responses', () => {
   assert.match(serverSource, /const \{ passwordHash, pinHash, \.\.\.safeParent \} = parent;/);
+  assert.match(serverSource, /hasPin: Boolean\(pinHash\)/);
   assert.match(serverSource, /function publicChild\(child\)/);
   assert.match(serverSource, /const \{ pinHash, \.\.\.safeChild \} = child;/);
   assert.match(serverSource, /return children\.map\(publicChild\);/);

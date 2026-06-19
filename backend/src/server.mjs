@@ -1098,7 +1098,10 @@ function emitAuthFlowToken({ type, email, token, path }) {
 
 function publicParent(parent) {
   const { passwordHash, pinHash, ...safeParent } = parent;
-  return safeParent;
+  return {
+    ...safeParent,
+    hasPin: Boolean(pinHash),
+  };
 }
 
 function publicChild(child) {

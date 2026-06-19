@@ -8,6 +8,7 @@ void main() {
         'id': 'parent-1',
         'name': 'Ahmad Fauzi',
         'email': 'ahmad@example.com',
+        'hasPin': true,
       };
 
       final account = ParentAccount.fromJson(json);
@@ -15,6 +16,7 @@ void main() {
       expect(account.id, 'parent-1');
       expect(account.name, 'Ahmad Fauzi');
       expect(account.email, 'ahmad@example.com');
+      expect(account.hasPin, isTrue);
     });
 
     test('fromJson with null values uses defaults', () {
@@ -25,6 +27,7 @@ void main() {
       expect(account.id, '');
       expect(account.name, 'Orang Tua');
       expect(account.email, '');
+      expect(account.hasPin, isFalse);
     });
 
     test('toJson serializes correctly', () {
@@ -32,6 +35,7 @@ void main() {
         id: 'parent-1',
         name: 'Ahmad Fauzi',
         email: 'ahmad@example.com',
+        hasPin: true,
       );
 
       final json = account.toJson();
@@ -39,6 +43,7 @@ void main() {
       expect(json['id'], 'parent-1');
       expect(json['name'], 'Ahmad Fauzi');
       expect(json['email'], 'ahmad@example.com');
+      expect(json['hasPin'], isTrue);
     });
   });
 

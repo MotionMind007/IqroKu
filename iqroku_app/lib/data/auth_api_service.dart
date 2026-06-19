@@ -472,11 +472,7 @@ class AuthResult {
 }
 
 class AuthFlowInfo {
-  const AuthFlowInfo({
-    this.required = false,
-    this.expiresAt,
-    this.devToken,
-  });
+  const AuthFlowInfo({this.required = false, this.expiresAt, this.devToken});
 
   final bool required;
   final String? expiresAt;
@@ -497,12 +493,30 @@ class ParentAccount {
     required this.name,
     required this.email,
     this.emailVerified = false,
+    this.hasPin = false,
   });
 
   final String id;
   final String name;
   final String email;
   final bool emailVerified;
+  final bool hasPin;
+
+  ParentAccount copyWith({
+    String? id,
+    String? name,
+    String? email,
+    bool? emailVerified,
+    bool? hasPin,
+  }) {
+    return ParentAccount(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      emailVerified: emailVerified ?? this.emailVerified,
+      hasPin: hasPin ?? this.hasPin,
+    );
+  }
 
   Map<String, Object?> toJson() {
     return {
@@ -510,6 +524,7 @@ class ParentAccount {
       'name': name,
       'email': email,
       'emailVerified': emailVerified,
+      'hasPin': hasPin,
     };
   }
 
@@ -519,6 +534,7 @@ class ParentAccount {
       name: json['name'] as String? ?? 'Orang Tua',
       email: json['email'] as String? ?? '',
       emailVerified: json['emailVerified'] as bool? ?? false,
+      hasPin: json['hasPin'] as bool? ?? false,
     );
   }
 }
