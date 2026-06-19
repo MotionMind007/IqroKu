@@ -38,7 +38,7 @@ class ModeSelectionScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 48),
                   _ModeButton(
-                    icon: Icons.person,
+                    asset: AppAssets.parentMode,
                     label: 'Mode Orang Tua',
                     description: 'Review bacaan, kelola profil anak',
                     color: AppColors.primary,
@@ -46,7 +46,7 @@ class ModeSelectionScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   _ModeButton(
-                    icon: Icons.child_care,
+                    asset: AppAssets.childMode,
                     label: 'Mode Anak',
                     description: 'Belajar Iqro, rekam bacaan',
                     color: AppColors.gold,
@@ -78,14 +78,14 @@ class ModeSelectionScreen extends StatelessWidget {
 
 class _ModeButton extends StatelessWidget {
   const _ModeButton({
-    required this.icon,
+    required this.asset,
     required this.label,
     required this.description,
     required this.color,
     required this.onTap,
   });
 
-  final IconData icon;
+  final String asset;
   final String label;
   final String description;
   final Color color;
@@ -109,10 +109,13 @@ class _ModeButton extends StatelessWidget {
           child: Row(
             children: [
               CircleAvatar(
-                radius: 28,
+                radius: 32,
                 backgroundColor: color.withValues(alpha: 0.15),
                 foregroundColor: color,
-                child: Icon(icon, size: 32),
+                child: Padding(
+                  padding: const EdgeInsets.all(5),
+                  child: Image.asset(asset, fit: BoxFit.contain),
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(

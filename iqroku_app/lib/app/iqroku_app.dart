@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/assets/app_assets.dart';
 import '../core/theme/app_theme.dart';
 import '../data/audio_playback_service.dart';
 import '../data/auth_api_service.dart';
@@ -157,10 +158,11 @@ class _IqrokuAppState extends State<IqrokuApp> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
-                    Icons.child_care,
-                    size: 64,
-                    color: Color(0xFF23864B),
+                  Image.asset(
+                    AppAssets.childMode,
+                    width: 88,
+                    height: 88,
+                    fit: BoxFit.contain,
                   ),
                   const SizedBox(height: 24),
                   const Text(

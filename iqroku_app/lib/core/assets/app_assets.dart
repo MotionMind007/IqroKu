@@ -9,6 +9,8 @@ class AppAssets {
   static const avatarMale = 'assets/brand/male-avatar.png';
   static const avatarFemale = 'assets/brand/female-avatar.png';
   static const parentAvatar = 'assets/brand/parent.png';
+  static const parentMode = 'assets/brand/orangtua.png';
+  static const childMode = 'assets/brand/anak.png';
   static const boyKid = 'assets/brand/boykids.png';
   static const femaleKid = 'assets/brand/femalekids.png';
 
