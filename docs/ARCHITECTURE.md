@@ -134,6 +134,8 @@ Catatan penting:
 - `attempts.review_status` membedakan `pending`, `approved`, dan `needs_repeat`.
 - `progress.status` menjadi status halaman yang ditampilkan di app.
 - Jika parent memilih perlu ulang dari halaman tertentu, progress halaman itu menjadi `review` dan anak wajib mulai dari halaman tersebut.
+- Approve/repeat review dijalankan dalam transaksi database agar update attempt, progress, repeat pointer, dan notifikasi konsisten.
+- Status utama di `progress`, `attempts`, `auth_tokens`, dan `notifications` dibatasi oleh database constraint dari migration `002_security_constraints.sql`.
 
 ## Asset
 
@@ -158,12 +160,18 @@ Backend sudah punya fondasi keamanan:
 - rate limiting dasar
 - admin token untuk dashboard admin
 - endpoint audio dilindungi untuk playback dari app
+- validasi upload audio untuk ukuran, MIME/type, ekstensi, dan header dasar
+- transaksi database untuk hasil review orang tua
+- constraint database untuk status dan referensi reviewer
+- header `X-Content-Type-Options: nosniff`
+- cookie admin `Secure` saat production
 
 Yang masih perlu diperkuat sebelum production:
 
 - rotasi semua secret production
 - HTTPS wajib
-- upload audio dibatasi ukuran dan tipe file secara ketat
+- rate limiting terpusat jika backend berjalan lebih dari satu proses/instance
+- object storage/private bucket untuk audio jika skala naik
 - payment webhook harus diverifikasi signature
-- audit SQL migration dan backup restore
+- audit dependency dan backup restore
 - monitoring error dan audit log untuk aksi parent/admin

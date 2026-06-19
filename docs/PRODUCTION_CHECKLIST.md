@@ -16,6 +16,8 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 - Jalankan schema dari `deploy/schema.sql` di database production.
 - Jalankan migration dengan `npm run migrate --prefix backend`.
 - Cek status migration dengan `npm run migrate:status --prefix backend`.
+- Pastikan migration `002_security_constraints.sql` sudah `applied`.
+- Pastikan status progress/attempt tidak memakai nilai di luar constraint schema.
 - Buat backup otomatis harian.
 - Tes restore backup.
 - Tambahkan index jika query review/progress mulai besar.
@@ -33,8 +35,8 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 
 ## Audio dan Storage
 
-- Batasi ukuran upload audio.
-- Validasi MIME/type dan ekstensi.
+- Batas ukuran upload audio tersedia via `MAX_AUDIO_UPLOAD_BYTES`.
+- Validasi MIME/type, ekstensi, dan header dasar audio sudah tersedia.
 - Simpan audio di `IQROKU_UPLOAD_ROOT` pada persistent disk atau object storage.
 - Pastikan audio private dan hanya bisa diakses pemiliknya.
 - Tambahkan lifecycle policy untuk audio lama jika dibutuhkan.
@@ -88,11 +90,12 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 - Audit dependency.
 - Audit ownership check semua route.
 - Audit admin route.
-- Audit upload audio.
+- Audit upload audio setelah pindah object storage.
 - Audit CORS.
-- Audit rate limit.
+- Pindahkan rate limit dari memory process ke Redis/provider terpusat sebelum multi-instance.
 - Pastikan tidak ada secret di repo.
 - Pastikan endpoint assessment AI tetap disabled kecuali ada desain baru yang jelas.
+- Pastikan review parent tetap memakai transaksi database.
 
 ## Go-Live
 

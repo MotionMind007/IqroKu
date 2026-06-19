@@ -64,10 +64,12 @@ CREATE TABLE IF NOT EXISTS progress (
   child_id UUID NOT NULL REFERENCES children(id) ON DELETE CASCADE,
   book_id SMALLINT NOT NULL CHECK (book_id BETWEEN 1 AND 99),
   page_number SMALLINT NOT NULL CHECK (page_number BETWEEN 1 AND 999),
-  status VARCHAR(20) NOT NULL DEFAULT 'notStarted',
-  review_status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'approved', 'needs_repeat'
+  status VARCHAR(20) NOT NULL DEFAULT 'notStarted'
+    CHECK (status IN ('notStarted', 'learning', 'fluent', 'review')),
+  review_status VARCHAR(20) DEFAULT 'pending'
+    CHECK (review_status IN ('pending', 'approved', 'needs_repeat')),
   reviewed_at TIMESTAMPTZ,
-  reviewed_by UUID,
+  reviewed_by UUID REFERENCES parents(id) ON DELETE SET NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (child_id, book_id, page_number)
 );
@@ -90,12 +92,15 @@ CREATE TABLE IF NOT EXISTS attempts (
   audio_content_type VARCHAR(100),
   audio_size_bytes INTEGER,
   audio_uploaded_at TIMESTAMPTZ,
-  assessment_status VARCHAR(30) NOT NULL DEFAULT 'recorded',
-  review_status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'approved', 'needs_repeat'
+  assessment_status VARCHAR(30) NOT NULL DEFAULT 'recorded'
+    CHECK (assessment_status IN ('recorded', 'assessing', 'fluent', 'needsReview')),
+  review_status VARCHAR(20) DEFAULT 'pending'
+    CHECK (review_status IN ('pending', 'approved', 'needs_repeat')),
   reviewed_at TIMESTAMPTZ,
-  reviewed_by UUID,
+  reviewed_by UUID REFERENCES parents(id) ON DELETE SET NULL,
   score SMALLINT,
-  status VARCHAR(20),
+  status VARCHAR(20)
+    CHECK (status IS NULL OR status IN ('notStarted', 'learning', 'fluent', 'review')),
   feedback TEXT,
   note TEXT,
   assessed_at TIMESTAMPTZ,
@@ -113,7 +118,8 @@ CREATE INDEX idx_attempts_pending_review ON attempts(child_id, created_at DESC)
 CREATE TABLE IF NOT EXISTS auth_tokens (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_id UUID NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
-  purpose VARCHAR(40) NOT NULL,
+  purpose VARCHAR(40) NOT NULL
+    CHECK (purpose IN ('email_verification', 'password_reset')),
   token_hash CHAR(64) NOT NULL UNIQUE,
   expires_at TIMESTAMPTZ NOT NULL,
   used_at TIMESTAMPTZ,
@@ -143,7 +149,7 @@ CREATE INDEX idx_subscriptions_parent ON subscriptions(parent_id);
 CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL, -- parent_id or child_id
-  user_type VARCHAR(10) NOT NULL, -- 'parent' or 'child'
+  user_type VARCHAR(10) NOT NULL CHECK (user_type IN ('parent', 'child')),
   type VARCHAR(50) NOT NULL, -- 'new_recording', 'no_practice', 'review_result'
   title VARCHAR(200) NOT NULL,
   message TEXT NOT NULL,

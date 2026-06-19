@@ -32,9 +32,19 @@ if (ADMIN_TOKEN === 'admin-dev-token' && process.env.NODE_ENV === 'production') 
   process.exit(1);
 }
 const MAX_BODY_SIZE = Number(process.env.MAX_BODY_SIZE) || 5 * 1024 * 1024; // 5MB max request body
+const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES) || MAX_BODY_SIZE;
 const MAX_STRING_LENGTH = 500; // max string field length
 const UPLOAD_ROOT = resolve(process.env.IQROKU_UPLOAD_ROOT || 'uploads');
 const AUDIO_UPLOAD_DIR = resolve(UPLOAD_ROOT, 'audio');
+const ALLOWED_AUDIO_CONTENT_TYPES = new Set([
+  'audio/aac',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/webm',
+  'video/mp4',
+]);
+const ALLOWED_AUDIO_EXTENSIONS = new Set(['.aac', '.m4a', '.mp3', '.mp4', '.wav', '.webm']);
 
 // --- Rate Limiter ---
 const rateLimits = new Map();
@@ -118,6 +128,10 @@ function safeStrEqual(a, b) {
     return false;
   }
   return timingSafeEqual(bufA, bufB);
+}
+
+function secureCookieAttribute() {
+  return process.env.NODE_ENV === 'production' ? '; Secure' : '';
 }
 
 // Verify a Google Sign-In ID token with Google and return its trusted claims.
@@ -284,7 +298,7 @@ async function route(method, url, body, request) {
     return {
       status: 302,
       headers: {
-        'Set-Cookie': `admin_token=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=86400`,
+        'Set-Cookie': `admin_token=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=86400${secureCookieAttribute()}`,
         'Location': '/admin',
       },
       body: '',
@@ -295,7 +309,7 @@ async function route(method, url, body, request) {
     return {
       status: 302,
       headers: {
-        'Set-Cookie': 'admin_token=; Path=/admin; HttpOnly; Max-Age=0',
+        'Set-Cookie': `admin_token=; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=0${secureCookieAttribute()}`,
         'Location': '/admin/login',
       },
       body: '',
@@ -774,31 +788,10 @@ async function route(method, url, body, request) {
     }
     await enforceChildOwnership(authedParent.id, attempt.childId);
 
-    // Mark attempt as approved
-    await db.updateAttemptReview(attemptId, 'approved', authedParent.id);
-    await db.upsertProgress({
-      childId: attempt.childId,
-      bookId: attempt.bookId,
-      pageNumber: attempt.pageNumber,
-      status: 'fluent',
+    await db.approveReview({
+      attempt,
+      reviewedBy: authedParent.id,
     });
-
-    // Update progress status
-    await db.updateProgressReview(
-      attempt.childId, attempt.bookId, attempt.pageNumber,
-      'approved', authedParent.id,
-    );
-
-    // Notify child
-    await db.createNotification({
-      userId: attempt.childId,
-      userType: 'child',
-      type: 'review_result',
-      title: 'Bacaan Direview',
-      message: `Bacaan halaman ${attempt.pageNumber} sudah direview. Kamu bisa lanjut! ✅`,
-      data: { attemptId, bookId: attempt.bookId, pageNumber: attempt.pageNumber, result: 'approved' },
-    });
-
     return { ok: true, status: 'approved' };
   }
 
@@ -818,34 +811,11 @@ async function route(method, url, body, request) {
       throw httpError(400, 'invalid_repeat_page');
     }
 
-    // Mark attempt as needs repeat
-    await db.updateAttemptReview(attemptId, 'needs_repeat', authedParent.id);
-    await db.upsertProgress({
-      childId: attempt.childId,
-      bookId: attempt.bookId,
-      pageNumber: fromPage,
-      status: 'review',
+    await db.repeatReview({
+      attempt,
+      reviewedBy: authedParent.id,
+      fromPage,
     });
-
-    // Set repeat from page
-    await db.setRepeatFromPage(attempt.childId, attempt.bookId, fromPage);
-
-    // Update progress status
-    await db.updateProgressReview(
-      attempt.childId, attempt.bookId, fromPage,
-      'needs_repeat', authedParent.id,
-    );
-
-    // Notify child
-    await db.createNotification({
-      userId: attempt.childId,
-      userType: 'child',
-      type: 'review_result',
-      title: 'Perlu Mengulang',
-      message: `Bacaan perlu diulang dari halaman ${fromPage}. Semangat! 🔄`,
-      data: { attemptId, bookId: attempt.bookId, pageNumber: attempt.pageNumber, fromPage, result: 'needs_repeat' },
-    });
-
     return { ok: true, status: 'needs_repeat', fromPage };
   }
 
@@ -948,6 +918,8 @@ function sendJson(response, status, body) {
     'access-control-allow-origin': ALLOWED_ORIGIN,
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
     'access-control-allow-headers': 'content-type,authorization',
+    'x-content-type-options': 'nosniff',
+    'vary': 'Origin',
   });
   response.end(JSON.stringify(body));
 }
@@ -976,6 +948,7 @@ async function sendFile(response, filePath, contentType = 'application/octet-str
       'content-type': contentType,
       'cache-control': 'private, no-store',
       'access-control-allow-origin': ALLOWED_ORIGIN,
+      'x-content-type-options': 'nosniff',
     });
     response.end(content);
   } catch (error) {
@@ -1305,6 +1278,7 @@ function dispositionValue(disposition, key) {
 }
 
 async function storeAttemptAudio({ attemptId, originalFileName, contentType, content }) {
+  validateAudioUpload({ originalFileName, contentType, content });
   await mkdir(AUDIO_UPLOAD_DIR, { recursive: true });
   const extension = audioExtension(originalFileName, contentType);
   const fileName = safeStoredFileName(`${attemptId}-${Date.now()}${extension}`);
@@ -1317,9 +1291,45 @@ async function storeAttemptAudio({ attemptId, originalFileName, contentType, con
   };
 }
 
+function validateAudioUpload({ originalFileName = '', contentType = '', content }) {
+  if (!Buffer.isBuffer(content) || content.length === 0) {
+    throw httpError(400, 'audio_file_empty');
+  }
+  if (content.length > MAX_AUDIO_UPLOAD_BYTES) {
+    throw httpError(413, 'audio_file_too_large');
+  }
+
+  const normalizedType = contentType.split(';')[0].trim().toLowerCase();
+  if (normalizedType && !ALLOWED_AUDIO_CONTENT_TYPES.has(normalizedType)) {
+    throw httpError(415, 'unsupported_audio_type');
+  }
+
+  const extension = extname(originalFileName).toLowerCase();
+  if (extension && !ALLOWED_AUDIO_EXTENSIONS.has(extension)) {
+    throw httpError(415, 'unsupported_audio_extension');
+  }
+
+  if (!looksLikeAudio(content)) {
+    throw httpError(415, 'invalid_audio_file');
+  }
+}
+
+function looksLikeAudio(content) {
+  if (content.length < 12) {
+    return false;
+  }
+  const ascii = content.subarray(0, 16).toString('latin1');
+  if (ascii.startsWith('RIFF') && ascii.includes('WAVE')) return true;
+  if (ascii.startsWith('ID3')) return true;
+  if (content[0] === 0xff && (content[1] & 0xe0) === 0xe0) return true;
+  if (ascii.includes('ftyp')) return true;
+  if (ascii.startsWith('\x1aE\xdf\xa3')) return true;
+  return false;
+}
+
 function audioExtension(fileName = '', contentType = '') {
   const extension = extname(fileName).toLowerCase();
-  if (['.m4a', '.mp3', '.aac', '.wav', '.webm', '.mp4'].includes(extension)) {
+  if (ALLOWED_AUDIO_EXTENSIONS.has(extension)) {
     return extension;
   }
   if (contentType.includes('mpeg')) {

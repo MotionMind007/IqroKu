@@ -53,6 +53,28 @@ async function queryAll(text, params = []) {
   return result.rows;
 }
 
+async function withTransaction(work) {
+  const client = await pool.connect();
+  const tx = {
+    query: (text, params = []) => client.query(text, params),
+    queryOne: async (text, params = []) => {
+      const result = await client.query(text, params);
+      return result.rows[0] ?? null;
+    },
+  };
+  try {
+    await client.query('BEGIN');
+    const result = await work(tx);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // =============================================================================
 // PARENTS
 // =============================================================================
@@ -701,7 +723,11 @@ export async function updateChildSchedule(childId, startTime, endTime, days) {
 // =============================================================================
 
 export async function updateProgressReview(childId, bookId, pageNumber, reviewStatus, reviewedBy) {
-  const row = await queryOne(
+  return updateProgressReviewWith({ queryOne }, childId, bookId, pageNumber, reviewStatus, reviewedBy);
+}
+
+async function updateProgressReviewWith(dbClient, childId, bookId, pageNumber, reviewStatus, reviewedBy) {
+  const row = await dbClient.queryOne(
     `UPDATE progress SET review_status = $1, reviewed_at = NOW(), reviewed_by = $2
      WHERE child_id = $3 AND book_id = $4 AND page_number = $5 RETURNING *`,
     [reviewStatus, reviewedBy, childId, bookId, pageNumber],
@@ -710,6 +736,10 @@ export async function updateProgressReview(childId, bookId, pageNumber, reviewSt
 }
 
 export async function updateAttemptReview(attemptId, reviewStatus, reviewedBy) {
+  return updateAttemptReviewWith({ queryOne }, attemptId, reviewStatus, reviewedBy);
+}
+
+async function updateAttemptReviewWith(dbClient, attemptId, reviewStatus, reviewedBy) {
   const assessmentStatus = reviewStatus === 'approved'
     ? 'fluent'
     : reviewStatus === 'needs_repeat'
@@ -720,7 +750,7 @@ export async function updateAttemptReview(attemptId, reviewStatus, reviewedBy) {
     : reviewStatus === 'needs_repeat'
       ? 'review'
       : 'learning';
-  const row = await queryOne(
+  const row = await dbClient.queryOne(
     `UPDATE attempts
      SET review_status = $1,
          reviewed_at = NOW(),
@@ -734,11 +764,105 @@ export async function updateAttemptReview(attemptId, reviewStatus, reviewedBy) {
 }
 
 export async function setRepeatFromPage(childId, bookId, pageNumber) {
-  const row = await queryOne(
+  return setRepeatFromPageWith({ queryOne }, childId, bookId, pageNumber);
+}
+
+async function setRepeatFromPageWith(dbClient, childId, bookId, pageNumber) {
+  const row = await dbClient.queryOne(
     'UPDATE children SET repeat_from_page = $1, repeat_from_book = $2 WHERE id = $3 RETURNING *',
     [pageNumber, bookId, childId],
   );
   return row ? rowToChild(row) : null;
+}
+
+async function upsertProgressWith(dbClient, { childId, bookId, pageNumber, status }) {
+  const row = await dbClient.queryOne(
+    `INSERT INTO progress (child_id, book_id, page_number, status, updated_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (child_id, book_id, page_number)
+     DO UPDATE SET status = $4, updated_at = NOW()
+     RETURNING *`,
+    [childId, bookId, pageNumber, status],
+  );
+  return rowToProgress(row);
+}
+
+async function createNotificationWith(dbClient, { userId, userType, type, title, message, data }) {
+  const row = await dbClient.queryOne(
+    `INSERT INTO notifications (id, user_id, user_type, type, title, message, data)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [userId, userType, type, title, message, data ? JSON.stringify(data) : null],
+  );
+  return row;
+}
+
+export async function approveReview({ attempt, reviewedBy }) {
+  return withTransaction(async (tx) => {
+    await updateAttemptReviewWith(tx, attempt.id, 'approved', reviewedBy);
+    await upsertProgressWith(tx, {
+      childId: attempt.childId,
+      bookId: attempt.bookId,
+      pageNumber: attempt.pageNumber,
+      status: 'fluent',
+    });
+    await updateProgressReviewWith(
+      tx,
+      attempt.childId,
+      attempt.bookId,
+      attempt.pageNumber,
+      'approved',
+      reviewedBy,
+    );
+    await createNotificationWith(tx, {
+      userId: attempt.childId,
+      userType: 'child',
+      type: 'review_result',
+      title: 'Bacaan Direview',
+      message: `Bacaan halaman ${attempt.pageNumber} sudah direview. Kamu bisa lanjut!`,
+      data: {
+        attemptId: attempt.id,
+        bookId: attempt.bookId,
+        pageNumber: attempt.pageNumber,
+        result: 'approved',
+      },
+    });
+  });
+}
+
+export async function repeatReview({ attempt, reviewedBy, fromPage }) {
+  return withTransaction(async (tx) => {
+    await updateAttemptReviewWith(tx, attempt.id, 'needs_repeat', reviewedBy);
+    await upsertProgressWith(tx, {
+      childId: attempt.childId,
+      bookId: attempt.bookId,
+      pageNumber: fromPage,
+      status: 'review',
+    });
+    await setRepeatFromPageWith(tx, attempt.childId, attempt.bookId, fromPage);
+    await updateProgressReviewWith(
+      tx,
+      attempt.childId,
+      attempt.bookId,
+      fromPage,
+      'needs_repeat',
+      reviewedBy,
+    );
+    await createNotificationWith(tx, {
+      userId: attempt.childId,
+      userType: 'child',
+      type: 'review_result',
+      title: 'Perlu Mengulang',
+      message: `Bacaan perlu diulang dari halaman ${fromPage}. Semangat!`,
+      data: {
+        attemptId: attempt.id,
+        bookId: attempt.bookId,
+        pageNumber: attempt.pageNumber,
+        fromPage,
+        result: 'needs_repeat',
+      },
+    });
+  });
 }
 
 export async function getPendingReviews(parentId) {
