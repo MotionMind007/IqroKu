@@ -52,7 +52,8 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 - Simpan event payment idempotent agar webhook dobel tidak merusak data.
 - Jadikan backend sebagai sumber truth subscription.
 - Uji sukses bayar, gagal bayar, expired, refund, dan cancel.
-- Integrasikan tombol premium Flutter ke DOKU checkout URL.
+- Tombol premium Flutter sudah membuka DOKU checkout URL.
+- Uji return dari browser DOKU ke app dan refresh status subscription.
 
 ## Ads
 

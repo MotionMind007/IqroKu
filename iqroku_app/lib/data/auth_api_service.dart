@@ -215,8 +215,17 @@ class AuthApiService {
     }
   }
 
-  Future<void> activateSubscription(String parentId) async {
-    await _post('/subscriptions/activate', {'parentId': parentId});
+  Future<SubscriptionStatus> loadSubscriptionStatus() async {
+    final json = await _get('/subscriptions/status') as Map<String, Object?>;
+    final subscription = json['subscription'];
+    return SubscriptionStatus.fromJson(
+      subscription is Map<String, Object?> ? subscription : json,
+    );
+  }
+
+  Future<DokuCheckoutResult> createDokuCheckout() async {
+    final json = await _post('/payments/doku/checkout', {});
+    return DokuCheckoutResult.fromJson(json);
   }
 
   // --- PIN Management ---
@@ -491,6 +500,79 @@ class RemoteAttempt {
 
   static RemoteAttempt fromJson(Map<String, Object?> json) {
     return RemoteAttempt(id: json['id'] as String? ?? '');
+  }
+}
+
+class SubscriptionStatus {
+  const SubscriptionStatus({
+    required this.active,
+    required this.plan,
+    this.activatedAt,
+    this.activeUntil,
+  });
+
+  final bool active;
+  final String plan;
+  final DateTime? activatedAt;
+  final DateTime? activeUntil;
+
+  factory SubscriptionStatus.fromJson(Map<String, Object?> json) {
+    return SubscriptionStatus(
+      active: json['active'] as bool? ?? false,
+      plan: json['plan'] as String? ?? 'free',
+      activatedAt: _parseDate(json['activatedAt']),
+      activeUntil: _parseDate(json['activeUntil']),
+    );
+  }
+
+  static DateTime? _parseDate(Object? value) {
+    if (value is! String || value.isEmpty) {
+      return null;
+    }
+    return DateTime.tryParse(value);
+  }
+}
+
+class DokuCheckoutResult {
+  const DokuCheckoutResult({
+    required this.checkoutUrl,
+    required this.payment,
+  });
+
+  final String checkoutUrl;
+  final DokuPaymentOrder payment;
+
+  factory DokuCheckoutResult.fromJson(Map<String, Object?> json) {
+    final paymentJson = json['payment'];
+    return DokuCheckoutResult(
+      checkoutUrl: json['checkoutUrl'] as String? ?? '',
+      payment: DokuPaymentOrder.fromJson(
+        paymentJson is Map<String, Object?> ? paymentJson : const {},
+      ),
+    );
+  }
+}
+
+class DokuPaymentOrder {
+  const DokuPaymentOrder({
+    required this.invoiceNumber,
+    required this.status,
+    required this.amount,
+    required this.currency,
+  });
+
+  final String invoiceNumber;
+  final String status;
+  final int amount;
+  final String currency;
+
+  factory DokuPaymentOrder.fromJson(Map<String, Object?> json) {
+    return DokuPaymentOrder(
+      invoiceNumber: json['invoiceNumber'] as String? ?? '',
+      status: json['status'] as String? ?? 'pending',
+      amount: json['amount'] as int? ?? 0,
+      currency: json['currency'] as String? ?? 'IDR',
+    );
   }
 }
 

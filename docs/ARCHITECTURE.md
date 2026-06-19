@@ -95,6 +95,7 @@ POST /attempts/:id/audio
 POST /assessments/mock      disabled, returns 410
 POST /assessments/ai        disabled, returns 410
 POST /subscriptions/activate
+GET  /subscriptions/status
 POST /payments/doku/checkout
 POST /payments/doku/webhook
 GET  /payments/status/:invoiceNumber

@@ -60,6 +60,7 @@ Token dikembalikan oleh `/auth/register`, `/auth/login`, dan `/auth/google`.
 ```text
 POST /payments/doku/checkout
 POST /payments/doku/webhook
+GET  /subscriptions/status
 GET  /payments/status/:invoiceNumber
 ```
 

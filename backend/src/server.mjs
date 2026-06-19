@@ -784,6 +784,14 @@ async function route(method, url, body, request) {
     });
   }
 
+  if (method === 'GET' && path === '/subscriptions/status') {
+    const authedParent = await authenticateRequest(request);
+    const subscription = await db.findSubscriptionByParent(authedParent.id);
+    return {
+      subscription: publicSubscription(subscription),
+    };
+  }
+
   if (method === 'POST' && path === '/payments/doku/checkout') {
     const authedParent = await authenticateRequest(request);
     return createDokuCheckout(authedParent);
@@ -1724,6 +1732,26 @@ function publicPaymentOrder(order) {
     expiresAt: order.expiresAt,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
+  };
+}
+
+function publicSubscription(subscription) {
+  if (!subscription) {
+    return {
+      active: false,
+      plan: 'free',
+      activeUntil: null,
+      activatedAt: null,
+    };
+  }
+  const activeUntil = subscription.activeUntil ? new Date(subscription.activeUntil) : null;
+  const active = subscription.active === true
+    && (!activeUntil || activeUntil.getTime() > Date.now());
+  return {
+    active,
+    plan: active ? subscription.plan : 'free',
+    activeUntil: subscription.activeUntil ?? null,
+    activatedAt: subscription.activatedAt ?? null,
   };
 }
 

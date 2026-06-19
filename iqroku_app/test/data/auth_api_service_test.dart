@@ -120,6 +120,41 @@ void main() {
     });
   });
 
+  group('SubscriptionStatus', () {
+    test('fromJson parses active subscription dates', () {
+      final status = SubscriptionStatus.fromJson({
+        'active': true,
+        'plan': 'plus',
+        'activatedAt': '2026-06-19T00:00:00.000Z',
+        'activeUntil': '2026-07-19T00:00:00.000Z',
+      });
+
+      expect(status.active, isTrue);
+      expect(status.plan, 'plus');
+      expect(status.activatedAt, isNotNull);
+      expect(status.activeUntil, isNotNull);
+    });
+  });
+
+  group('DokuCheckoutResult', () {
+    test('fromJson parses checkout URL and payment order', () {
+      final checkout = DokuCheckoutResult.fromJson({
+        'checkoutUrl': 'https://checkout.doku.example/pay',
+        'payment': {
+          'invoiceNumber': 'IQK20260619ABC',
+          'status': 'pending',
+          'amount': 49000,
+          'currency': 'IDR',
+        },
+      });
+
+      expect(checkout.checkoutUrl, 'https://checkout.doku.example/pay');
+      expect(checkout.payment.invoiceNumber, 'IQK20260619ABC');
+      expect(checkout.payment.status, 'pending');
+      expect(checkout.payment.amount, 49000);
+    });
+  });
+
   group('RemoteIqroProgress', () {
     test('fromJson with valid data', () {
       final json = {

@@ -76,9 +76,11 @@ class LearningScreen extends StatelessWidget {
               showUpgradeAction: state.isPremiumAccessNotice,
               onUpgrade: () => showIqrokuPlusSheet(
                 context: context,
-                onConfirm: state.activateFamilyPlus,
+                onConfirm: state.startFamilyPlusCheckout,
                 active: state.subscriptionActive,
                 renewalLabel: state.subscriptionRenewalLabel,
+                loading: state.subscriptionCheckoutLoading,
+                errorMessage: state.subscriptionError,
               ),
               onClose: state.clearSubscriptionNotice,
             ),

@@ -311,9 +311,8 @@ void main() {
     expect(state.isIqroPageLocked(2, 1), isTrue);
     expect(state.subscriptionNotice, contains('jilid 2'));
 
-    state.activateFamilyPlus();
-    expect(state.subscriptionActivatedAt, isNotNull);
-    expect(state.subscriptionRenewalLabel, isNot('Belum aktif'));
+    state.familyPlusActive = true;
+    state.subscriptionActivatedAt = DateTime(2026, 6, 19);
 
     state.selectIqroBook(2);
     expect(state.selectedIqroBook, 2);
@@ -633,6 +632,11 @@ class FakeAuthApiService extends AuthApiService {
   @override
   Future<List<LearningAttempt>> loadAttempts(String childId) async {
     return attempts[childId] ?? const [];
+  }
+
+  @override
+  Future<SubscriptionStatus> loadSubscriptionStatus() async {
+    return const SubscriptionStatus(active: false, plan: 'free');
   }
 
   @override

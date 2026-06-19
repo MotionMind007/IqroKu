@@ -348,7 +348,7 @@ Content-Type: application/json
 
 ## DOKU Payment Foundation
 
-Status: backend foundation siap, Flutter checkout UI belum disambungkan.
+Status: backend foundation siap dan tombol Plus Flutter sudah membuka DOKU Checkout.
 
 Yang ditambahkan:
 
@@ -361,8 +361,13 @@ Yang ditambahkan:
 ```text
 POST /payments/doku/checkout
 POST /payments/doku/webhook
+GET  /subscriptions/status
 GET  /payments/status/:invoiceNumber
 ```
+
+- Tombol Plus di halaman Belajar dan Profil membuka `checkoutUrl` DOKU memakai `url_launcher`.
+- Saat app kembali dari DOKU, app refresh status subscription dari backend.
+- Aktivasi Plus lokal/prototype di client sudah dihapus dari flow UI.
 
 Security:
 
@@ -376,5 +381,5 @@ Next:
 
 - Isi credential DOKU sandbox di VPS.
 - Jalankan migration `007`.
-- Test checkout sandbox dan webhook sukses/gagal/expired.
-- Sambungkan tombol premium Flutter ke `checkoutUrl`.
+- Test checkout sandbox dan webhook sukses/gagal/expired di device.
+- Build APK staging baru setelah env DOKU sandbox aktif.

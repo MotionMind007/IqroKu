@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/assets/app_assets.dart';
 import '../data/audio_playback_service.dart';
@@ -126,6 +127,7 @@ class IqrokuState extends ChangeNotifier {
   bool authLoading = false;
   int voiceRecordingSeconds = 0;
   DateTime? subscriptionActivatedAt;
+  DateTime? subscriptionActiveUntil;
   ParentAccount? parentAccount;
   String? authToken;
   String? authError;
@@ -145,6 +147,9 @@ class IqrokuState extends ChangeNotifier {
   String? playingQuranAudioUrl;
   String? playbackError;
   String? subscriptionNotice;
+  String? subscriptionError;
+  bool subscriptionCheckoutLoading = false;
+  String? pendingDokuInvoiceNumber;
 
   // Mode and PIN state
   AppMode currentMode = AppMode.none;
@@ -188,11 +193,18 @@ class IqrokuState extends ChangeNotifier {
   }
 
   String get subscriptionRenewalLabel {
-    final activatedAt = subscriptionActivatedAt;
-    if (!familyPlusActive || activatedAt == null) {
+    if (!familyPlusActive) {
       return 'Belum aktif';
     }
-    return _dateLabel(activatedAt.add(const Duration(days: 30)));
+    final activeUntil = subscriptionActiveUntil;
+    if (activeUntil != null) {
+      return _dateLabel(activeUntil);
+    }
+    final activatedAt = subscriptionActivatedAt;
+    if (activatedAt != null) {
+      return _dateLabel(activatedAt.add(const Duration(days: 30)));
+    }
+    return 'Belum aktif';
   }
 
   List<IqroBook> get iqroBooks {
@@ -625,6 +637,7 @@ class IqrokuState extends ChangeNotifier {
         : stored.selectedChildId;
     familyPlusActive = stored.familyPlusActive;
     subscriptionActivatedAt = stored.subscriptionActivatedAt;
+    subscriptionActiveUntil = stored.subscriptionActiveUntil;
     parentAccount = stored.parentAccount;
     authToken = stored.authToken;
     authService.authToken = stored.authToken;
@@ -890,20 +903,83 @@ class IqrokuState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void activateFamilyPlus() {
-    familyPlusActive = true;
-    subscriptionActivatedAt ??= DateTime.now();
-    subscriptionNotice = null;
-    _persist();
-    notifyListeners();
+  Future<void> startFamilyPlusCheckout() async {
+    if (familyPlusActive || subscriptionCheckoutLoading) {
+      return;
+    }
     final parent = parentAccount;
-    if (parent != null) {
-      unawaited(_syncSubscription(parent.id));
+    if (parent == null || authToken == null || authToken!.isEmpty) {
+      subscriptionError = 'Silakan masuk ulang untuk melanjutkan pembayaran.';
+      notifyListeners();
+      return;
+    }
+
+    subscriptionCheckoutLoading = true;
+    subscriptionError = null;
+    subscriptionNotice = null;
+    notifyListeners();
+
+    try {
+      final checkout = await authService.createDokuCheckout();
+      if (checkout.checkoutUrl.isEmpty) {
+        throw const AuthApiException(502, 'checkout_url_missing');
+      }
+      pendingDokuInvoiceNumber = checkout.payment.invoiceNumber;
+      final opened = await launchUrl(
+        Uri.parse(checkout.checkoutUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) {
+        throw const AuthApiException(502, 'checkout_open_failed');
+      }
+      subscriptionNotice =
+          'Selesaikan pembayaran di halaman DOKU. Status Plus akan diperbarui setelah pembayaran berhasil.';
+      unawaited(refreshSubscriptionFromBackend());
+    } on AuthApiException catch (error) {
+      if (error.statusCode == 401) {
+        _handleTokenExpired();
+        return;
+      }
+      subscriptionError = _paymentErrorMessage(error.code);
+    } catch (_) {
+      subscriptionError = 'Pembayaran belum bisa dibuka. Coba lagi nanti.';
+    } finally {
+      subscriptionCheckoutLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshSubscriptionFromBackend() async {
+    final parent = parentAccount;
+    if (parent == null || authToken == null || authToken!.isEmpty) {
+      return;
+    }
+
+    try {
+      final status = await authService.loadSubscriptionStatus();
+      familyPlusActive = status.active;
+      subscriptionActivatedAt = status.active ? status.activatedAt : null;
+      subscriptionActiveUntil = status.active ? status.activeUntil : null;
+      if (status.active) {
+        subscriptionNotice = null;
+        subscriptionError = null;
+      }
+      _ensureSelectedIqroAccess();
+      _persist();
+      notifyListeners();
+    } on AuthApiException catch (error) {
+      if (error.statusCode == 401) {
+        _handleTokenExpired();
+      }
+      debugPrint('Subscription refresh failed: ${error.code}');
+    } catch (error) {
+      debugPrint('Subscription refresh failed: $error');
     }
   }
 
   void clearSubscriptionNotice() {
     subscriptionNotice = null;
+    subscriptionError = null;
     notifyListeners();
   }
 
@@ -945,6 +1021,7 @@ class IqrokuState extends ChangeNotifier {
     _iqroProgress.clear();
     familyPlusActive = false;
     subscriptionActivatedAt = null;
+    subscriptionActiveUntil = null;
     childSetupCompleted = false;
     selectedChildId = '';
     currentMode = AppMode.none;
@@ -1987,6 +2064,7 @@ class IqrokuState extends ChangeNotifier {
       parentAccount: parentAccount,
       authToken: authToken,
       subscriptionActivatedAt: subscriptionActivatedAt,
+      subscriptionActiveUntil: subscriptionActiveUntil,
     );
     _saveQueue = _saveQueue.then((_) => storage.save(snapshot));
     unawaited(_saveQueue);
@@ -2083,6 +2161,7 @@ class IqrokuState extends ChangeNotifier {
         childSetupCompleted = true;
       }
 
+      await _applyRemoteSubscriptionStatus();
       subscriptionNotice = null;
       _persist();
       notifyListeners();
@@ -2128,6 +2207,7 @@ class IqrokuState extends ChangeNotifier {
       childSetupCompleted = true;
       launchStage = AppLaunchStage.authenticated;
     }
+    await _applyRemoteSubscriptionStatus();
     selectedTab = 0;
     selectedIqroBook = 1;
     selectedIqroPage = childProfiles.isEmpty ? 1 : _firstActivePageForBook(1);
@@ -2283,16 +2363,19 @@ class IqrokuState extends ChangeNotifier {
     }
   }
 
-  Future<void> _syncSubscription(String parentId) async {
+  Future<void> _applyRemoteSubscriptionStatus() async {
     try {
-      await authService.activateSubscription(parentId);
+      final status = await authService.loadSubscriptionStatus();
+      familyPlusActive = status.active;
+      subscriptionActivatedAt = status.active ? status.activatedAt : null;
+      subscriptionActiveUntil = status.active ? status.activeUntil : null;
     } on AuthApiException catch (error) {
       if (error.statusCode == 401) {
         _handleTokenExpired();
       }
-      debugPrint('Subscription sync failed: ${error.code}');
+      debugPrint('Subscription status sync failed: ${error.code}');
     } catch (error) {
-      debugPrint('Subscription sync failed: $error');
+      debugPrint('Subscription status sync failed: $error');
     }
   }
 
@@ -2341,6 +2424,20 @@ class IqrokuState extends ChangeNotifier {
       };
     }
     return 'Belum bisa terhubung ke backend. Pastikan server IqroKu aktif.';
+  }
+
+  String _paymentErrorMessage(String code) {
+    return switch (code) {
+      'payment_provider_not_configured' =>
+        'Pembayaran belum dikonfigurasi. Coba lagi setelah DOKU aktif.',
+      'doku_checkout_request_failed' =>
+        'DOKU belum bisa dihubungi. Coba lagi sebentar lagi.',
+      'doku_checkout_url_missing' || 'checkout_url_missing' =>
+        'Link pembayaran belum tersedia. Coba lagi sebentar lagi.',
+      'checkout_open_failed' =>
+        'Halaman pembayaran belum bisa dibuka di perangkat ini.',
+      _ => 'Pembayaran belum bisa diproses. Coba ulang sebentar lagi.',
+    };
   }
 
   String _localChildId(String name) {

@@ -90,6 +90,7 @@ class StoredIqrokuState {
     this.parentAccount,
     this.authToken,
     this.subscriptionActivatedAt,
+    this.subscriptionActiveUntil,
   });
 
   final List<ChildProfile> childProfiles;
@@ -105,6 +106,7 @@ class StoredIqrokuState {
   final ParentAccount? parentAccount;
   final String? authToken;
   final DateTime? subscriptionActivatedAt;
+  final DateTime? subscriptionActiveUntil;
 
   Map<String, Object?> toJson({bool excludeSensitive = false}) {
     return {
@@ -123,6 +125,7 @@ class StoredIqrokuState {
       if (!excludeSensitive) 'parentAccount': parentAccount?.toJson(),
       if (!excludeSensitive) 'authToken': authToken,
       'subscriptionActivatedAt': subscriptionActivatedAt?.toIso8601String(),
+      'subscriptionActiveUntil': subscriptionActiveUntil?.toIso8601String(),
     };
   }
 
@@ -161,6 +164,9 @@ class StoredIqrokuState {
       authToken: authToken ?? json['authToken'] as String?,
       subscriptionActivatedAt: _decodeDateTime(
         json['subscriptionActivatedAt'] as String?,
+      ),
+      subscriptionActiveUntil: _decodeDateTime(
+        json['subscriptionActiveUntil'] as String?,
       ),
     );
   }

@@ -101,9 +101,11 @@ class ProfileScreen extends StatelessWidget {
   void _showUpgradeSheet(BuildContext context) {
     showIqrokuPlusSheet(
       context: context,
-      onConfirm: state.activateFamilyPlus,
+      onConfirm: state.startFamilyPlusCheckout,
       active: state.subscriptionActive,
       renewalLabel: state.subscriptionRenewalLabel,
+      loading: state.subscriptionCheckoutLoading,
+      errorMessage: state.subscriptionError,
     );
   }
 

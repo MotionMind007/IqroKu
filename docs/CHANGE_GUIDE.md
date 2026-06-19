@@ -130,13 +130,14 @@ Flow DOKU Checkout sudah punya fondasi backend:
 5. DOKU memanggil `POST /payments/doku/webhook`.
 6. Backend memverifikasi signature webhook dan menyimpan `payment_events`.
 7. Jika order valid berubah menjadi `paid`, backend mengaktifkan `subscriptions`.
-8. App refresh subscription/status dan membuka premium.
+8. App refresh `GET /subscriptions/status` saat kembali dari browser DOKU dan membuka premium.
 
 Endpoint backend:
 
 ```text
 POST /payments/doku/checkout
 POST /payments/doku/webhook
+GET  /subscriptions/status
 GET  /payments/status/:invoiceNumber
 ```
 

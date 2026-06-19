@@ -21,7 +21,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Timer? _refreshTimer;
 
   IqrokuState get state => widget.state;
@@ -29,6 +29,8 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(state.refreshSubscriptionFromBackend());
     _refreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (!mounted || state.currentMode != AppMode.child) {
         return;
@@ -40,7 +42,15 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(this.state.refreshSubscriptionFromBackend());
+    }
   }
 
   @override

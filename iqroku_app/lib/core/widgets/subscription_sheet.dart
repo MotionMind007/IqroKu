@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
 Future<void> showIqrokuPlusSheet({
   required BuildContext context,
-  required VoidCallback onConfirm,
+  required Future<void> Function() onConfirm,
   required bool active,
   required String renewalLabel,
+  bool loading = false,
+  String? errorMessage,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -16,32 +20,11 @@ Future<void> showIqrokuPlusSheet({
       return IqrokuPlusSheet(
         active: active,
         renewalLabel: renewalLabel,
+        loading: loading,
+        errorMessage: errorMessage,
         onConfirm: () {
-          showDialog<void>(
-            context: sheetContext,
-            builder: (dialogContext) {
-              return AlertDialog(
-                title: const Text('Aktifkan IqroKu Plus?'),
-                content: const Text(
-                  'Prototype ini belum memproses pembayaran asli. Setelah dikonfirmasi, akses Plus akan langsung aktif.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('Batal'),
-                  ),
-                  FilledButton(
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      Navigator.pop(sheetContext);
-                      onConfirm();
-                    },
-                    child: const Text('Aktifkan'),
-                  ),
-                ],
-              );
-            },
-          );
+          Navigator.pop(sheetContext);
+          unawaited(onConfirm());
         },
       );
     },
@@ -54,11 +37,15 @@ class IqrokuPlusSheet extends StatelessWidget {
     required this.active,
     required this.renewalLabel,
     required this.onConfirm,
+    required this.loading,
+    this.errorMessage,
   });
 
   final bool active;
   final String renewalLabel;
   final VoidCallback onConfirm;
+  final bool loading;
+  final String? errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -78,9 +65,16 @@ class IqrokuPlusSheet extends StatelessWidget {
           Text(
             active
                 ? 'Subscription aktif. Semua materi dan fitur parent dashboard terbuka.'
-                : 'Buka semua materi Iqro dan fitur pantau belajar anak dengan subscription bulanan.',
+                : 'Buka semua materi Iqro dan fitur pantau belajar anak lewat pembayaran aman DOKU.',
             style: AppText.body,
           ),
+          if (errorMessage != null && errorMessage!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              errorMessage!,
+              style: AppText.caption.copyWith(color: AppColors.coral),
+            ),
+          ],
           const SizedBox(height: 16),
           Container(
             width: double.infinity,
@@ -115,7 +109,7 @@ class IqrokuPlusSheet extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           FilledButton(
-            onPressed: active ? null : onConfirm,
+            onPressed: active || loading ? null : onConfirm,
             style: FilledButton.styleFrom(
               minimumSize: const Size(double.infinity, 52),
               backgroundColor: AppColors.primary,
@@ -123,7 +117,16 @@ class IqrokuPlusSheet extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
               ),
             ),
-            child: Text(active ? 'IqroKu Plus aktif' : 'Lanjutkan pembayaran'),
+            child: loading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(active ? 'IqroKu Plus aktif' : 'Bayar dengan DOKU'),
           ),
           const SizedBox(height: 8),
           Center(
