@@ -85,12 +85,15 @@ test('review decisions are applied through one database transaction', () => {
 test('audio upload handling enforces size, type, extension, and content sniffing', () => {
   assert.match(serverSource, /MAX_AUDIO_UPLOAD_BYTES/);
   assert.match(serverSource, /const ALLOWED_AUDIO_CONTENT_TYPES = new Set/);
+  assert.match(serverSource, /const GENERIC_AUDIO_UPLOAD_CONTENT_TYPES = new Set/);
+  assert.match(serverSource, /'application\/octet-stream'/);
   assert.match(serverSource, /const ALLOWED_AUDIO_EXTENSIONS = new Set/);
   assert.match(serverSource, /validateAudioUpload\(\{ originalFileName, contentType, content \}\);/);
   assert.match(serverSource, /throw httpError\(413, 'audio_file_too_large'\)/);
   assert.match(serverSource, /throw httpError\(415, 'unsupported_audio_type'\)/);
   assert.match(serverSource, /throw httpError\(415, 'unsupported_audio_extension'\)/);
   assert.match(serverSource, /throw httpError\(415, 'invalid_audio_file'\)/);
+  assert.match(serverSource, /GENERIC_AUDIO_UPLOAD_CONTENT_TYPES\.has\(normalizedType\)/);
   assert.match(serverSource, /function looksLikeAudio\(content\)/);
 });
 

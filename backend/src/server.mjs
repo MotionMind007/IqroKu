@@ -38,11 +38,22 @@ const UPLOAD_ROOT = resolve(process.env.IQROKU_UPLOAD_ROOT || 'uploads');
 const AUDIO_UPLOAD_DIR = resolve(UPLOAD_ROOT, 'audio');
 const ALLOWED_AUDIO_CONTENT_TYPES = new Set([
   'audio/aac',
+  'audio/m4a',
   'audio/mp4',
   'audio/mpeg',
+  'audio/x-aac',
+  'audio/x-m4a',
+  'audio/x-mp4',
   'audio/wav',
   'audio/webm',
+  'audio/x-wav',
+  'audio/3gpp',
   'video/mp4',
+]);
+const GENERIC_AUDIO_UPLOAD_CONTENT_TYPES = new Set([
+  '',
+  'application/octet-stream',
+  'binary/octet-stream',
 ]);
 const ALLOWED_AUDIO_EXTENSIONS = new Set(['.aac', '.m4a', '.mp3', '.mp4', '.wav', '.webm']);
 
@@ -1286,9 +1297,12 @@ async function storeAttemptAudio({ attemptId, originalFileName, contentType, con
   const extension = audioExtension(originalFileName, contentType);
   const fileName = safeStoredFileName(`${attemptId}-${Date.now()}${extension}`);
   await writeFile(resolve(AUDIO_UPLOAD_DIR, fileName), content);
+  const normalizedType = contentType.split(';')[0].trim().toLowerCase();
   return {
     fileName,
-    contentType: contentType || contentTypeForAudio(fileName),
+    contentType: GENERIC_AUDIO_UPLOAD_CONTENT_TYPES.has(normalizedType)
+      ? contentTypeForAudio(fileName)
+      : contentType,
     sizeBytes: content.length,
     url: `/uploads/audio/${fileName}`,
   };
@@ -1303,12 +1317,13 @@ function validateAudioUpload({ originalFileName = '', contentType = '', content 
   }
 
   const normalizedType = contentType.split(';')[0].trim().toLowerCase();
-  if (normalizedType && !ALLOWED_AUDIO_CONTENT_TYPES.has(normalizedType)) {
+  const genericBinaryUpload = GENERIC_AUDIO_UPLOAD_CONTENT_TYPES.has(normalizedType);
+  if (!genericBinaryUpload && !ALLOWED_AUDIO_CONTENT_TYPES.has(normalizedType)) {
     throw httpError(415, 'unsupported_audio_type');
   }
 
   const extension = extname(originalFileName).toLowerCase();
-  if (extension && !ALLOWED_AUDIO_EXTENSIONS.has(extension)) {
+  if (!extension || !ALLOWED_AUDIO_EXTENSIONS.has(extension)) {
     throw httpError(415, 'unsupported_audio_extension');
   }
 
@@ -1335,14 +1350,18 @@ function audioExtension(fileName = '', contentType = '') {
   if (ALLOWED_AUDIO_EXTENSIONS.has(extension)) {
     return extension;
   }
-  if (contentType.includes('mpeg')) {
+  const normalizedType = contentType.split(';')[0].trim().toLowerCase();
+  if (normalizedType.includes('mpeg')) {
     return '.mp3';
   }
-  if (contentType.includes('wav')) {
+  if (normalizedType.includes('wav')) {
     return '.wav';
   }
-  if (contentType.includes('webm')) {
+  if (normalizedType.includes('webm')) {
     return '.webm';
+  }
+  if (normalizedType.includes('3gpp')) {
+    return '.aac';
   }
   return '.m4a';
 }
