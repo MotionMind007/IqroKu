@@ -97,6 +97,7 @@ Lalu tes manual dari HP:
 | `.env.production` | Environment template (fill in secrets) |
 | `backup.sh` | Daily database backup script |
 | `restore-backup.sh` | Destructive restore helper for restore drills |
+| `restore-drill.sh` | Non-destructive backup restore verification using a temporary DB |
 | `smoke-test.sh` | Health, header, syntax, and migration smoke test |
 
 ## Environment
@@ -160,7 +161,23 @@ cd /opt/iqroku
 ls -lah /opt/iqroku/backups
 ```
 
-Restore drill on staging only:
+Non-destructive restore drill:
+
+```bash
+cd /opt/iqroku
+./deploy/restore-drill.sh \
+  /opt/iqroku/backups/iqroku_YYYYMMDD_HHMMSS.sql.gz \
+  /opt/iqroku/backups/uploads_YYYYMMDD_HHMMSS.tar.gz
+```
+
+Notes:
+
+- Drill restores into a temporary database named `iqroku_restore_drill_<timestamp>`.
+- Production database is not stopped or modified.
+- The temporary database is dropped automatically after the drill passes or fails.
+- Set `KEEP_RESTORE_DRILL_DB=YES` only when debugging a failed drill.
+
+Destructive restore on staging only:
 
 ```bash
 cd /opt/iqroku

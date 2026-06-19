@@ -99,6 +99,7 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
   - rollback code jika smoke test gagal
 - Menambahkan `deploy/smoke-test.sh` untuk cek health, security header, syntax backend, dan status migration.
 - Menambahkan `deploy/restore-backup.sh` untuk restore drill database dan uploads dengan konfirmasi eksplisit `CONFIRM_RESTORE=YES`.
+- Menambahkan `deploy/restore-drill.sh` untuk verifikasi backup non-destruktif lewat temporary database.
 - Memperkuat `deploy/backup.sh` agar app dir, backup dir, DB name, dan retention bisa dioverride via env serta hasil gzip diverifikasi.
 
 ### 6. CI Foundation
@@ -118,8 +119,13 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
   - `flutter analyze`
   - `flutter test`
 - Job deploy scripts menjalankan:
-  - bash syntax check untuk script deploy/backup/restore/smoke
+  - bash syntax check untuk script deploy/backup/restore/restore-drill/smoke
   - whitespace check
+- Menambahkan Dependabot untuk:
+  - backend npm dependencies
+  - Flutter pub dependencies
+  - GitHub Actions
+- Menambahkan Dependency Review job untuk pull request agar dependency baru dengan vulnerability severity high menggagalkan CI.
 
 ### 7. Onboarding Database Drift Fix
 
@@ -234,6 +240,14 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Dokumentasi deploy menjelaskan bahwa file asli harus diambil dari Firebase Console dan tidak boleh di-commit.
 - Karena repo pernah public, Android API key sebaiknya dibatasi di Google Cloud/Firebase Console ke package name dan SHA certificate app.
 
+### 15. Dependency Audit dan Restore Drill
+
+- CI backend tetap menjalankan `npm audit --omit=dev --audit-level=high`.
+- Pull request sekarang menjalankan GitHub Dependency Review dengan threshold severity `high`.
+- Dependabot membuka PR mingguan untuk npm, pub, dan GitHub Actions.
+- Restore drill non-destruktif tersedia lewat `deploy/restore-drill.sh`.
+- Deploy docs sudah menambahkan command drill untuk memvalidasi backup database dan archive uploads tanpa menyentuh DB production.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
@@ -241,8 +255,7 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - `REQUIRE_EMAIL_VERIFICATION` sebaiknya tetap `false` sampai email delivery dan UI sudah siap end-to-end.
 - Audio masih disimpan di filesystem persistent path. Untuk scale lebih besar, pindahkan ke object storage/private bucket.
 - Rate limit saat ini masih in-memory per proses. Untuk production multi-instance, pindahkan ke Redis atau provider rate limit terpusat.
-- Belum ada audit dependency otomatis di CI.
-- Restore script sudah ada, tetapi restore drill nyata di VPS/staging belum dijalankan dan dicatat hasilnya.
+- Restore drill nyata di VPS/staging belum dijalankan dan dicatat hasilnya.
 - Jadwal adzan memakai mode inexact-while-idle. Jika nanti butuh alarm presisi menit, tambahkan flow izin exact alarm dan validasi kebijakan store.
 - Service account Firebase Admin belum dipasang di VPS. Push token sudah bisa tersimpan, tetapi pengiriman push butuh env service account.
 - Perlu test device nyata setelah APK baru dipasang untuk memastikan permission FCM dan rendering icon sesuai variasi Android vendor.
