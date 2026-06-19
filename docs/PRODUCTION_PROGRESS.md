@@ -81,6 +81,26 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Menambahkan `Secure` attribute pada cookie admin saat `NODE_ENV=production`.
 - Menambahkan regression test untuk security guard di backend.
 
+### 5. Deployment dan Backup Foundation
+
+- Memperkuat `deploy/setup-vps.sh`:
+  - env production dibuat lebih lengkap
+  - password database dirotasi saat setup ulang
+  - bootstrap Nginx HTTP-only sebelum mengambil SSL certificate
+  - SSL diambil lewat Certbot webroot sebelum config HTTPS final dipasang
+  - domain dan app directory bisa dioverride via env
+- Memperkuat `deploy/deploy.sh`:
+  - menolak deploy jika `backend/.env` belum ada
+  - backup wajib sebelum pull/migration
+  - menjalankan syntax check backend
+  - menjalankan `npm audit --omit=dev --audit-level=high`
+  - menjalankan migration
+  - menjalankan smoke test setelah PM2 restart
+  - rollback code jika smoke test gagal
+- Menambahkan `deploy/smoke-test.sh` untuk cek health, security header, syntax backend, dan status migration.
+- Menambahkan `deploy/restore-backup.sh` untuk restore drill database dan uploads dengan konfirmasi eksplisit `CONFIRM_RESTORE=YES`.
+- Memperkuat `deploy/backup.sh` agar app dir, backup dir, DB name, dan retention bisa dioverride via env serta hasil gzip diverifikasi.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
@@ -89,7 +109,7 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Audio masih disimpan di filesystem persistent path. Untuk scale lebih besar, pindahkan ke object storage/private bucket.
 - Rate limit saat ini masih in-memory per proses. Untuk production multi-instance, pindahkan ke Redis atau provider rate limit terpusat.
 - Belum ada audit dependency otomatis di CI.
-- Belum ada backup/restore drill database yang terdokumentasi hasilnya.
+- Restore script sudah ada, tetapi restore drill nyata di VPS/staging belum dijalankan dan dicatat hasilnya.
 
 ## Cara Jalankan Migration
 

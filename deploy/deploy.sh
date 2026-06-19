@@ -6,53 +6,65 @@ set -euo pipefail
 # Run from VPS: cd /opt/iqroku && ./deploy/deploy.sh
 # =============================================================================
 
-APP_DIR="/opt/iqroku"
+APP_DIR="${APP_DIR:-/opt/iqroku}"
 cd "$APP_DIR"
 
 echo "=== IqroKu Deploy ==="
 echo "$(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
-# Backup current commit hash
-echo "[1/5] Backing up current state..."
+echo "[1/7] Checking environment..."
+if [ ! -f "$APP_DIR/backend/.env" ]; then
+    echo "  Missing $APP_DIR/backend/.env"
+    echo "  Copy deploy/.env.production to backend/.env and fill real values first."
+    exit 1
+fi
+
+echo "[2/7] Backing up current state..."
 PREVIOUS_COMMIT=$(git rev-parse HEAD)
 echo "  Current commit: $PREVIOUS_COMMIT"
+if [ -x "$APP_DIR/backup.sh" ]; then
+    "$APP_DIR/backup.sh"
+elif [ -x "$APP_DIR/deploy/backup.sh" ]; then
+    "$APP_DIR/deploy/backup.sh"
+else
+    echo "  Backup script not found; refusing to deploy without backup."
+    exit 1
+fi
 
-# Pull latest code
-echo "[2/5] Pulling latest code..."
+echo "[3/7] Pulling latest code..."
 git fetch origin main
 git reset --hard origin/main
 echo "  New commit: $(git rev-parse --short HEAD)"
 
-# Check syntax
-echo "[3/5] Checking syntax..."
+echo "[4/7] Checking syntax..."
 node --check backend/src/server.mjs
 node --check backend/src/db.mjs
 
-# Install dependencies
-echo "[4/5] Installing dependencies..."
-cd backend && npm ci --omit=dev 2>/dev/null || npm install --omit=dev
+echo "[5/7] Installing dependencies..."
+cd backend
+npm ci --omit=dev 2>/dev/null || npm install --omit=dev
+npm audit --omit=dev --audit-level=high
 cd ..
 
-# Run migrations
-echo "[5/5] Running migrations..."
+echo "[6/7] Running migrations..."
 npm run migrate --prefix backend
 
-# Restart app
-echo "Restarting app..."
+echo "[7/7] Restarting app..."
 pm2 restart iqroku --update-env
 
-# Wait and check health
 sleep 2
-if curl -sf http://localhost:8787/health > /dev/null; then
+if BASE_URL=http://localhost:8787 APP_DIR="$APP_DIR" bash "$APP_DIR/deploy/smoke-test.sh"; then
     echo ""
-    echo "✓ Deploy successful! App is healthy."
+    echo "Deploy successful. App is healthy."
     echo "  $(curl -s http://localhost:8787/health)"
 else
     echo ""
-    echo "✗ Health check failed! Rolling back to previous commit..."
+    echo "Smoke test failed. Rolling back code to previous commit..."
+    echo "Note: database migrations are not automatically rolled back."
     git reset --hard "$PREVIOUS_COMMIT"
-    cd backend && npm ci --omit=dev 2>/dev/null || npm install --omit=dev
+    cd backend
+    npm ci --omit=dev 2>/dev/null || npm install --omit=dev
     cd ..
     pm2 restart iqroku --update-env
     echo "  Rolled back to: $(git rev-parse --short HEAD)"

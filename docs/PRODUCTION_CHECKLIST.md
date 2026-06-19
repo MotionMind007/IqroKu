@@ -19,7 +19,7 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 - Pastikan migration `002_security_constraints.sql` sudah `applied`.
 - Pastikan status progress/attempt tidak memakai nilai di luar constraint schema.
 - Buat backup otomatis harian.
-- Tes restore backup.
+- Tes restore backup memakai `deploy/restore-backup.sh` di staging.
 - Tambahkan index jika query review/progress mulai besar.
 - Pastikan data parent/child tidak bisa terbaca lintas akun.
 
@@ -72,6 +72,8 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 
 - Jalankan `npm run check`.
 - Jalankan `npm test`.
+- Jalankan `npm audit --omit=dev --audit-level=high`.
+- Jalankan `BASE_URL=https://iqroku.motionmind.store ./deploy/smoke-test.sh` di VPS.
 - Tes health endpoint.
 - Tes admin endpoint dengan token.
 - Tes review pending, approve, repeat.

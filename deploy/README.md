@@ -28,10 +28,37 @@ sudo ./setup-vps.sh
 chmod +x deploy.sh
 ./deploy.sh
 
-# 5. Run database migrations after code deploy
+# 5. Check database migrations
 cd /opt/iqroku
-npm run migrate --prefix backend
+npm run migrate:status --prefix backend
+
+# 6. Run smoke test
+BASE_URL=https://iqroku.motionmind.store ./deploy/smoke-test.sh
 ```
+
+## Staging / Production Dry-Run
+
+Sebelum dipakai user asli, jalankan dry-run ini di VPS/staging:
+
+```bash
+cd /opt/iqroku
+git fetch origin main
+git status
+npm run migrate:status --prefix backend
+npm run check --prefix backend
+npm test --prefix backend
+BASE_URL=https://iqroku.motionmind.store ./deploy/smoke-test.sh
+```
+
+Lalu tes manual dari HP:
+
+- register/login
+- setup parent PIN dan child PIN
+- anak rekam bacaan
+- parent melihat pending review
+- parent approve dan repeat
+- anak playback/lanjut sesuai hasil review
+- buka jadwal sholat, Qur'an, qiblat, doa, dan murotal
 
 ## File Overview
 
@@ -45,6 +72,57 @@ npm run migrate --prefix backend
 | `migrations/` | Idempotent schema changes applied by `npm run migrate --prefix backend` |
 | `.env.production` | Environment template (fill in secrets) |
 | `backup.sh` | Daily database backup script |
+| `restore-backup.sh` | Destructive restore helper for restore drills |
+| `smoke-test.sh` | Health, header, syntax, and migration smoke test |
+
+## Environment
+
+Actual production secrets live in `/opt/iqroku/backend/.env`; never commit that file.
+
+Required values:
+
+```bash
+NODE_ENV=production
+PORT=8787
+DATABASE_URL=postgresql://...
+ALLOWED_ORIGIN=https://iqroku.motionmind.store
+IQROKU_ADMIN_TOKEN=<random-hex>
+SESSION_SECRET=<random-hex>
+MAX_BODY_SIZE=5242880
+MAX_AUDIO_UPLOAD_BYTES=5242880
+IQROKU_UPLOAD_ROOT=/opt/iqroku/uploads
+REQUIRE_EMAIL_VERIFICATION=false
+AUTH_LINK_BASE_URL=https://iqroku.motionmind.store
+RATE_WINDOW_MS=60000
+RATE_MAX_AUTH=10
+RATE_MAX_GENERAL=120
+```
+
+## Backup and Restore
+
+Manual backup:
+
+```bash
+cd /opt/iqroku
+./backup.sh
+ls -lah /opt/iqroku/backups
+```
+
+Restore drill on staging only:
+
+```bash
+cd /opt/iqroku
+CONFIRM_RESTORE=YES ./deploy/restore-backup.sh /opt/iqroku/backups/iqroku_YYYYMMDD_HHMMSS.sql.gz
+BASE_URL=https://iqroku.motionmind.store ./deploy/smoke-test.sh
+```
+
+Restore with uploads:
+
+```bash
+CONFIRM_RESTORE=YES ./deploy/restore-backup.sh \
+  /opt/iqroku/backups/iqroku_YYYYMMDD_HHMMSS.sql.gz \
+  /opt/iqroku/backups/uploads_YYYYMMDD_HHMMSS.tar.gz
+```
 
 ## After Setup
 
@@ -55,3 +133,4 @@ npm run migrate --prefix backend
 - Restart: `pm2 restart iqroku`
 - Deploy new version: `cd /opt/iqroku && ./deploy/deploy.sh`
 - Migration status: `cd /opt/iqroku && npm run migrate:status --prefix backend`
+- Smoke test: `cd /opt/iqroku && BASE_URL=https://iqroku.motionmind.store ./deploy/smoke-test.sh`
