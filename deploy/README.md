@@ -103,6 +103,7 @@ PORT=8787
 DATABASE_URL=postgresql://...
 ALLOWED_ORIGIN=https://iqroku.motionmind.store
 IQROKU_ADMIN_TOKEN=<random-hex>
+ADMIN_ALLOWED_IPS=
 SESSION_SECRET=<random-hex>
 MAX_BODY_SIZE=5242880
 MAX_AUDIO_UPLOAD_BYTES=5242880
@@ -114,6 +115,18 @@ RATE_MAX_AUTH=10
 RATE_MAX_GENERAL=120
 # Optional for FCM push notification sending:
 FIREBASE_SERVICE_ACCOUNT_PATH=/opt/iqroku/secrets/firebase-service-account.json
+```
+
+Admin IP restriction:
+
+- Kosongkan `ADMIN_ALLOWED_IPS` kalau IP admin belum stabil.
+- Isi comma/space-separated public IP jika ingin membatasi semua `/admin` route.
+- Backend memakai `X-Forwarded-For` dari Nginx saat `TRUST_PROXY=true`.
+
+Contoh:
+
+```bash
+ADMIN_ALLOWED_IPS=203.0.113.10,2001:db8::10
 ```
 
 Auth/session cleanup:

@@ -32,6 +32,12 @@ if (ADMIN_TOKEN === 'admin-dev-token' && process.env.NODE_ENV === 'production') 
   console.error('FATAL: IQROKU_ADMIN_TOKEN must be set in production. Refusing to start with default token.');
   process.exit(1);
 }
+const ADMIN_ALLOWED_IPS = new Set(
+  String(process.env.ADMIN_ALLOWED_IPS ?? '')
+    .split(/[,\s]+/)
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 const MAX_BODY_SIZE = Number(process.env.MAX_BODY_SIZE) || 5 * 1024 * 1024; // 5MB max request body
 const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES) || MAX_BODY_SIZE;
 const MAX_STRING_LENGTH = 500; // max string field length
@@ -214,6 +220,16 @@ function authenticateAdmin(request) {
   }
 }
 
+function enforceAdminIpAllowlist(request) {
+  if (ADMIN_ALLOWED_IPS.size === 0) {
+    return;
+  }
+  const clientIp = getClientIp(request);
+  if (!ADMIN_ALLOWED_IPS.has(clientIp)) {
+    throw httpError(403, 'admin_ip_not_allowed');
+  }
+}
+
 // Behind a reverse proxy (nginx) every request's socket address is the proxy
 // itself, so rate limiting on remoteAddress buckets ALL users into one counter.
 // Trust the first hop in X-Forwarded-For (set by our nginx) for the real IP.
@@ -223,10 +239,14 @@ function getClientIp(request) {
     const fwd = request.headers?.['x-forwarded-for'];
     if (typeof fwd === 'string' && fwd.length > 0) {
       const first = fwd.split(',')[0].trim();
-      if (first) return first;
+      if (first) return normalizeClientIp(first);
     }
   }
-  return request.socket?.remoteAddress ?? 'unknown';
+  return normalizeClientIp(request.socket?.remoteAddress ?? 'unknown');
+}
+
+function normalizeClientIp(value) {
+  return String(value).replace(/^::ffff:/, '');
 }
 
 const server = createServer(async (request, response) => {
@@ -303,6 +323,10 @@ async function route(method, url, body, request) {
 
   if (method === 'OPTIONS') {
     return {};
+  }
+
+  if (path === '/admin' || path.startsWith('/admin/')) {
+    enforceAdminIpAllowlist(request);
   }
 
   if (method === 'GET' && path === '/health') {

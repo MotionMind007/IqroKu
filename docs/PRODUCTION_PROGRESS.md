@@ -218,6 +218,14 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Recent attempts dan subscriptions memakai join SQL untuk mengambil nama anak/email parent tanpa full-table lookup di JavaScript.
 - Security regression test ditambah supaya admin metrics tidak kembali memakai `getAllParents()`, `getAllChildren()`, `getAllSubscriptions()`, atau `getAllProgress()`.
 
+### 13. Admin IP Restriction Foundation
+
+- Menambahkan env `ADMIN_ALLOWED_IPS` untuk membatasi semua route `/admin` ke public IP tertentu.
+- Jika `ADMIN_ALLOWED_IPS` kosong, admin tetap memakai token/cookie seperti sebelumnya.
+- Jika diisi, `/admin/login`, `/admin`, `/admin/metrics`, dan `/admin/prayers` hanya menerima request dari IP yang ada di allowlist.
+- IP client dibaca dari `X-Forwarded-For` saat `TRUST_PROXY=true` dan dinormalisasi dari format IPv4-mapped (`::ffff:x.x.x.x`).
+- `deploy/.env.production` dan `deploy/README.md` sudah menambahkan cara konfigurasi.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
@@ -230,7 +238,7 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Jadwal adzan memakai mode inexact-while-idle. Jika nanti butuh alarm presisi menit, tambahkan flow izin exact alarm dan validasi kebijakan store.
 - Service account Firebase Admin belum dipasang di VPS. Push token sudah bisa tersimpan, tetapi pengiriman push butuh env service account.
 - Perlu test device nyata setelah APK baru dipasang untuk memastikan permission FCM dan rendering icon sesuai variasi Android vendor.
-- Admin IP restriction di Nginx masih optional dan perlu diaktifkan manual kalau IP admin sudah stabil.
+- Admin IP allowlist sudah tersedia via backend env, tetapi belum perlu diaktifkan sampai IP admin stabil.
 
 ## Cara Jalankan Migration
 

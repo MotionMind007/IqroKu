@@ -7,6 +7,7 @@ const dbSource = await readFile(new URL('../src/db.mjs', import.meta.url), 'utf8
 const nginxSource = await readFile(new URL('../../deploy/nginx-iqroku.conf', import.meta.url), 'utf8');
 const deployScriptSource = await readFile(new URL('../../deploy/deploy.sh', import.meta.url), 'utf8');
 const setupVpsSource = await readFile(new URL('../../deploy/setup-vps.sh', import.meta.url), 'utf8');
+const envTemplateSource = await readFile(new URL('../../deploy/.env.production', import.meta.url), 'utf8');
 const constraintsMigration = await readFile(
   new URL('../../deploy/migrations/002_security_constraints.sql', import.meta.url),
   'utf8',
@@ -112,6 +113,16 @@ test('admin metrics use bounded SQL aggregation instead of loading full tables',
   assert.doesNotMatch(adminMetricsSource, /getAllChildren\(\)/);
   assert.doesNotMatch(adminMetricsSource, /getAllSubscriptions\(\)/);
   assert.doesNotMatch(adminMetricsSource, /getAllProgress\(\)/);
+});
+
+test('admin routes support optional backend IP allowlist', () => {
+  assert.match(serverSource, /const ADMIN_ALLOWED_IPS = new Set/);
+  assert.match(serverSource, /function enforceAdminIpAllowlist\(request\)/);
+  assert.match(serverSource, /throw httpError\(403, 'admin_ip_not_allowed'\)/);
+  assert.match(serverSource, /if \(path === '\/admin' \|\| path\.startsWith\('\/admin\/'\)\)/);
+  assert.match(serverSource, /enforceAdminIpAllowlist\(request\)/);
+  assert.match(serverSource, /function normalizeClientIp\(value\)/);
+  assert.match(envTemplateSource, /ADMIN_ALLOWED_IPS=/);
 });
 
 test('review decisions are applied through one database transaction', () => {
