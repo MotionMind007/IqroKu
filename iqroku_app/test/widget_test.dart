@@ -397,6 +397,19 @@ void main() {
         status: LearningStatus.learning,
       ),
     ];
+    authService.attempts['child-remote'] = const [
+      LearningAttempt(
+        id: 'attempt-remote',
+        childId: 'child-remote',
+        bookId: 1,
+        pageNumber: 3,
+        date: '2026-06-19',
+        durationSeconds: 12,
+        status: LearningStatus.review,
+        assessmentStatus: ReadingAssessmentStatus.needsReview,
+        audioPath: '/uploads/audio/attempt-remote.m4a',
+      ),
+    ];
 
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
@@ -411,6 +424,10 @@ void main() {
     expect(state.selectedIqroPage, 3);
     expect(state.selectedIqroCompletedPages, 2);
     expect(state.selectedChild.currentLesson, 'Iqro 1 - Halaman 3');
+    expect(
+      state.selectedPageLatestAttempt?.assessmentStatus,
+      ReadingAssessmentStatus.needsReview,
+    );
   });
 
   test('Login without parent PIN requires parent PIN setup first', () async {
@@ -532,6 +549,7 @@ class FakeAuthApiService extends AuthApiService {
   final children = <ChildProfile>[];
   final childPins = <String, String>{};
   final progress = <String, List<RemoteIqroProgress>>{};
+  final attempts = <String, List<LearningAttempt>>{};
 
   @override
   Future<AuthResult> login({
@@ -558,6 +576,11 @@ class FakeAuthApiService extends AuthApiService {
   @override
   Future<List<RemoteIqroProgress>> loadProgress(String childId) async {
     return progress[childId] ?? const [];
+  }
+
+  @override
+  Future<List<LearningAttempt>> loadAttempts(String childId) async {
+    return attempts[childId] ?? const [];
   }
 
   @override

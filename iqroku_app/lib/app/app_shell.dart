@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/assets/app_assets.dart';
@@ -10,10 +12,36 @@ import '../features/prayers/daily_prayers_screen.dart';
 import '../features/quran/quran_screen.dart';
 import 'app_state.dart';
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.state});
 
   final IqrokuState state;
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  Timer? _refreshTimer;
+
+  IqrokuState get state => widget.state;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted || state.currentMode != AppMode.child) {
+        return;
+      }
+      unawaited(state.refreshChildrenFromBackend());
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -132,10 +160,14 @@ class AppShell extends StatelessWidget {
         ],
       ),
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 430),
-            child: pages[state.selectedTab > 3 ? 0 : state.selectedTab],
+        child: RefreshIndicator(
+          triggerMode: RefreshIndicatorTriggerMode.anywhere,
+          onRefresh: state.refreshChildrenFromBackend,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: pages[state.selectedTab > 3 ? 0 : state.selectedTab],
+            ),
           ),
         ),
       ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
@@ -40,8 +42,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         title: const Text('Dashboard Orang Tua'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => widget.state.logout(),
+            icon: const Icon(Icons.swap_horiz),
+            tooltip: 'Pilih Mode',
+            onPressed: () => widget.state.exitToModeSelection(),
           ),
         ],
       ),
@@ -313,21 +316,40 @@ class _ReviewTab extends StatefulWidget {
 class _ReviewTabState extends State<_ReviewTab> {
   List<Map<String, Object?>> _pendingReviews = [];
   bool _isLoading = true;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadPendingReviews();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_loadPendingReviews(showLoading: false));
+    });
   }
 
-  Future<void> _loadPendingReviews() async {
-    setState(() => _isLoading = true);
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadPendingReviews({bool showLoading = true}) async {
+    if (showLoading && mounted) {
+      setState(() => _isLoading = true);
+    }
     try {
-      _pendingReviews = await widget.state.authService.getPendingReviews();
+      final reviews = await widget.state.authService.getPendingReviews();
+      if (!mounted) return;
+      setState(() => _pendingReviews = reviews);
     } catch (e) {
       debugPrint('Failed to load reviews: $e');
     } finally {
-      setState(() => _isLoading = false);
+      if (showLoading && mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -338,17 +360,35 @@ class _ReviewTabState extends State<_ReviewTab> {
     }
 
     if (_pendingReviews.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return RefreshIndicator(
+        onRefresh: _loadPendingReviews,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(24),
           children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: 64,
-              color: AppColors.primary.withValues(alpha: 0.5),
+            SizedBox(height: MediaQuery.sizeOf(context).height * 0.22),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 64,
+                    color: AppColors.primary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Tidak ada rekaman yang perlu direview',
+                    style: AppText.body,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tarik ke bawah untuk memuat ulang.',
+                    style: AppText.caption,
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            Text('Tidak ada rekaman yang perlu direview', style: AppText.body),
           ],
         ),
       );
@@ -733,11 +773,6 @@ class _SettingsTab extends StatelessWidget {
               icon: Icons.exit_to_app,
               title: 'Keluar Mode Orang Tua',
               onTap: () => state.exitToModeSelection(),
-            ),
-            _SettingsTile(
-              icon: Icons.logout,
-              title: 'Logout',
-              onTap: () => state.logout(),
             ),
           ],
         ),

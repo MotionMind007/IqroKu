@@ -57,6 +57,15 @@ class ModeSelectionScreen extends StatelessWidget {
                     'Akun: ${state.parentAccount?.email ?? ''}',
                     style: AppText.caption.copyWith(color: AppColors.muted),
                   ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: state.logout,
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Logout'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.coral,
+                    ),
+                  ),
                 ],
               ),
             ),

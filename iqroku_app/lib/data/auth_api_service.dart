@@ -121,6 +121,17 @@ class AuthApiService {
         .toList(growable: false);
   }
 
+  Future<List<LearningAttempt>> loadAttempts(String childId) async {
+    final response = await http
+        .get(_uri('/attempts', {'childId': childId}), headers: _authHeaders())
+        .timeout(const Duration(seconds: 15));
+    final json = _decodeResponse(response);
+    return (json as List<Object?>)
+        .cast<Map<String, Object?>>()
+        .map(_attemptFromJson)
+        .toList(growable: false);
+  }
+
   Future<ChildProfile> createChild({
     required String parentId,
     required String name,
@@ -399,6 +410,59 @@ class AuthApiService {
       repeatFromPage: (json['repeatFromPage'] as num?)?.toInt() ?? 1,
       repeatFromBook: (json['repeatFromBook'] as num?)?.toInt() ?? 1,
     );
+  }
+
+  LearningAttempt _attemptFromJson(Map<String, Object?> json) {
+    final assessmentStatus = _assessmentStatusFromJson(
+      json['assessmentStatus'] as String?,
+    );
+    final status = _learningStatusFromJson(
+      json['status'] as String?,
+      assessmentStatus,
+    );
+    final createdAt = json['createdAt'] as String?;
+    final audioPath =
+        json['audioUrl'] as String? ?? json['audioPath'] as String?;
+
+    return LearningAttempt(
+      id: json['id'] as String? ?? '',
+      childId: json['childId'] as String? ?? '',
+      bookId: (json['bookId'] as num?)?.toInt() ?? 1,
+      pageNumber: (json['pageNumber'] as num?)?.toInt() ?? 1,
+      date: createdAt?.split('T').first ?? '',
+      durationSeconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
+      status: status,
+      assessmentStatus: assessmentStatus,
+      audioPath: audioPath,
+      score: (json['score'] as num?)?.toInt(),
+      feedback: json['feedback'] as String?,
+      note: json['note'] as String?,
+    );
+  }
+
+  ReadingAssessmentStatus _assessmentStatusFromJson(String? value) {
+    for (final status in ReadingAssessmentStatus.values) {
+      if (status.name == value) {
+        return status;
+      }
+    }
+    return ReadingAssessmentStatus.recorded;
+  }
+
+  LearningStatus _learningStatusFromJson(
+    String? value,
+    ReadingAssessmentStatus assessmentStatus,
+  ) {
+    for (final status in LearningStatus.values) {
+      if (status.name == value) {
+        return status;
+      }
+    }
+    return switch (assessmentStatus) {
+      ReadingAssessmentStatus.fluent => LearningStatus.fluent,
+      ReadingAssessmentStatus.needsReview => LearningStatus.review,
+      _ => LearningStatus.learning,
+    };
   }
 }
 

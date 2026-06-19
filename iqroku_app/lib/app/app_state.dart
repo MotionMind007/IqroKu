@@ -1994,6 +1994,7 @@ class IqrokuState extends ChangeNotifier {
         for (final child in childProfiles) {
           _seedIqroProgressForChild(child.id, currentPage: 1);
           await _loadRemoteProgressForChild(child.id);
+          await _loadRemoteAttemptsForChild(child.id);
           _syncChildProgress(child.id, 1);
         }
         selectedIqroBook = previousBook;
@@ -2041,6 +2042,7 @@ class IqrokuState extends ChangeNotifier {
       for (final child in childProfiles) {
         _seedIqroProgressForChild(child.id, currentPage: 1);
         await _loadRemoteProgressForChild(child.id);
+        await _loadRemoteAttemptsForChild(child.id);
         _syncChildProgress(child.id, 1);
       }
       childSetupCompleted = true;
@@ -2089,6 +2091,32 @@ class IqrokuState extends ChangeNotifier {
       debugPrint('Remote progress load failed: ${error.code}');
     } catch (error) {
       debugPrint('Remote progress load failed: $error');
+    }
+  }
+
+  Future<void> _loadRemoteAttemptsForChild(String childId) async {
+    try {
+      final remoteAttempts = await authService.loadAttempts(childId);
+      for (final remoteAttempt in remoteAttempts.reversed) {
+        final index = learningAttempts.indexWhere(
+          (attempt) => attempt.id == remoteAttempt.id,
+        );
+        if (index == -1) {
+          learningAttempts.insert(0, remoteAttempt);
+        } else {
+          learningAttempts[index] = remoteAttempt;
+        }
+      }
+      if (learningAttempts.length > 100) {
+        learningAttempts.removeRange(100, learningAttempts.length);
+      }
+    } on AuthApiException catch (error) {
+      if (error.statusCode == 401) {
+        _handleTokenExpired();
+      }
+      debugPrint('Remote attempts load failed: ${error.code}');
+    } catch (error) {
+      debugPrint('Remote attempts load failed: $error');
     }
   }
 
