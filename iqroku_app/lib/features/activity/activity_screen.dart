@@ -68,6 +68,8 @@ class PrayerScheduleScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(state.prayerDateLabel, style: AppText.caption),
+          const SizedBox(height: 12),
+          _AdzanReminderCard(state: state),
           if (state.islamicActivityLoading) ...[
             const SizedBox(height: 12),
             const LinearProgressIndicator(
@@ -88,6 +90,75 @@ class PrayerScheduleScreen extends StatelessWidget {
           const SizedBox(height: 14),
           ...state.prayerTimes.map((time) => PrayerTimeRow(time: time)),
           const SizedBox(height: 18),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdzanReminderCard extends StatelessWidget {
+  const _AdzanReminderCard({required this.state});
+
+  final IqrokuState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: state.adzanReminderEnabled
+                  ? AppColors.mint
+                  : AppColors.cream,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              state.adzanReminderEnabled
+                  ? Icons.notifications_active
+                  : Icons.notifications_none,
+              color: state.adzanReminderEnabled
+                  ? AppColors.primary
+                  : AppColors.gold,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Suara adzan otomatis', style: AppText.bodyStrong),
+                const SizedBox(height: 2),
+                Text(
+                  state.adzanReminderError ??
+                      (state.adzanReminderEnabled
+                          ? 'Aktif untuk waktu solat hari ini'
+                          : 'Nonaktif'),
+                  style: AppText.caption.copyWith(
+                    color: state.adzanReminderError == null
+                        ? AppColors.muted
+                        : AppColors.coral,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch(
+            value: state.adzanReminderEnabled,
+            activeThumbColor: AppColors.primary,
+            onChanged: state.adzanReminderUpdating
+                ? null
+                : (value) => unawaited(state.setAdzanReminderEnabled(value)),
+          ),
         ],
       ),
     );

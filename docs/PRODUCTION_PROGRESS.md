@@ -148,6 +148,23 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
   - `children.repeat_from_book`
 - Fix ini mencegah approve/repeat review gagal karena missing column di database lama.
 
+### 9. Jadwal Adzan Lokal
+
+- Menambahkan dependency Flutter:
+  - `flutter_local_notifications`
+  - `flutter_timezone`
+  - `timezone`
+- Menambahkan `PrayerReminderService` untuk menjadwalkan pengingat adzan lokal.
+- Menambahkan switch `Suara adzan otomatis` di halaman Jadwal Solat.
+- Saat user mengaktifkan switch, app meminta izin notifikasi dan menjadwalkan Subuh, Dzuhur, Ashar, Maghrib, dan Isya.
+- Saat jadwal solat dimuat ulang, jadwal adzan ikut disusun ulang.
+- Menambahkan permission Android:
+  - `POST_NOTIFICATIONS`
+  - `VIBRATE`
+  - `RECEIVE_BOOT_COMPLETED`
+- Menambahkan receiver Android untuk scheduled notification dan reschedule setelah device boot/package update.
+- Setting adzan disimpan di local storage agar tetap aktif setelah app dibuka ulang.
+
 ## Belum Selesai
 
 - Email provider belum disambungkan. Saat development, token/link ditulis ke log backend. Saat production, backend hanya mencatat event `auth_token_created` tanpa membocorkan token.
@@ -157,6 +174,8 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Rate limit saat ini masih in-memory per proses. Untuk production multi-instance, pindahkan ke Redis atau provider rate limit terpusat.
 - Belum ada audit dependency otomatis di CI.
 - Restore script sudah ada, tetapi restore drill nyata di VPS/staging belum dijalankan dan dicatat hasilnya.
+- Suara adzan masih memakai default notification sound perangkat. File adzan custom belum ditambahkan ke repo.
+- Jadwal adzan memakai mode inexact-while-idle. Jika nanti butuh alarm presisi menit, tambahkan flow izin exact alarm dan validasi kebijakan store.
 
 ## Cara Jalankan Migration
 

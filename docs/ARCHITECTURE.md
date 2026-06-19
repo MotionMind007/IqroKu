@@ -53,6 +53,15 @@ iqroku_app/lib/core/services/
 iqroku_app/lib/data/
 ```
 
+Service penting:
+
+```text
+PrayerReminderService        scheduler notifikasi adzan lokal
+IslamicActivityService       jadwal sholat dan arah kiblat
+AudioPlaybackService         playback rekaman dan audio Qur'an
+VoiceRecordingService        rekaman bacaan anak
+```
+
 ## Backend API
 
 Entry point backend:
@@ -149,6 +158,13 @@ hafalan.png
 ```
 
 Saat menambah asset baru, pastikan file masuk ke `iqroku_app/pubspec.yaml` dan dipanggil dari widget yang sesuai.
+
+Audio adzan:
+
+- Fitur adzan saat ini memakai default notification sound perangkat.
+- Jika memakai file adzan custom Android, simpan file sebagai `iqroku_app/android/app/src/main/res/raw/adzan.mp3`.
+- Setelah file tersedia, update channel sound di `iqroku_app/lib/data/prayer_reminder_service.dart`.
+- Channel Android yang sudah pernah dibuat tidak selalu mengganti sound otomatis; saat testing, reinstall app atau ganti channel id jika perlu.
 
 ## Keamanan Saat Ini
 

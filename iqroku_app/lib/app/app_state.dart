@@ -11,6 +11,7 @@ import '../data/dummy_iqroku_repository.dart';
 import '../data/islamic_activity_service.dart';
 import '../data/iqro_content_repository.dart';
 import '../data/local_app_storage.dart';
+import '../data/prayer_reminder_service.dart';
 import '../data/quran_api_service.dart';
 import '../data/voice_recording_service.dart';
 import '../models/iqro_models.dart';
@@ -38,6 +39,7 @@ class IqrokuState extends ChangeNotifier {
     this.dailyPrayerApiService = const DailyPrayerApiService(),
     this.quranApiService = const QuranApiService(),
     this.islamicActivityService = const IslamicActivityService(),
+    PrayerReminderService? prayerReminderService,
     VoiceRecordingService? voiceRecordingService,
     AudioPlaybackService? audioPlaybackService,
   }) : storage = storage ?? LocalAppStorage(),
@@ -47,6 +49,8 @@ class IqrokuState extends ChangeNotifier {
        learningAttempts = <LearningAttempt>[],
        voiceRecordingService =
            voiceRecordingService ?? LocalVoiceRecordingService(),
+       prayerReminderService =
+           prayerReminderService ?? LocalPrayerReminderService(),
        audioPlaybackService =
            audioPlaybackService ?? LocalAudioPlaybackService() {
     if (childProfiles.isNotEmpty && selectedChildId.isEmpty) {
@@ -73,6 +77,7 @@ class IqrokuState extends ChangeNotifier {
   final DailyPrayerApiService dailyPrayerApiService;
   final QuranApiService quranApiService;
   final IslamicActivityService islamicActivityService;
+  final PrayerReminderService prayerReminderService;
   final VoiceRecordingService voiceRecordingService;
   final AudioPlaybackService audioPlaybackService;
   final List<ChildProfile> childProfiles;
@@ -110,6 +115,8 @@ class IqrokuState extends ChangeNotifier {
   bool surahDetailLoading = false;
   bool islamicActivityLoading = false;
   bool dailyPrayersLoading = false;
+  bool adzanReminderEnabled = false;
+  bool adzanReminderUpdating = false;
   bool isVoiceRecording = false;
   bool authLoading = false;
   int voiceRecordingSeconds = 0;
@@ -127,6 +134,7 @@ class IqrokuState extends ChangeNotifier {
   String? quranError;
   String? islamicActivityError;
   String? dailyPrayersError;
+  String? adzanReminderError;
   String? voiceRecordingError;
   String? playingAttemptId;
   String? playingQuranAudioUrl;
@@ -490,6 +498,9 @@ class IqrokuState extends ChangeNotifier {
       ]);
       _prayerSchedule = results[0] as PrayerSchedule;
       _qiblaDirection = results[1] as QiblaDirection;
+      if (adzanReminderEnabled) {
+        await _scheduleAdzanReminder();
+      }
     } catch (error) {
       islamicActivityError =
           'Jadwal sholat dan kiblat online belum bisa dimuat. Cek koneksi internet lalu coba lagi.';
@@ -497,6 +508,57 @@ class IqrokuState extends ChangeNotifier {
     } finally {
       islamicActivityLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> setAdzanReminderEnabled(bool enabled) async {
+    if (adzanReminderUpdating || adzanReminderEnabled == enabled) {
+      return;
+    }
+
+    adzanReminderUpdating = true;
+    adzanReminderError = null;
+    notifyListeners();
+
+    try {
+      if (enabled) {
+        final granted = await prayerReminderService.requestPermissions();
+        if (!granted) {
+          adzanReminderError =
+              'Izin notifikasi belum aktif. Aktifkan dari pengaturan HP.';
+          return;
+        }
+        adzanReminderEnabled = true;
+        _persist();
+        await _scheduleAdzanReminder();
+      } else {
+        adzanReminderEnabled = false;
+        _persist();
+        await prayerReminderService.cancelAdzan();
+      }
+    } catch (error) {
+      adzanReminderError =
+          'Pengingat adzan belum bisa diaktifkan. Coba ulang sebentar lagi.';
+      debugPrint('Adzan reminder update failed: $error');
+    } finally {
+      adzanReminderUpdating = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _scheduleAdzanReminder() async {
+    final schedule = _prayerSchedule;
+    if (schedule == null) {
+      return;
+    }
+
+    try {
+      await prayerReminderService.scheduleDailyAdzan(schedule);
+      adzanReminderError = null;
+    } catch (error) {
+      adzanReminderError =
+          'Jadwal adzan belum bisa disimpan. Coba muat ulang jadwal.';
+      debugPrint('Adzan reminder schedule failed: $error');
     }
   }
 
@@ -565,6 +627,7 @@ class IqrokuState extends ChangeNotifier {
     childSetupCompleted = stored.childSetupCompleted;
     selectedIqroBook = stored.selectedIqroBook;
     selectedIqroPage = stored.selectedIqroPage;
+    adzanReminderEnabled = stored.adzanReminderEnabled;
     if (childProfiles.isNotEmpty) {
       _ensureSelectedIqroAccess();
     }
@@ -577,6 +640,10 @@ class IqrokuState extends ChangeNotifier {
       launchStage = AppLaunchStage.authenticated;
     } else if (authToken != null) {
       launchStage = AppLaunchStage.setupChild;
+    }
+
+    if (adzanReminderEnabled && _prayerSchedule != null) {
+      await _scheduleAdzanReminder();
     }
 
     notifyListeners();
@@ -1904,6 +1971,7 @@ class IqrokuState extends ChangeNotifier {
       childSetupCompleted: childSetupCompleted,
       selectedIqroBook: selectedIqroBook,
       selectedIqroPage: selectedIqroPage,
+      adzanReminderEnabled: adzanReminderEnabled,
       parentAccount: parentAccount,
       authToken: authToken,
       subscriptionActivatedAt: subscriptionActivatedAt,

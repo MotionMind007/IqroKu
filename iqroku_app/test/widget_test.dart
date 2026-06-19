@@ -14,6 +14,7 @@ import 'package:iqroku/data/auth_api_service.dart';
 import 'package:iqroku/data/daily_prayer_api_service.dart';
 import 'package:iqroku/data/dummy_iqroku_repository.dart';
 import 'package:iqroku/data/islamic_activity_service.dart';
+import 'package:iqroku/data/prayer_reminder_service.dart';
 import 'package:iqroku/data/quran_api_service.dart';
 import 'package:iqroku/data/voice_recording_service.dart';
 import 'package:iqroku/models/iqro_models.dart';
@@ -83,6 +84,7 @@ void main() {
         dailyPrayerApiService: const FakeDailyPrayerApiService(),
         quranApiService: const FakeQuranApiService(),
         islamicActivityService: const FakeIslamicActivityService(),
+        prayerReminderService: FakePrayerReminderService(),
         voiceRecordingService: FakeVoiceRecordingService(),
         audioPlaybackService: FakeAudioPlaybackService(),
       ),
@@ -317,6 +319,33 @@ void main() {
   });
 
   test(
+    'Adzan reminder requests permission and schedules prayer times',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final reminderService = FakePrayerReminderService();
+      final state = IqrokuState(
+        repository: const DummyIqrokuRepository(),
+        islamicActivityService: const FakeIslamicActivityService(),
+        prayerReminderService: reminderService,
+        voiceRecordingService: FakeVoiceRecordingService(),
+        audioPlaybackService: FakeAudioPlaybackService(),
+      );
+
+      await state.loadIslamicActivity();
+      await state.setAdzanReminderEnabled(true);
+
+      expect(state.adzanReminderEnabled, isTrue);
+      expect(state.adzanReminderError, isNull);
+      expect(reminderService.scheduled, isTrue);
+
+      await state.setAdzanReminderEnabled(false);
+
+      expect(state.adzanReminderEnabled, isFalse);
+      expect(reminderService.canceled, isTrue);
+    },
+  );
+
+  test(
     'Parent review result updates attempt and page status locally',
     () async {
       SharedPreferences.setMockInitialValues({});
@@ -532,6 +561,25 @@ class FakeIslamicActivityService extends IslamicActivityService {
       locationLabel: 'Jakarta, Indonesia',
       locationSource: LocationSource.device,
     );
+  }
+}
+
+class FakePrayerReminderService implements PrayerReminderService {
+  bool permissionGranted = true;
+  bool scheduled = false;
+  bool canceled = false;
+
+  @override
+  Future<bool> requestPermissions() async => permissionGranted;
+
+  @override
+  Future<void> scheduleDailyAdzan(PrayerSchedule schedule) async {
+    scheduled = true;
+  }
+
+  @override
+  Future<void> cancelAdzan() async {
+    canceled = true;
   }
 }
 

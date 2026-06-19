@@ -132,6 +132,23 @@ subscriptions table
 
 Endpoint activate sekarang masih fondasi/prototype. Payment gateway production perlu webhook resmi.
 
+## Flow Jadwal Solat dan Adzan
+
+1. App memuat jadwal solat dari `IslamicActivityService`.
+2. User membuka halaman Jadwal Solat.
+3. User mengaktifkan switch `Suara adzan otomatis`.
+4. App meminta izin notifikasi perangkat.
+5. Jika izin diberikan, app menjadwalkan notifikasi adzan untuk Subuh, Dzuhur, Ashar, Maghrib, dan Isya.
+6. Setiap jadwal solat dimuat ulang, jadwal notifikasi adzan ikut disusun ulang.
+
+Catatan:
+
+- Imsak dan Terbit tidak dipakai untuk suara adzan.
+- Versi sekarang memakai suara notification default perangkat pada channel `Adzan`.
+- Jika nanti file adzan resmi sudah siap, tambahkan file raw Android dan ubah sound channel di `PrayerReminderService`.
+- Android 13+ membutuhkan izin notifikasi dari user.
+- Android exact alarm belum dipakai supaya tidak perlu izin alarm khusus. Waktu notifikasi bisa mengikuti kebijakan idle/battery perangkat.
+
 ## Flow Legal Docs
 
 Legal docs bisa dibuka dari:

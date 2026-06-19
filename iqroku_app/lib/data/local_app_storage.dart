@@ -9,7 +9,7 @@ import '../models/profile_models.dart';
 
 class LocalAppStorage {
   LocalAppStorage({FlutterSecureStorage? secureStorage})
-      : _secureStorage = secureStorage ?? const FlutterSecureStorage();
+    : _secureStorage = secureStorage ?? const FlutterSecureStorage();
 
   static const _key = 'iqroku.local_state.v1';
   static const _authTokenKey = 'iqroku.auth_token';
@@ -36,7 +36,11 @@ class LocalAppStorage {
       );
     }
 
-    return StoredIqrokuState.fromJson(data, authToken: authToken, parentAccount: parentAccount);
+    return StoredIqrokuState.fromJson(
+      data,
+      authToken: authToken,
+      parentAccount: parentAccount,
+    );
   }
 
   Future<void> save(StoredIqrokuState state) async {
@@ -59,7 +63,10 @@ class LocalAppStorage {
     }
 
     // Save non-sensitive data to SharedPreferences (without authToken and parentAccount)
-    await preferences.setString(_key, jsonEncode(state.toJson(excludeSensitive: true)));
+    await preferences.setString(
+      _key,
+      jsonEncode(state.toJson(excludeSensitive: true)),
+    );
   }
 
   Future<void> clearSecureData() async {
@@ -79,6 +86,7 @@ class StoredIqrokuState {
     required this.childSetupCompleted,
     required this.selectedIqroBook,
     required this.selectedIqroPage,
+    this.adzanReminderEnabled = false,
     this.parentAccount,
     this.authToken,
     this.subscriptionActivatedAt,
@@ -93,6 +101,7 @@ class StoredIqrokuState {
   final bool childSetupCompleted;
   final int selectedIqroBook;
   final int selectedIqroPage;
+  final bool adzanReminderEnabled;
   final ParentAccount? parentAccount;
   final String? authToken;
   final DateTime? subscriptionActivatedAt;
@@ -110,6 +119,7 @@ class StoredIqrokuState {
       'childSetupCompleted': childSetupCompleted,
       'selectedIqroBook': selectedIqroBook,
       'selectedIqroPage': selectedIqroPage,
+      'adzanReminderEnabled': adzanReminderEnabled,
       if (!excludeSensitive) 'parentAccount': parentAccount?.toJson(),
       if (!excludeSensitive) 'authToken': authToken,
       'subscriptionActivatedAt': subscriptionActivatedAt?.toIso8601String(),
@@ -146,6 +156,7 @@ class StoredIqrokuState {
       childSetupCompleted: json['childSetupCompleted'] as bool? ?? false,
       selectedIqroBook: json['selectedIqroBook'] as int? ?? 1,
       selectedIqroPage: json['selectedIqroPage'] as int? ?? 1,
+      adzanReminderEnabled: json['adzanReminderEnabled'] as bool? ?? false,
       parentAccount: parentAccount ?? _decodeParent(json['parentAccount']),
       authToken: authToken ?? json['authToken'] as String?,
       subscriptionActivatedAt: _decodeDateTime(
