@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_chrome.dart';
+import '../../core/widgets/legal_documents.dart';
 import '../../core/widgets/subscription_sheet.dart';
 import '../../models/learning_status.dart';
 import '../../models/profile_models.dart' as profile;
@@ -68,6 +69,10 @@ class ProfileScreen extends StatelessWidget {
             onManagePlan: () => _showUpgradeSheet(context),
             onResetProgress: () => _confirmResetProgress(context),
             onLogout: () => _confirmLogout(context),
+            onOpenTerms: () =>
+                showLegalDocument(context, LegalDocumentType.terms),
+            onOpenPrivacy: () =>
+                showLegalDocument(context, LegalDocumentType.privacy),
           ),
           const SizedBox(height: 24),
         ],
@@ -255,14 +260,14 @@ class _PlanNoticeCard extends StatelessWidget {
                 Text(
                   familyPlusActive
                       ? 'IqroKu Plus aktif'
-                      : 'Akun Free: 1 anak + Iqro 1 halaman 1-10',
+                      : 'Akun Free: 1 anak + Iqro jilid 1',
                   style: AppText.bodyStrong,
                 ),
                 const SizedBox(height: 4),
                 Text(
                   familyPlusActive
                       ? 'Semua materi Iqro terbuka dan kamu bisa memantau beberapa anak.'
-                      : 'Kuota anak $childCount/$childLimit. Lanjut setelah halaman 10 perlu subscription Rp49.000/bulan.',
+                      : 'Kuota anak $childCount/$childLimit. Iqro jilid 2 sampai 6 perlu subscription Rp49.000/bulan.',
                   style: AppText.caption,
                 ),
                 if (familyPlusActive) ...[
@@ -736,7 +741,6 @@ class ProgressPageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final latestAttempt = attempt;
-    final score = latestAttempt?.score;
 
     return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
@@ -769,10 +773,10 @@ class ProgressPageCard extends StatelessWidget {
                         : 'Rekaman ${_formatDuration(latestAttempt.durationSeconds)} - ${latestAttempt.date}',
                     style: AppText.caption,
                   ),
-                  if (latestAttempt?.feedback != null) ...[
+                  if (latestAttempt?.note != null) ...[
                     const SizedBox(height: 5),
                     Text(
-                      latestAttempt!.feedback!,
+                      latestAttempt!.note!,
                       style: AppText.caption.copyWith(color: AppColors.text),
                     ),
                   ],
@@ -787,10 +791,6 @@ class ProgressPageCard extends StatelessWidget {
                   label: status.shortLabel,
                   color: status.color,
                 ),
-                if (score != null) ...[
-                  const SizedBox(height: 6),
-                  Text('$score/100', style: AppText.smallStrong),
-                ],
               ],
             ),
           ],
@@ -903,7 +903,6 @@ class LearningAttemptHistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _assessmentColor(attempt.assessmentStatus);
-    final score = attempt.score;
 
     return AppCard(
       margin: const EdgeInsets.only(bottom: 12),
@@ -932,7 +931,7 @@ class LearningAttemptHistoryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  attempt.feedback ?? attempt.note ?? 'Belum ada saran.',
+                  attempt.note ?? 'Menunggu review orang tua.',
                   style: AppText.body,
                 ),
               ],
@@ -946,10 +945,6 @@ class LearningAttemptHistoryCard extends StatelessWidget {
                 label: attempt.assessmentStatus.label,
                 color: color,
               ),
-              if (score != null) ...[
-                const SizedBox(height: 7),
-                Text('$score/100', style: AppText.bodyStrong),
-              ],
             ],
           ),
         ],
@@ -1009,6 +1004,8 @@ class ParentSettingsCard extends StatelessWidget {
     required this.onManagePlan,
     required this.onResetProgress,
     required this.onLogout,
+    required this.onOpenTerms,
+    required this.onOpenPrivacy,
   });
 
   final bool familyPlusActive;
@@ -1016,6 +1013,8 @@ class ParentSettingsCard extends StatelessWidget {
   final VoidCallback onManagePlan;
   final VoidCallback onResetProgress;
   final VoidCallback onLogout;
+  final VoidCallback onOpenTerms;
+  final VoidCallback onOpenPrivacy;
 
   @override
   Widget build(BuildContext context) {
@@ -1041,6 +1040,20 @@ class ParentSettingsCard extends StatelessWidget {
             subtitle: 'Kembalikan progress anak terpilih ke awal.',
             color: AppColors.coral,
             onTap: onResetProgress,
+          ),
+          const Divider(color: AppColors.line),
+          _SettingsAction(
+            icon: Icons.description_outlined,
+            title: 'Syarat & Ketentuan',
+            subtitle: 'Aturan penggunaan IqroKu.',
+            onTap: onOpenTerms,
+          ),
+          const Divider(color: AppColors.line),
+          _SettingsAction(
+            icon: Icons.privacy_tip_outlined,
+            title: 'Kebijakan Privasi',
+            subtitle: 'Cara IqroKu mengelola data akun, anak, dan rekaman.',
+            onTap: onOpenPrivacy,
           ),
           const Divider(color: AppColors.line),
           _SettingsAction(

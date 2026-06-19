@@ -22,6 +22,11 @@ class LearningScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final books = state.iqroBooks;
     final pages = state.selectedIqroPages;
+    final latestAttempt = state.selectedPageLatestAttempt;
+    final displayStatus = _reviewAwareStatus(
+      state.selectedIqroStatus,
+      latestAttempt,
+    );
 
     return AppPage(
       child: ListView(
@@ -68,6 +73,7 @@ class LearningScreen extends StatelessWidget {
           if (state.subscriptionNotice != null) ...[
             SubscriptionAccessBanner(
               message: state.subscriptionNotice!,
+              showUpgradeAction: state.isPremiumAccessNotice,
               onUpgrade: () => showIqrokuPlusSheet(
                 context: context,
                 onConfirm: state.activateFamilyPlus,
@@ -94,6 +100,10 @@ class LearningScreen extends StatelessWidget {
                 page: page,
                 selected: page.pageNumber == state.selectedIqroPage,
                 locked: state.isIqroPageLocked(page.bookId, page.pageNumber),
+                premiumLocked: state.isIqroPagePremiumLocked(
+                  page.bookId,
+                  page.pageNumber,
+                ),
                 onTap: () => state.selectIqroPage(page.pageNumber),
               );
             },
@@ -105,20 +115,20 @@ class LearningScreen extends StatelessWidget {
             bookId: state.selectedIqroBook,
             page: state.selectedIqroPage,
             status: state.selectedIqroStatus,
+            displayStatus: displayStatus,
             completedPages: state.selectedIqroCompletedPages,
             totalPages: state.selectedIqroTotalPages,
             materialPage: state.selectedIqroMaterialPage,
             isVoiceRecording: state.isVoiceRecording,
             voiceRecordingSeconds: state.voiceRecordingSeconds,
             voiceRecordingError: state.voiceRecordingError,
-            latestAttempt: state.selectedPageLatestAttempt,
+            latestAttempt: latestAttempt,
             playingAttemptId: state.playingAttemptId,
             playbackError: state.playbackError,
             onStartVoice: state.startVoicePractice,
             onFinishVoice: state.finishVoicePractice,
             onCancelVoice: state.cancelVoicePractice,
             onTogglePlayback: state.toggleAttemptPlayback,
-            onStatusChanged: state.setIqroStatus,
             onNextPage: state.goToNextIqroPage,
           ),
         ],
@@ -127,18 +137,32 @@ class LearningScreen extends StatelessWidget {
   }
 }
 
+LearningStatus _reviewAwareStatus(
+  LearningStatus status,
+  LearningAttempt? latestAttempt,
+) {
+  final attemptStatus = latestAttempt?.assessmentStatus;
+  return switch (attemptStatus) {
+    ReadingAssessmentStatus.fluent => LearningStatus.fluent,
+    ReadingAssessmentStatus.needsReview => LearningStatus.review,
+    _ => status,
+  };
+}
+
 class PageTile extends StatelessWidget {
   const PageTile({
     super.key,
     required this.page,
     required this.selected,
     required this.locked,
+    required this.premiumLocked,
     required this.onTap,
   });
 
   final IqroPage page;
   final bool selected;
   final bool locked;
+  final bool premiumLocked;
   final VoidCallback onTap;
 
   @override
@@ -179,7 +203,7 @@ class PageTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      locked ? 'Plus' : page.status.shortLabel,
+                      premiumLocked ? 'Plus' : page.status.shortLabel,
                       style: AppText.mini.copyWith(color: color),
                     ),
                   ],
@@ -203,11 +227,13 @@ class SubscriptionAccessBanner extends StatelessWidget {
   const SubscriptionAccessBanner({
     super.key,
     required this.message,
+    required this.showUpgradeAction,
     required this.onUpgrade,
     required this.onClose,
   });
 
   final String message;
+  final bool showUpgradeAction;
   final VoidCallback onUpgrade;
   final VoidCallback onClose;
 
@@ -219,30 +245,37 @@ class SubscriptionAccessBanner extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.lock_open, color: AppColors.gold),
+          Icon(
+            showUpgradeAction ? Icons.lock_open : Icons.info_outline,
+            color: showUpgradeAction ? AppColors.gold : AppColors.primary,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Lanjut dengan IqroKu Plus',
+                Text(
+                  showUpgradeAction
+                      ? 'Lanjut dengan IqroKu Plus'
+                      : 'Ikuti arahan orang tua',
                   style: AppText.bodyStrong,
                 ),
                 const SizedBox(height: 3),
                 Text(message, style: AppText.caption),
-                const SizedBox(height: 8),
-                FilledButton(
-                  onPressed: onUpgrade,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    minimumSize: const Size(double.infinity, 42),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                if (showUpgradeAction) ...[
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    onPressed: onUpgrade,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      minimumSize: const Size(double.infinity, 42),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
+                    child: const Text('Aktifkan Rp49.000/bulan'),
                   ),
-                  child: const Text('Aktifkan Rp49.000/bulan'),
-                ),
+                ],
               ],
             ),
           ),
@@ -285,6 +318,7 @@ class ReadingPracticeCard extends StatelessWidget {
     required this.bookId,
     required this.page,
     required this.status,
+    required this.displayStatus,
     required this.completedPages,
     required this.totalPages,
     required this.materialPage,
@@ -298,13 +332,13 @@ class ReadingPracticeCard extends StatelessWidget {
     required this.onFinishVoice,
     required this.onCancelVoice,
     required this.onTogglePlayback,
-    required this.onStatusChanged,
     required this.onNextPage,
   });
 
   final int bookId;
   final int page;
   final LearningStatus status;
+  final LearningStatus displayStatus;
   final int completedPages;
   final int totalPages;
   final IqroMaterialPage? materialPage;
@@ -318,7 +352,6 @@ class ReadingPracticeCard extends StatelessWidget {
   final Future<void> Function() onFinishVoice;
   final Future<void> Function() onCancelVoice;
   final Future<void> Function(LearningAttempt attempt) onTogglePlayback;
-  final ValueChanged<LearningStatus> onStatusChanged;
   final VoidCallback onNextPage;
 
   @override
@@ -379,69 +412,20 @@ class ReadingPracticeCard extends StatelessWidget {
               Expanded(
                 child: _StatusIndicator(
                   label: 'Perlu Ulang',
-                  active: status == LearningStatus.review,
+                  active: displayStatus == LearningStatus.review,
                   color: AppColors.coral,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _StatusIndicator(
-                  label: 'Belajar Lagi',
-                  active: status == LearningStatus.learning,
-                  color: AppColors.gold,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _StatusIndicator(
                   label: 'Lancar',
-                  active: status == LearningStatus.fluent,
+                  active: displayStatus == LearningStatus.fluent,
                   color: AppColors.primary,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          if (latestAttempt != null) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: status != LearningStatus.fluent
-                        ? () => onStatusChanged(LearningStatus.review)
-                        : null,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Ulangi'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 48),
-                      foregroundColor: AppColors.coral,
-                      side: const BorderSide(color: AppColors.coral),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: status == LearningStatus.fluent && page < totalPages
-                        ? onNextPage
-                        : null,
-                    icon: const Icon(Icons.arrow_forward),
-                    label: const Text('Lanjut'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 48),
-                      backgroundColor: AppColors.primary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
           const SizedBox(height: 12),
           Text(
             '$completedPages / $totalPages halaman lancar',
@@ -772,13 +756,13 @@ class VoicePracticePanel extends StatelessWidget {
                         isRecording ? 'Merekam bacaan...' : 'Baca dengan suara',
                         style: AppText.bodyStrong,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isRecording
-                            ? 'Durasi ${_formatDuration(recordingSeconds)}'
-                            : 'Rekam bacaan, lalu IqroKu bantu beri penilaian awal.',
-                        style: AppText.caption,
-                      ),
+                      if (isRecording) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Durasi ${_formatDuration(recordingSeconds)}',
+                          style: AppText.caption,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -840,11 +824,6 @@ class VoicePracticePanel extends StatelessWidget {
                   ),
                 ),
               ),
-            const SizedBox(height: 8),
-            const Text(
-              'Penilaian Otomatis berdasarkan rekaman suara.',
-              style: AppText.caption,
-            ),
           ],
         ),
       ),
@@ -896,29 +875,17 @@ class _AttemptSummary extends StatelessWidget {
                     style: AppText.caption.copyWith(color: AppColors.text),
                   ),
                 ),
-                _AssessmentBadge(
+                _ReviewBadge(
                   label: attempt.assessmentStatus.label,
                   color: assessmentColor,
                 ),
               ],
             ),
             const SizedBox(height: 10),
-            if (attempt.assessmentStatus == ReadingAssessmentStatus.assessing)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: const LinearProgressIndicator(
-                  minHeight: 5,
-                  color: AppColors.primary,
-                  backgroundColor: AppColors.line,
-                ),
-              )
-            else if (attempt.score != null)
-              _AssessmentResult(attempt: attempt, color: assessmentColor)
-            else
-              Text(
-                attempt.note ?? 'Rekaman masuk antrean penilaian.',
-                style: AppText.caption.copyWith(color: AppColors.text),
-              ),
+            Text(
+              attempt.note ?? 'Rekaman masuk antrean review orang tua.',
+              style: AppText.caption.copyWith(color: AppColors.text),
+            ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: hasAudio
@@ -955,8 +922,8 @@ class _AttemptSummary extends StatelessWidget {
   }
 }
 
-class _AssessmentBadge extends StatelessWidget {
-  const _AssessmentBadge({required this.label, required this.color});
+class _ReviewBadge extends StatelessWidget {
+  const _ReviewBadge({required this.label, required this.color});
 
   final String label;
   final Color color;
@@ -970,81 +937,6 @@ class _AssessmentBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(label, style: AppText.mini.copyWith(color: color)),
-    );
-  }
-}
-
-class _AssessmentResult extends StatelessWidget {
-  const _AssessmentResult({required this.attempt, required this.color});
-
-  final LearningAttempt attempt;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.18)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: color.withValues(alpha: 0.12),
-                  foregroundColor: color,
-                  child: Text('${attempt.score}', style: AppText.smallStrong),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Skor ${attempt.score}/100', style: AppText.bodyStrong),
-                      const SizedBox(height: 3),
-                      Text(
-                        attempt.feedback ?? attempt.note ?? '',
-                        style: AppText.caption.copyWith(color: AppColors.text),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (attempt.note != null && attempt.note!.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: AppColors.paper,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.info_outline, size: 16, color: AppColors.muted),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          attempt.note!,
-                          style: AppText.mini.copyWith(color: AppColors.muted),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }

@@ -9,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:iqroku/app/app_state.dart';
 import 'package:iqroku/app/iqroku_app.dart';
-import 'package:iqroku/data/assessment_service.dart';
 import 'package:iqroku/data/audio_playback_service.dart';
 import 'package:iqroku/data/auth_api_service.dart';
 import 'package:iqroku/data/daily_prayer_api_service.dart';
@@ -28,17 +27,33 @@ class TestFlutterSecureStoragePlatform extends FlutterSecureStoragePlatform {
   final Map<String, String> data;
 
   @override
-  Future<bool> containsKey({required String key, required Map<String, String> options}) async => data.containsKey(key);
+  Future<bool> containsKey({
+    required String key,
+    required Map<String, String> options,
+  }) async => data.containsKey(key);
   @override
-  Future<void> delete({required String key, required Map<String, String> options}) async => data.remove(key);
+  Future<void> delete({
+    required String key,
+    required Map<String, String> options,
+  }) async => data.remove(key);
   @override
-  Future<void> deleteAll({required Map<String, String> options}) async => data.clear();
+  Future<void> deleteAll({required Map<String, String> options}) async =>
+      data.clear();
   @override
-  Future<String?> read({required String key, required Map<String, String> options}) async => data[key];
+  Future<String?> read({
+    required String key,
+    required Map<String, String> options,
+  }) async => data[key];
   @override
-  Future<Map<String, String>> readAll({required Map<String, String> options}) async => data;
+  Future<Map<String, String>> readAll({
+    required Map<String, String> options,
+  }) async => data;
   @override
-  Future<void> write({required String key, required String value, required Map<String, String> options}) async => data[key] = value;
+  Future<void> write({
+    required String key,
+    required String value,
+    required Map<String, String> options,
+  }) async => data[key] = value;
 }
 
 void main() {
@@ -46,7 +61,9 @@ void main() {
 
   setUp(() {
     secureData = {};
-    FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(secureData);
+    FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
+      secureData,
+    );
   });
 
   testWidgets('IqroKu starts from welcome and reaches learning tab', (
@@ -62,7 +79,6 @@ void main() {
 
     await tester.pumpWidget(
       IqrokuApp(
-        assessmentService: const FakeAssessmentService(),
         authService: FakeAuthApiService(),
         dailyPrayerApiService: const FakeDailyPrayerApiService(),
         quranApiService: const FakeQuranApiService(),
@@ -105,6 +121,14 @@ void main() {
     expect(find.text('Tambah Profil Anak'), findsOneWidget);
 
     await tester.enterText(find.widgetWithText(TextField, 'Nama Anak'), 'Nedy');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'PIN Anak (4 digit)'),
+      '1234',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Konfirmasi PIN'),
+      '1234',
+    );
     await tester.pump();
     final saveChildButton = find.widgetWithText(
       FilledButton,
@@ -118,7 +142,25 @@ void main() {
     await tester.tap(saveChildButton);
     await tester.pumpAndSettle();
 
+    expect(find.text('Pilih Mode'), findsOneWidget);
+
+    await tester.tap(find.text('Mode Anak'));
+    await tester.pumpAndSettle();
+
     expect(find.text('Nedy'), findsOneWidget);
+    expect(find.text('Pilih Profil Anak'), findsOneWidget);
+
+    await tester.tap(find.text('Nedy'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Masukkan PIN Nedy'), findsOneWidget);
+
+    for (final digit in ['1', '2', '3', '4']) {
+      await tester.tap(find.text(digit).last);
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
     expect(find.text('Menu Utama'), findsOneWidget);
 
     await tester.tap(find.text('Belajar'));
@@ -132,7 +174,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -154,7 +195,6 @@ void main() {
 
     final restored = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -182,7 +222,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -203,10 +242,9 @@ void main() {
     expect(state.learningAttempts.first.assessmentStatus.name, 'recorded');
 
     await Future<void>.delayed(const Duration(milliseconds: 400));
-    expect(state.learningAttempts.first.score, isNotNull);
-    expect(state.learningAttempts.first.status, LearningStatus.fluent);
-    expect(state.learningNotes.first.title, 'Iqro 1 - Halaman 8');
-    expect(state.learningNotes.first.note, contains('Skor'));
+    expect(state.learningAttempts.first.score, isNull);
+    expect(state.learningAttempts.first.status, LearningStatus.learning);
+    expect(state.learningAttempts.first.note, contains('review orang tua'));
 
     await state.toggleAttemptPlayback(state.learningAttempts.first);
     expect(state.playingAttemptId, state.learningAttempts.first.id);
@@ -218,7 +256,6 @@ void main() {
 
     final restored = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -232,7 +269,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -250,11 +286,10 @@ void main() {
     expect(state.selectedTab, 0);
   });
 
-  test('Free plan locks learning after Iqro 1 page 10', () async {
+  test('Free plan allows Iqro 1 and locks Iqro 2+', () async {
     SharedPreferences.setMockInitialValues({});
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
     );
@@ -263,19 +298,71 @@ void main() {
     expect(state.selectedIqroPage, 10);
 
     state.goToNextIqroPage();
-    expect(state.selectedIqroPage, 10);
-    expect(state.subscriptionNotice, contains('halaman 10'));
+    expect(state.selectedIqroPage, 11);
+    expect(state.subscriptionNotice, isNull);
 
     state.selectIqroBook(2);
-    expect(state.selectedIqroBook, 1);
+    expect(state.selectedIqroBook, 2);
+    expect(state.selectedIqroPage, 1);
+    expect(state.isIqroPageLocked(2, 1), isTrue);
+    expect(state.subscriptionNotice, contains('jilid 2'));
 
     state.activateFamilyPlus();
     expect(state.subscriptionActivatedAt, isNotNull);
     expect(state.subscriptionRenewalLabel, isNot('Belum aktif'));
 
-    state.goToNextIqroPage();
-    expect(state.selectedIqroPage, 11);
+    state.selectIqroBook(2);
+    expect(state.selectedIqroBook, 2);
+    expect(state.isIqroPageLocked(2, 1), isFalse);
   });
+
+  test(
+    'Parent review result updates attempt and page status locally',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final state = IqrokuState(
+        repository: const DummyIqrokuRepository(),
+        voiceRecordingService: FakeVoiceRecordingService(),
+        audioPlaybackService: FakeAudioPlaybackService(),
+      );
+
+      await state.startVoicePractice();
+      await state.finishVoicePractice();
+      final attemptId = state.learningAttempts.first.id;
+
+      state.applyParentReviewResult(
+        attemptId: attemptId,
+        status: LearningStatus.fluent,
+      );
+
+      expect(state.learningAttempts.first.status, LearningStatus.fluent);
+      expect(
+        state.learningAttempts.first.assessmentStatus,
+        ReadingAssessmentStatus.fluent,
+      );
+      expect(state.statusForIqroPage(1, 8), LearningStatus.fluent);
+
+      state.applyParentReviewResult(
+        attemptId: attemptId,
+        status: LearningStatus.review,
+        repeatFromPage: 8,
+      );
+
+      expect(state.learningAttempts.first.status, LearningStatus.review);
+      expect(
+        state.learningAttempts.first.assessmentStatus,
+        ReadingAssessmentStatus.needsReview,
+      );
+      expect(state.statusForIqroPage(1, 8), LearningStatus.review);
+      expect(state.statusForIqroPage(1, 1), LearningStatus.fluent);
+      expect(state.isIqroPageLocked(1, 1), isFalse);
+      expect(state.isIqroPageLocked(1, 7), isFalse);
+      expect(state.isIqroPageLocked(1, 8), isFalse);
+      expect(state.isIqroPagePremiumLocked(1, 1), isFalse);
+      expect(state.isIqroPagePremiumLocked(2, 1), isTrue);
+      expect(state.selectedChild.repeatFromPage, 8);
+    },
+  );
 
   test('Remote progress is restored after login', () async {
     SharedPreferences.setMockInitialValues({});
@@ -313,7 +400,6 @@ void main() {
 
     final state = IqrokuState(
       repository: const DummyIqrokuRepository(),
-      assessmentService: const FakeAssessmentService(),
       authService: authService,
       voiceRecordingService: FakeVoiceRecordingService(),
       audioPlaybackService: FakeAudioPlaybackService(),
@@ -418,6 +504,7 @@ class FakeAuthApiService extends AuthApiService {
     email: 'parent@iqroku.test',
   );
   final children = <ChildProfile>[];
+  final childPins = <String, String>{};
   final progress = <String, List<RemoteIqroProgress>>{};
 
   @override
@@ -465,6 +552,25 @@ class FakeAuthApiService extends AuthApiService {
     children.add(child);
     return child;
   }
+
+  @override
+  Future<void> setChildPin(String childId, String pin) async {
+    childPins[childId] = pin;
+  }
+
+  @override
+  Future<ChildAccount> childLogin(String childId, String pin) async {
+    if (childPins[childId] != pin) {
+      throw const AuthApiException(401, 'invalid_pin');
+    }
+    final child = children.firstWhere((child) => child.id == childId);
+    return ChildAccount(
+      id: child.id,
+      name: child.name,
+      age: child.age,
+      avatarAsset: child.avatarAsset,
+    );
+  }
 }
 
 class FakeDailyPrayerApiService extends DailyPrayerApiService {
@@ -483,20 +589,6 @@ class FakeDailyPrayerApiService extends DailyPrayerApiService {
         sortOrder: 10,
       ),
     ];
-  }
-}
-
-class FakeAssessmentService implements AssessmentService {
-  const FakeAssessmentService();
-
-  @override
-  Future<AssessmentResult> assess(AssessmentRequest request) async {
-    return const AssessmentResult(
-      score: 88,
-      status: LearningStatus.fluent,
-      feedback: 'Bacaan sudah lancar untuk latihan.',
-      note: 'Hasil penilaian: lancar.',
-    );
   }
 }
 
@@ -533,18 +625,21 @@ class FakeAudioPlaybackService implements AudioPlaybackService {
   final StreamController<void> _completeController =
       StreamController<void>.broadcast();
   String? playingPath;
+  Map<String, String>? playingHeaders;
 
   @override
   Stream<void> get onComplete => _completeController.stream;
 
   @override
-  Future<void> play(String path) async {
+  Future<void> play(String path, {Map<String, String>? headers}) async {
     playingPath = path;
+    playingHeaders = headers;
   }
 
   @override
   Future<void> stop() async {
     playingPath = null;
+    playingHeaders = null;
   }
 
   @override

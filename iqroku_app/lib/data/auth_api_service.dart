@@ -40,6 +40,39 @@ class AuthApiService {
     return AuthResult.fromJson(json);
   }
 
+  Future<ParentAccount> verifyEmail(String token) async {
+    final json = await _post('/auth/verify-email', {
+      'token': token,
+    }, authenticated: false);
+    return ParentAccount.fromJson(json['parent'] as Map<String, Object?>);
+  }
+
+  Future<AuthFlowInfo?> resendVerification(String email) async {
+    final json = await _post('/auth/resend-verification', {
+      'email': email,
+    }, authenticated: false);
+    final flow = json['emailVerification'];
+    return flow is Map<String, Object?> ? AuthFlowInfo.fromJson(flow) : null;
+  }
+
+  Future<AuthFlowInfo?> requestPasswordReset(String email) async {
+    final json = await _post('/auth/password-reset/request', {
+      'email': email,
+    }, authenticated: false);
+    final flow = json['passwordReset'];
+    return flow is Map<String, Object?> ? AuthFlowInfo.fromJson(flow) : null;
+  }
+
+  Future<void> confirmPasswordReset({
+    required String token,
+    required String password,
+  }) async {
+    await _post('/auth/password-reset/confirm', {
+      'token': token,
+      'password': password,
+    }, authenticated: false);
+  }
+
   Future<AuthResult> login({
     required String email,
     required String password,
@@ -67,10 +100,9 @@ class AuthApiService {
   }
 
   Future<List<ChildProfile>> loadChildren(String parentId) async {
-    final response = await http.get(
-      _uri('/children', {'parentId': parentId}),
-      headers: _authHeaders(),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(_uri('/children', {'parentId': parentId}), headers: _authHeaders())
+        .timeout(const Duration(seconds: 15));
     final json = _decodeResponse(response);
     return (json as List<Object?>)
         .cast<Map<String, Object?>>()
@@ -79,10 +111,9 @@ class AuthApiService {
   }
 
   Future<List<RemoteIqroProgress>> loadProgress(String childId) async {
-    final response = await http.get(
-      _uri('/progress', {'childId': childId}),
-      headers: _authHeaders(),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(_uri('/progress', {'childId': childId}), headers: _authHeaders())
+        .timeout(const Duration(seconds: 15));
     final json = _decodeResponse(response);
     return (json as List<Object?>)
         .cast<Map<String, Object?>>()
@@ -141,26 +172,6 @@ class AuthApiService {
     return RemoteAttempt.fromJson(json);
   }
 
-  Future<void> assessAttempt({
-    required String attemptId,
-    required List<List<String>> targetLines,
-  }) async {
-    await _post('/assessments/mock', {
-      'attemptId': attemptId,
-      'targetLines': targetLines,
-    });
-  }
-
-  Future<Map<String, Object?>> assessAttemptWithAI({
-    required String attemptId,
-    required List<List<String>> targetLines,
-  }) async {
-    return await _post('/assessments/ai', {
-      'attemptId': attemptId,
-      'targetLines': targetLines,
-    });
-  }
-
   Future<void> uploadAudio({
     required String attemptId,
     required String audioPath,
@@ -177,12 +188,19 @@ class AuthApiService {
     // Add audio file
     request.files.add(await http.MultipartFile.fromPath('audio', audioPath));
 
-    final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
+    final streamedResponse = await request.send().timeout(
+      const Duration(seconds: 30),
+    );
     final response = await http.Response.fromStream(streamedResponse);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final error = response.body.isEmpty ? 'upload_failed' : jsonDecode(response.body)['error'] ?? 'upload_failed';
-      throw AuthApiException(response.statusCode, error is String ? error : 'upload_failed');
+      final error = response.body.isEmpty
+          ? 'upload_failed'
+          : jsonDecode(response.body)['error'] ?? 'upload_failed';
+      throw AuthApiException(
+        response.statusCode,
+        error is String ? error : 'upload_failed',
+      );
     }
   }
 
@@ -256,10 +274,8 @@ class AuthApiService {
     String userType = 'parent',
     String? childId,
   }) async {
-    final queryParams = <String, String>{
-      'type': userType,
-      if (childId != null) 'childId': childId,
-    };
+    final queryParams = <String, String>{'type': userType};
+    if (childId != null) queryParams['childId'] = childId;
     final result = await _get('/notifications', queryParams);
     return (result as List<Object?>).cast<Map<String, Object?>>();
   }
@@ -268,10 +284,8 @@ class AuthApiService {
     String userType = 'parent',
     String? childId,
   }) async {
-    final queryParams = <String, String>{
-      'type': userType,
-      if (childId != null) 'childId': childId,
-    };
+    final queryParams = <String, String>{'type': userType};
+    if (childId != null) queryParams['childId'] = childId;
     final result = await _get('/notifications/unread-count', queryParams);
     final map = result as Map<String, Object?>? ?? {};
     return map['count'] as int? ?? 0;
@@ -285,10 +299,28 @@ class AuthApiService {
     String userType = 'parent',
     String? childId,
   }) async {
-    await _post('/notifications/read-all', {
-      'type': userType,
-      if (childId != null) 'childId': childId,
-    });
+    final body = <String, String>{'type': userType};
+    if (childId != null) body['childId'] = childId;
+    await _post('/notifications/read-all', body);
+  }
+
+  String backendUrl(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    final root = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    return '$root$normalizedPath';
+  }
+
+  Map<String, String> audioPlaybackHeaders() {
+    final token = authToken;
+    if (token == null || token.isEmpty) {
+      return const {};
+    }
+    return {'authorization': 'Bearer $token'};
   }
 
   Map<String, String> _authHeaders() {
@@ -307,11 +339,15 @@ class AuthApiService {
     Map<String, Object?> body, {
     bool authenticated = true,
   }) async {
-    final response = await http.post(
-      _uri(path),
-      headers: authenticated ? _authHeaders() : const {'content-type': 'application/json; charset=utf-8'},
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .post(
+          _uri(path),
+          headers: authenticated
+              ? _authHeaders()
+              : const {'content-type': 'application/json; charset=utf-8'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 15));
     return _decodeResponse(response) as Map<String, Object?>;
   }
 
@@ -319,19 +355,16 @@ class AuthApiService {
     String path,
     Map<String, Object?> body,
   ) async {
-    final response = await http.put(
-      _uri(path),
-      headers: _authHeaders(),
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .put(_uri(path), headers: _authHeaders(), body: jsonEncode(body))
+        .timeout(const Duration(seconds: 15));
     return _decodeResponse(response) as Map<String, Object?>;
   }
 
   Future<Object?> _get(String path, [Map<String, String>? query]) async {
-    final response = await http.get(
-      _uri(path, query),
-      headers: _authHeaders(),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(_uri(path, query), headers: _authHeaders())
+        .timeout(const Duration(seconds: 15));
     return _decodeResponse(response);
   }
 
@@ -363,6 +396,8 @@ class AuthApiService {
       progress: 0,
       avatarAsset:
           json['avatarAsset'] as String? ?? 'assets/brand/male-avatar.png',
+      repeatFromPage: (json['repeatFromPage'] as num?)?.toInt() ?? 1,
+      repeatFromBook: (json['repeatFromBook'] as num?)?.toInt() ?? 1,
     );
   }
 }
@@ -411,10 +446,15 @@ class RemoteIqroProgress {
 }
 
 class AuthResult {
-  const AuthResult({required this.parent, required this.sessionToken});
+  const AuthResult({
+    required this.parent,
+    required this.sessionToken,
+    this.emailVerification,
+  });
 
   final ParentAccount parent;
   final String sessionToken;
+  final AuthFlowInfo? emailVerification;
 
   static AuthResult fromJson(Map<String, Object?> json) {
     final parentJson = json['parent'] as Map<String, Object?>;
@@ -422,6 +462,31 @@ class AuthResult {
     return AuthResult(
       parent: ParentAccount.fromJson(parentJson),
       sessionToken: sessionJson['token'] as String? ?? '',
+      emailVerification: json['emailVerification'] is Map<String, Object?>
+          ? AuthFlowInfo.fromJson(
+              json['emailVerification'] as Map<String, Object?>,
+            )
+          : null,
+    );
+  }
+}
+
+class AuthFlowInfo {
+  const AuthFlowInfo({
+    this.required = false,
+    this.expiresAt,
+    this.devToken,
+  });
+
+  final bool required;
+  final String? expiresAt;
+  final String? devToken;
+
+  static AuthFlowInfo fromJson(Map<String, Object?> json) {
+    return AuthFlowInfo(
+      required: json['required'] as bool? ?? false,
+      expiresAt: json['expiresAt'] as String?,
+      devToken: json['devToken'] as String?,
     );
   }
 }
@@ -431,14 +496,21 @@ class ParentAccount {
     required this.id,
     required this.name,
     required this.email,
+    this.emailVerified = false,
   });
 
   final String id;
   final String name;
   final String email;
+  final bool emailVerified;
 
   Map<String, Object?> toJson() {
-    return {'id': id, 'name': name, 'email': email};
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'emailVerified': emailVerified,
+    };
   }
 
   static ParentAccount fromJson(Map<String, Object?> json) {
@@ -446,6 +518,7 @@ class ParentAccount {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? 'Orang Tua',
       email: json['email'] as String? ?? '',
+      emailVerified: json['emailVerified'] as bool? ?? false,
     );
   }
 }
@@ -485,10 +558,12 @@ class ChildAccount {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? 'Anak',
       age: (json['age'] as num?)?.toInt() ?? 7,
-      avatarAsset: json['avatarAsset'] as String? ?? 'assets/brand/male-avatar.png',
+      avatarAsset:
+          json['avatarAsset'] as String? ?? 'assets/brand/male-avatar.png',
       studyStartTime: json['studyStartTime'] as String?,
       studyEndTime: json['studyEndTime'] as String?,
-      studyDays: (json['studyDays'] as List<Object?>?)?.cast<int>() ?? [1, 2, 3, 4, 5],
+      studyDays:
+          (json['studyDays'] as List<Object?>?)?.cast<int>() ?? [1, 2, 3, 4, 5],
       repeatFromPage: (json['repeatFromPage'] as num?)?.toInt() ?? 1,
       repeatFromBook: (json['repeatFromBook'] as num?)?.toInt() ?? 1,
     );

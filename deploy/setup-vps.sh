@@ -74,6 +74,11 @@ fi
 echo "  Running database schema..."
 sudo -u postgres psql -d ${DB_NAME} -f /opt/iqroku/deploy/schema.sql
 
+# Install backend dependencies
+echo "  Installing backend dependencies..."
+cd /opt/iqroku/backend && npm install --omit=dev
+cd /opt/iqroku
+
 # Create .env
 ADMIN_TOKEN=$(openssl rand -hex 32)
 SESSION_SECRET=$(openssl rand -hex 32)

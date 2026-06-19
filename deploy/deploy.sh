@@ -34,22 +34,9 @@ echo "[4/5] Installing dependencies..."
 cd backend && npm ci --omit=dev 2>/dev/null || npm install --omit=dev
 cd ..
 
-# Run migrations (if any new .sql files)
+# Run migrations
 echo "[5/5] Running migrations..."
-if [ -f "deploy/schema.sql" ]; then
-    # Safe to re-run (uses IF NOT EXISTS and ON CONFLICT DO NOTHING)
-    if [ -f "backend/.env" ]; then
-        DATABASE_URL=$(grep -oP '^DATABASE_URL=\K.*' backend/.env 2>/dev/null || echo "")
-        if [ -n "$DATABASE_URL" ]; then
-            psql "$DATABASE_URL" -f deploy/schema.sql 2>/dev/null || \
-                echo "  Schema already up to date"
-        else
-            echo "  DATABASE_URL not found in .env, skipping migrations"
-        fi
-    else
-        echo "  No .env file found, skipping migrations"
-    fi
-fi
+npm run migrate --prefix backend
 
 # Restart app
 echo "Restarting app..."

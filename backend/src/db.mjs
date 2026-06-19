@@ -53,6 +53,28 @@ async function queryAll(text, params = []) {
   return result.rows;
 }
 
+async function withTransaction(work) {
+  const client = await pool.connect();
+  const tx = {
+    query: (text, params = []) => client.query(text, params),
+    queryOne: async (text, params = []) => {
+      const result = await client.query(text, params);
+      return result.rows[0] ?? null;
+    },
+  };
+  try {
+    await client.query('BEGIN');
+    const result = await work(tx);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // =============================================================================
 // PARENTS
 // =============================================================================
@@ -69,10 +91,18 @@ export async function findParentById(id) {
 
 export async function createParent({ id, email, name, passwordHash, googleId }) {
   const row = await queryOne(
-    `INSERT INTO parents (id, email, name, password_hash, google_id)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO parents (id, email, name, password_hash, google_id, email_verified, email_verified_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [id, email, name, passwordHash ?? null, googleId ?? null],
+    [
+      id,
+      email,
+      name,
+      passwordHash ?? null,
+      googleId ?? null,
+      Boolean(googleId),
+      googleId ? new Date().toISOString() : null,
+    ],
   );
   return rowToParent(row);
 }
@@ -104,6 +134,31 @@ export async function updateParent(id, updates) {
   return row ? rowToParent(row) : null;
 }
 
+export async function markParentEmailVerified(parentId) {
+  const row = await queryOne(
+    `UPDATE parents
+     SET email_verified = TRUE,
+         email_verified_at = COALESCE(email_verified_at, NOW()),
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [parentId],
+  );
+  return row ? rowToParent(row) : null;
+}
+
+export async function updateParentPassword(parentId, passwordHash) {
+  const row = await queryOne(
+    `UPDATE parents
+     SET password_hash = $1,
+         updated_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [passwordHash, parentId],
+  );
+  return row ? rowToParent(row) : null;
+}
+
 export async function getAllParents() {
   const rows = await queryAll('SELECT * FROM parents ORDER BY created_at DESC');
   return rows.map(rowToParent);
@@ -117,6 +172,65 @@ function rowToParent(row) {
     passwordHash: row.password_hash ?? undefined,
     googleId: row.google_id ?? undefined,
     pinHash: row.pin_hash ?? undefined,
+    emailVerified: row.email_verified === true,
+    emailVerifiedAt: row.email_verified_at?.toISOString(),
+    updatedAt: row.updated_at?.toISOString(),
+    createdAt: row.created_at?.toISOString(),
+  };
+}
+
+// =============================================================================
+// AUTH TOKENS
+// =============================================================================
+
+export async function createAuthToken({ parentId, purpose, tokenHash, expiresAt, metadata }) {
+  const row = await queryOne(
+    `INSERT INTO auth_tokens (parent_id, purpose, token_hash, expires_at, metadata)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [parentId, purpose, tokenHash, expiresAt, metadata ? JSON.stringify(metadata) : null],
+  );
+  return rowToAuthToken(row);
+}
+
+export async function findValidAuthToken({ purpose, tokenHash }) {
+  const row = await queryOne(
+    `SELECT * FROM auth_tokens
+     WHERE purpose = $1
+       AND token_hash = $2
+       AND used_at IS NULL
+       AND expires_at > NOW()`,
+    [purpose, tokenHash],
+  );
+  return row ? rowToAuthToken(row) : null;
+}
+
+export async function markAuthTokenUsed(id) {
+  await query('UPDATE auth_tokens SET used_at = NOW() WHERE id = $1', [id]);
+}
+
+export async function revokeAuthTokens(parentId, purpose) {
+  await query(
+    `UPDATE auth_tokens
+     SET used_at = NOW()
+     WHERE parent_id = $1 AND purpose = $2 AND used_at IS NULL`,
+    [parentId, purpose],
+  );
+}
+
+export async function cleanupExpiredAuthTokens() {
+  await query('DELETE FROM auth_tokens WHERE expires_at < NOW() - INTERVAL \'7 days\'');
+}
+
+function rowToAuthToken(row) {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    purpose: row.purpose,
+    tokenHash: row.token_hash,
+    expiresAt: row.expires_at?.toISOString(),
+    usedAt: row.used_at?.toISOString(),
+    metadata: row.metadata,
     createdAt: row.created_at?.toISOString(),
   };
 }
@@ -261,6 +375,14 @@ export async function findAttemptById(attemptId) {
   return row ? rowToAttempt(row) : null;
 }
 
+export async function findAttemptByAudioFileName(fileName) {
+  const row = await queryOne(
+    'SELECT * FROM attempts WHERE audio_file_name = $1',
+    [fileName],
+  );
+  return row ? rowToAttempt(row) : null;
+}
+
 export async function createAttempt({ id, childId, bookId, pageNumber, durationSeconds, audioPath }) {
   const row = await queryOne(
     `INSERT INTO attempts (id, child_id, book_id, page_number, duration_seconds, audio_path)
@@ -337,6 +459,9 @@ function rowToAttempt(row) {
     audioSizeBytes: row.audio_size_bytes,
     audioUploadedAt: row.audio_uploaded_at?.toISOString(),
     assessmentStatus: row.assessment_status,
+    reviewStatus: row.review_status,
+    reviewedAt: row.reviewed_at?.toISOString(),
+    reviewedBy: row.reviewed_by ?? undefined,
     score: row.score,
     status: row.status,
     feedback: row.feedback,
@@ -598,7 +723,11 @@ export async function updateChildSchedule(childId, startTime, endTime, days) {
 // =============================================================================
 
 export async function updateProgressReview(childId, bookId, pageNumber, reviewStatus, reviewedBy) {
-  const row = await queryOne(
+  return updateProgressReviewWith({ queryOne }, childId, bookId, pageNumber, reviewStatus, reviewedBy);
+}
+
+async function updateProgressReviewWith(dbClient, childId, bookId, pageNumber, reviewStatus, reviewedBy) {
+  const row = await dbClient.queryOne(
     `UPDATE progress SET review_status = $1, reviewed_at = NOW(), reviewed_by = $2
      WHERE child_id = $3 AND book_id = $4 AND page_number = $5 RETURNING *`,
     [reviewStatus, reviewedBy, childId, bookId, pageNumber],
@@ -607,20 +736,133 @@ export async function updateProgressReview(childId, bookId, pageNumber, reviewSt
 }
 
 export async function updateAttemptReview(attemptId, reviewStatus, reviewedBy) {
-  const row = await queryOne(
-    `UPDATE attempts SET review_status = $1, reviewed_at = NOW()
-     WHERE id = $2 RETURNING *`,
-    [reviewStatus, attemptId],
+  return updateAttemptReviewWith({ queryOne }, attemptId, reviewStatus, reviewedBy);
+}
+
+async function updateAttemptReviewWith(dbClient, attemptId, reviewStatus, reviewedBy) {
+  const assessmentStatus = reviewStatus === 'approved'
+    ? 'fluent'
+    : reviewStatus === 'needs_repeat'
+      ? 'needsReview'
+      : 'recorded';
+  const status = reviewStatus === 'approved'
+    ? 'fluent'
+    : reviewStatus === 'needs_repeat'
+      ? 'review'
+      : 'learning';
+  const row = await dbClient.queryOne(
+    `UPDATE attempts
+     SET review_status = $1,
+         reviewed_at = NOW(),
+         reviewed_by = $5,
+         assessment_status = $2,
+         status = $3
+     WHERE id = $4 RETURNING *`,
+    [reviewStatus, assessmentStatus, status, attemptId, reviewedBy],
   );
   return row;
 }
 
 export async function setRepeatFromPage(childId, bookId, pageNumber) {
-  const row = await queryOne(
+  return setRepeatFromPageWith({ queryOne }, childId, bookId, pageNumber);
+}
+
+async function setRepeatFromPageWith(dbClient, childId, bookId, pageNumber) {
+  const row = await dbClient.queryOne(
     'UPDATE children SET repeat_from_page = $1, repeat_from_book = $2 WHERE id = $3 RETURNING *',
     [pageNumber, bookId, childId],
   );
   return row ? rowToChild(row) : null;
+}
+
+async function upsertProgressWith(dbClient, { childId, bookId, pageNumber, status }) {
+  const row = await dbClient.queryOne(
+    `INSERT INTO progress (child_id, book_id, page_number, status, updated_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (child_id, book_id, page_number)
+     DO UPDATE SET status = $4, updated_at = NOW()
+     RETURNING *`,
+    [childId, bookId, pageNumber, status],
+  );
+  return rowToProgress(row);
+}
+
+async function createNotificationWith(dbClient, { userId, userType, type, title, message, data }) {
+  const row = await dbClient.queryOne(
+    `INSERT INTO notifications (id, user_id, user_type, type, title, message, data)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [userId, userType, type, title, message, data ? JSON.stringify(data) : null],
+  );
+  return row;
+}
+
+export async function approveReview({ attempt, reviewedBy }) {
+  return withTransaction(async (tx) => {
+    await updateAttemptReviewWith(tx, attempt.id, 'approved', reviewedBy);
+    await upsertProgressWith(tx, {
+      childId: attempt.childId,
+      bookId: attempt.bookId,
+      pageNumber: attempt.pageNumber,
+      status: 'fluent',
+    });
+    await updateProgressReviewWith(
+      tx,
+      attempt.childId,
+      attempt.bookId,
+      attempt.pageNumber,
+      'approved',
+      reviewedBy,
+    );
+    await createNotificationWith(tx, {
+      userId: attempt.childId,
+      userType: 'child',
+      type: 'review_result',
+      title: 'Bacaan Direview',
+      message: `Bacaan halaman ${attempt.pageNumber} sudah direview. Kamu bisa lanjut!`,
+      data: {
+        attemptId: attempt.id,
+        bookId: attempt.bookId,
+        pageNumber: attempt.pageNumber,
+        result: 'approved',
+      },
+    });
+  });
+}
+
+export async function repeatReview({ attempt, reviewedBy, fromPage }) {
+  return withTransaction(async (tx) => {
+    await updateAttemptReviewWith(tx, attempt.id, 'needs_repeat', reviewedBy);
+    await upsertProgressWith(tx, {
+      childId: attempt.childId,
+      bookId: attempt.bookId,
+      pageNumber: fromPage,
+      status: 'review',
+    });
+    await setRepeatFromPageWith(tx, attempt.childId, attempt.bookId, fromPage);
+    await updateProgressReviewWith(
+      tx,
+      attempt.childId,
+      attempt.bookId,
+      fromPage,
+      'needs_repeat',
+      reviewedBy,
+    );
+    await createNotificationWith(tx, {
+      userId: attempt.childId,
+      userType: 'child',
+      type: 'review_result',
+      title: 'Perlu Mengulang',
+      message: `Bacaan perlu diulang dari halaman ${fromPage}. Semangat!`,
+      data: {
+        attemptId: attempt.id,
+        bookId: attempt.bookId,
+        pageNumber: attempt.pageNumber,
+        fromPage,
+        result: 'needs_repeat',
+      },
+    });
+  });
 }
 
 export async function getPendingReviews(parentId) {
@@ -668,6 +910,10 @@ export async function getUnreadNotifications(userId, userType) {
     [userId, userType],
   );
   return rows;
+}
+
+export async function findNotificationById(notificationId) {
+  return queryOne('SELECT * FROM notifications WHERE id = $1', [notificationId]);
 }
 
 export async function markNotificationRead(notificationId) {

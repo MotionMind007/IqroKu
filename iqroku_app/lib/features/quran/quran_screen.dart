@@ -5,30 +5,33 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/assets/app_assets.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/ad_banner.dart';
 import '../../core/widgets/app_chrome.dart';
 import '../../core/widgets/asset_icon.dart';
 import '../../models/quran_models.dart';
 
 class QuranScreen extends StatelessWidget {
-  const QuranScreen({super.key, required this.state});
+  const QuranScreen({super.key, required this.state, this.onBack});
 
   final IqrokuState state;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
     return switch (state.quranView) {
       QuranView.reader => QuranReaderScreen(state: state),
       QuranView.memorization => QuranMemorizationScreen(state: state),
-      QuranView.murottal => MurottalScreen(state: state),
-      QuranView.list => QuranSurahListScreen(state: state),
+      QuranView.murottal => MurottalScreen(state: state, onBack: onBack),
+      QuranView.list => QuranSurahListScreen(state: state, onBack: onBack),
     };
   }
 }
 
 class QuranSurahListScreen extends StatelessWidget {
-  const QuranSurahListScreen({super.key, required this.state});
+  const QuranSurahListScreen({super.key, required this.state, this.onBack});
 
   final IqrokuState state;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +44,7 @@ class QuranSurahListScreen extends StatelessWidget {
           AppTopBar(
             title: "Al-Qur'an",
             trailing: Icons.search,
-            onBack: state.goHome,
+            onBack: onBack ?? state.goHome,
           ),
           if (state.quranLoading) ...[
             const SizedBox(height: 12),
@@ -72,7 +75,7 @@ class QuranSurahListScreen extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _QuranModeCard(
-                  asset: AppAssets.bookmark,
+                  asset: AppAssets.hafalan,
                   title: 'Hafalan',
                   subtitle: 'Rekam suara',
                   selected: state.memorizationMode,
@@ -108,9 +111,10 @@ class QuranSurahListScreen extends StatelessWidget {
 }
 
 class MurottalScreen extends StatelessWidget {
-  const MurottalScreen({super.key, required this.state});
+  const MurottalScreen({super.key, required this.state, this.onBack});
 
   final IqrokuState state;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -123,8 +127,12 @@ class MurottalScreen extends StatelessWidget {
           AppTopBar(
             title: 'Murottal',
             trailing: Icons.volume_up_outlined,
-            onBack: state.goHome,
+            onBack: onBack ?? state.goHome,
           ),
+          if (state.shouldShowAds) ...[
+            const SizedBox(height: 12),
+            const IqrokuAdBanner(),
+          ],
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(18),

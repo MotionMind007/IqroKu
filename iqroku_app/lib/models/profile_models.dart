@@ -8,6 +8,8 @@ class ChildProfile {
     required this.currentLesson,
     required this.progress,
     required this.avatarAsset,
+    this.repeatFromPage = 1,
+    this.repeatFromBook = 1,
   });
 
   final String id;
@@ -16,6 +18,8 @@ class ChildProfile {
   final String currentLesson;
   final double progress;
   final String avatarAsset;
+  final int repeatFromPage;
+  final int repeatFromBook;
 
   ChildProfile copyWith({
     String? id,
@@ -24,6 +28,8 @@ class ChildProfile {
     String? currentLesson,
     double? progress,
     String? avatarAsset,
+    int? repeatFromPage,
+    int? repeatFromBook,
   }) {
     return ChildProfile(
       id: id ?? this.id,
@@ -32,6 +38,8 @@ class ChildProfile {
       currentLesson: currentLesson ?? this.currentLesson,
       progress: progress ?? this.progress,
       avatarAsset: avatarAsset ?? this.avatarAsset,
+      repeatFromPage: repeatFromPage ?? this.repeatFromPage,
+      repeatFromBook: repeatFromBook ?? this.repeatFromBook,
     );
   }
 
@@ -43,6 +51,8 @@ class ChildProfile {
       'currentLesson': currentLesson,
       'progress': progress,
       'avatarAsset': avatarAsset,
+      'repeatFromPage': repeatFromPage,
+      'repeatFromBook': repeatFromBook,
     };
   }
 
@@ -53,7 +63,10 @@ class ChildProfile {
       age: (json['age'] as num?)?.toInt() ?? 7,
       currentLesson: json['currentLesson'] as String? ?? 'Iqro 1 - Halaman 1',
       progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
-      avatarAsset: json['avatarAsset'] as String? ?? 'assets/brand/male-avatar.png',
+      avatarAsset:
+          json['avatarAsset'] as String? ?? 'assets/brand/male-avatar.png',
+      repeatFromPage: (json['repeatFromPage'] as num?)?.toInt() ?? 1,
+      repeatFromBook: (json['repeatFromBook'] as num?)?.toInt() ?? 1,
     );
   }
 }
@@ -222,9 +235,9 @@ class LearningAttempt {
 }
 
 enum ReadingAssessmentStatus {
-  recorded('Menunggu Penilaian'),
-  assessing('Menilai Bacaan'),
-  fluent('Lancar'),
+  recorded('Menunggu Review'),
+  assessing('Menunggu Review'),
+  fluent('Disetujui'),
   needsReview('Perlu Ulang');
 
   const ReadingAssessmentStatus(this.label);

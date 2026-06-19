@@ -3,6 +3,8 @@
 
 BEGIN;
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Parents (users)
 CREATE TABLE IF NOT EXISTS parents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -11,11 +13,20 @@ CREATE TABLE IF NOT EXISTS parents (
   password_hash TEXT,
   google_id VARCHAR(100),
   pin_hash TEXT, -- 4-digit PIN for parent mode
+  email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  email_verified_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_parents_email ON parents(email);
 CREATE INDEX idx_parents_google_id ON parents(google_id);
+
+-- Idempotent migration bookkeeping
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  name TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- Sessions
 CREATE TABLE IF NOT EXISTS sessions (
@@ -45,6 +56,7 @@ CREATE TABLE IF NOT EXISTS children (
 );
 
 CREATE INDEX idx_children_parent ON children(parent_id);
+CREATE INDEX idx_children_parent_created ON children(parent_id, created_at);
 
 -- Learning progress per page
 CREATE TABLE IF NOT EXISTS progress (
@@ -52,15 +64,19 @@ CREATE TABLE IF NOT EXISTS progress (
   child_id UUID NOT NULL REFERENCES children(id) ON DELETE CASCADE,
   book_id SMALLINT NOT NULL CHECK (book_id BETWEEN 1 AND 99),
   page_number SMALLINT NOT NULL CHECK (page_number BETWEEN 1 AND 999),
-  status VARCHAR(20) NOT NULL DEFAULT 'notStarted',
-  review_status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'approved', 'needs_repeat'
+  status VARCHAR(20) NOT NULL DEFAULT 'notStarted'
+    CHECK (status IN ('notStarted', 'learning', 'fluent', 'review')),
+  review_status VARCHAR(20) DEFAULT 'pending'
+    CHECK (review_status IN ('pending', 'approved', 'needs_repeat')),
   reviewed_at TIMESTAMPTZ,
-  reviewed_by UUID,
+  reviewed_by UUID REFERENCES parents(id) ON DELETE SET NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (child_id, book_id, page_number)
 );
 
 CREATE INDEX idx_progress_child ON progress(child_id);
+CREATE INDEX idx_progress_child_book_page ON progress(child_id, book_id, page_number);
+CREATE INDEX idx_progress_child_updated ON progress(child_id, updated_at DESC);
 CREATE INDEX idx_progress_review ON progress(review_status);
 
 -- Reading attempts (voice recordings)
@@ -76,11 +92,15 @@ CREATE TABLE IF NOT EXISTS attempts (
   audio_content_type VARCHAR(100),
   audio_size_bytes INTEGER,
   audio_uploaded_at TIMESTAMPTZ,
-  assessment_status VARCHAR(30) NOT NULL DEFAULT 'recorded',
-  review_status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'approved', 'needs_repeat'
+  assessment_status VARCHAR(30) NOT NULL DEFAULT 'recorded'
+    CHECK (assessment_status IN ('recorded', 'assessing', 'fluent', 'needsReview')),
+  review_status VARCHAR(20) DEFAULT 'pending'
+    CHECK (review_status IN ('pending', 'approved', 'needs_repeat')),
   reviewed_at TIMESTAMPTZ,
+  reviewed_by UUID REFERENCES parents(id) ON DELETE SET NULL,
   score SMALLINT,
-  status VARCHAR(20),
+  status VARCHAR(20)
+    CHECK (status IS NULL OR status IN ('notStarted', 'learning', 'fluent', 'review')),
   feedback TEXT,
   note TEXT,
   assessed_at TIMESTAMPTZ,
@@ -88,8 +108,28 @@ CREATE TABLE IF NOT EXISTS attempts (
 );
 
 CREATE INDEX idx_attempts_child ON attempts(child_id);
+CREATE INDEX idx_attempts_child_created ON attempts(child_id, created_at DESC);
 CREATE INDEX idx_attempts_created ON attempts(created_at DESC);
 CREATE INDEX idx_attempts_review ON attempts(review_status);
+CREATE INDEX idx_attempts_pending_review ON attempts(child_id, created_at DESC)
+  WHERE review_status = 'pending';
+
+-- One-time auth flow tokens. Raw tokens are never stored, only SHA-256 hashes.
+CREATE TABLE IF NOT EXISTS auth_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_id UUID NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
+  purpose VARCHAR(40) NOT NULL
+    CHECK (purpose IN ('email_verification', 'password_reset')),
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  metadata JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_auth_tokens_parent_purpose ON auth_tokens(parent_id, purpose, created_at DESC);
+CREATE INDEX idx_auth_tokens_lookup ON auth_tokens(purpose, token_hash)
+  WHERE used_at IS NULL;
 
 -- Subscriptions
 CREATE TABLE IF NOT EXISTS subscriptions (
@@ -109,7 +149,7 @@ CREATE INDEX idx_subscriptions_parent ON subscriptions(parent_id);
 CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL, -- parent_id or child_id
-  user_type VARCHAR(10) NOT NULL, -- 'parent' or 'child'
+  user_type VARCHAR(10) NOT NULL CHECK (user_type IN ('parent', 'child')),
   type VARCHAR(50) NOT NULL, -- 'new_recording', 'no_practice', 'review_result'
   title VARCHAR(200) NOT NULL,
   message TEXT NOT NULL,
@@ -120,6 +160,8 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE INDEX idx_notifications_user ON notifications(user_id, user_type);
 CREATE INDEX idx_notifications_unread ON notifications(user_id, user_type, read);
+CREATE INDEX idx_notifications_unread_partial ON notifications(user_id, user_type, created_at DESC)
+  WHERE read = FALSE;
 
 -- Daily prayers content
 CREATE TABLE IF NOT EXISTS daily_prayers (
@@ -136,6 +178,8 @@ CREATE TABLE IF NOT EXISTS daily_prayers (
 );
 
 CREATE INDEX idx_prayers_active ON daily_prayers(active, sort_order);
+CREATE INDEX idx_daily_prayers_active_sort ON daily_prayers(sort_order, title)
+  WHERE active = TRUE;
 
 -- Seed default prayers
 INSERT INTO daily_prayers (id, title, category, arabic, latin, meaning, sort_order) VALUES

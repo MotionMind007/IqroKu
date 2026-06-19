@@ -7,27 +7,33 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/assets/app_assets.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/ad_banner.dart';
 import '../../core/widgets/app_chrome.dart';
 import '../../models/prayer_models.dart';
 
 class ActivityScreen extends StatelessWidget {
-  const ActivityScreen({super.key, required this.state});
+  const ActivityScreen({super.key, required this.state, this.onBack});
 
   final IqrokuState state;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
     return switch (state.activityView) {
-      ActivityView.schedule => PrayerScheduleScreen(state: state),
-      ActivityView.qibla => QiblaCompassScreen(state: state),
+      ActivityView.schedule => PrayerScheduleScreen(
+        state: state,
+        onBack: onBack,
+      ),
+      ActivityView.qibla => QiblaCompassScreen(state: state, onBack: onBack),
     };
   }
 }
 
 class PrayerScheduleScreen extends StatelessWidget {
-  const PrayerScheduleScreen({super.key, required this.state});
+  const PrayerScheduleScreen({super.key, required this.state, this.onBack});
 
   final IqrokuState state;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -38,8 +44,12 @@ class PrayerScheduleScreen extends StatelessWidget {
           AppTopBar(
             title: 'Jadwal Solat',
             trailing: Icons.tune,
-            onBack: state.goHome,
+            onBack: onBack ?? state.goHome,
           ),
+          if (state.shouldShowAds) ...[
+            const SizedBox(height: 12),
+            const IqrokuAdBanner(),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [
@@ -277,9 +287,10 @@ class QiblaCard extends StatelessWidget {
 }
 
 class QiblaCompassScreen extends StatelessWidget {
-  const QiblaCompassScreen({super.key, required this.state});
+  const QiblaCompassScreen({super.key, required this.state, this.onBack});
 
   final IqrokuState state;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -298,7 +309,7 @@ class QiblaCompassScreen extends StatelessWidget {
           Row(
             children: [
               IconButton(
-                onPressed: state.goHome,
+                onPressed: onBack ?? state.goHome,
                 icon: const Icon(
                   Icons.arrow_back,
                   color: Colors.white,
@@ -312,6 +323,10 @@ class QiblaCompassScreen extends StatelessWidget {
               ),
             ],
           ),
+          if (state.shouldShowAds) ...[
+            const SizedBox(height: 12),
+            const IqrokuAdBanner(),
+          ],
           const SizedBox(height: 28),
           Row(
             children: [

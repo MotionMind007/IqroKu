@@ -4,7 +4,6 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../core/assets/app_assets.dart';
-import '../data/assessment_service.dart';
 import '../data/audio_playback_service.dart';
 import '../data/auth_api_service.dart';
 import '../data/daily_prayer_api_service.dart';
@@ -12,7 +11,6 @@ import '../data/dummy_iqroku_repository.dart';
 import '../data/islamic_activity_service.dart';
 import '../data/iqro_content_repository.dart';
 import '../data/local_app_storage.dart';
-import '../data/mimo_assessment_service.dart';
 import '../data/quran_api_service.dart';
 import '../data/voice_recording_service.dart';
 import '../models/iqro_models.dart';
@@ -21,7 +19,6 @@ import '../models/prayer_models.dart';
 import '../models/profile_models.dart';
 import '../models/quran_models.dart';
 
-
 String _generateUuid() {
   final random = Random.secure();
   final values = List<int>.generate(16, (_) => random.nextInt(256));
@@ -29,7 +26,7 @@ String _generateUuid() {
   values[6] = (values[6] & 0x0f) | 0x40;
   values[8] = (values[8] & 0x3f) | 0x80;
   final hex = values.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  return "${hex.substring(0,8)}-${hex.substring(8,12)}-${hex.substring(12,16)}-${hex.substring(16,20)}-${hex.substring(20)}";
+  return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}";
 }
 
 class IqrokuState extends ChangeNotifier {
@@ -37,7 +34,6 @@ class IqrokuState extends ChangeNotifier {
     required this.repository,
     LocalAppStorage? storage,
     this.iqroContentRepository = const IqroContentRepository(),
-    this.assessmentService = const MockAssessmentService(),
     AuthApiService? authService,
     this.dailyPrayerApiService = const DailyPrayerApiService(),
     this.quranApiService = const QuranApiService(),
@@ -67,14 +63,12 @@ class IqrokuState extends ChangeNotifier {
 
   static const freeChildLimit = 1;
   static const freeIqroBookLimit = 1;
-  static const freeIqroPageLimit = 10;
   static const quranMemorizationBookId = 99;
   static const subscriptionPriceLabel = 'Rp49.000/bulan';
 
   final DummyIqrokuRepository repository;
   final LocalAppStorage storage;
   final IqroContentRepository iqroContentRepository;
-  final AssessmentService assessmentService;
   final AuthApiService authService;
   final DailyPrayerApiService dailyPrayerApiService;
   final QuranApiService quranApiService;
@@ -100,12 +94,6 @@ class IqrokuState extends ChangeNotifier {
   AppLaunchStage launchStage = AppLaunchStage.onboarding;
   int selectedTab = 0;
 
-  AssessmentService get _activeAssessmentService {
-    if (authToken != null && authToken!.isNotEmpty) {
-      return MiMoAssessmentService(authService: authService);
-    }
-    return assessmentService;
-  }
   int selectedIqroBook = 1;
   int selectedIqroPage = 8;
   int selectedSurahIndex = 3;
@@ -129,6 +117,12 @@ class IqrokuState extends ChangeNotifier {
   ParentAccount? parentAccount;
   String? authToken;
   String? authError;
+  String? authMessage;
+  String? pendingVerificationEmail;
+  String? emailVerificationDevToken;
+  bool emailVerificationRequired = false;
+  String? passwordResetEmail;
+  String? passwordResetDevToken;
   String? iqroContentError;
   String? quranError;
   String? islamicActivityError;
@@ -144,6 +138,7 @@ class IqrokuState extends ChangeNotifier {
   ChildAccount? currentChildAccount;
   bool hasParentPin = false;
   bool parentPinVerified = false;
+  bool childPinVerified = false;
   int unreadNotifications = 0;
 
   ChildProfile get selectedChild {
@@ -171,11 +166,14 @@ class IqrokuState extends ChangeNotifier {
   String get planLabel => familyPlusActive ? 'IqroKu Plus' : 'Free';
   String get childQuotaLabel => '${childProfiles.length}/$childLimit anak';
   bool get subscriptionActive => familyPlusActive;
+
+  bool get shouldShowAds => !familyPlusActive;
   bool get currentChildHasPin {
     // For now, assume child has PIN if they exist in the system
     // In real implementation, this should check the backend
     return currentChildAccount != null;
   }
+
   String get subscriptionRenewalLabel {
     final activatedAt = subscriptionActivatedAt;
     if (!familyPlusActive || activatedAt == null) {
@@ -261,6 +259,18 @@ class IqrokuState extends ChangeNotifier {
 
   bool isIqroPageLocked(int bookId, int pageNumber) {
     return !_canAccessIqroPage(bookId, pageNumber);
+  }
+
+  bool isIqroPagePremiumLocked(int bookId, int pageNumber) {
+    return !_canAccessIqroBook(bookId);
+  }
+
+  bool isIqroBookPremiumLocked(int bookId) {
+    return !_canAccessIqroBook(bookId);
+  }
+
+  bool get isPremiumAccessNotice {
+    return subscriptionNotice != null && !_canAccessIqroBook(selectedIqroBook);
   }
 
   bool get isSelectedIqroPageLocked {
@@ -395,6 +405,7 @@ class IqrokuState extends ChangeNotifier {
     selectedIqroBook = bookId;
     selectedIqroPage = pageNumber.clamp(1, _totalPagesForBook(bookId));
     selectedTab = 1;
+    subscriptionNotice = null;
     _persist();
     notifyListeners();
   }
@@ -578,11 +589,34 @@ class IqrokuState extends ChangeNotifier {
 
   void goToLogin() {
     launchStage = AppLaunchStage.login;
+    authError = null;
+    authMessage = null;
     notifyListeners();
   }
 
   void goToRegister() {
     launchStage = AppLaunchStage.register;
+    authError = null;
+    authMessage = null;
+    notifyListeners();
+  }
+
+  void goToPasswordReset({String? email}) {
+    passwordResetEmail = email?.trim();
+    passwordResetDevToken = null;
+    authError = null;
+    authMessage = null;
+    launchStage = AppLaunchStage.passwordReset;
+    notifyListeners();
+  }
+
+  void goToEmailVerification({String? email}) {
+    pendingVerificationEmail = email?.trim().isNotEmpty == true
+        ? email!.trim()
+        : parentAccount?.email;
+    authError = null;
+    authMessage = null;
+    launchStage = AppLaunchStage.emailVerification;
     notifyListeners();
   }
 
@@ -596,6 +630,7 @@ class IqrokuState extends ChangeNotifier {
     required String name,
     required String email,
     required String password,
+    String? pin,
   }) async {
     if (name.trim().isEmpty || email.trim().isEmpty || password.isEmpty) {
       authError = 'Nama, email, dan password wajib diisi.';
@@ -614,6 +649,20 @@ class IqrokuState extends ChangeNotifier {
         password: password,
       );
       await _finishAuth(result);
+
+      // Set parent PIN if provided
+      if (pin != null && pin.isNotEmpty) {
+        try {
+          await setParentPin(pin);
+        } catch (e) {
+          debugPrint('Failed to set PIN during registration: $e');
+        }
+      }
+      _captureEmailVerification(result);
+      if (result.emailVerification != null && !result.parent.emailVerified) {
+        launchStage = AppLaunchStage.emailVerification;
+        _persist();
+      }
     } catch (error) {
       authError = _authErrorMessage(error);
     } finally {
@@ -680,6 +729,10 @@ class IqrokuState extends ChangeNotifier {
     String? name,
     int? age,
     String avatarAsset = AppAssets.avatarMale,
+    String? childPin,
+    String? studyStartTime,
+    String? studyEndTime,
+    List<int>? studyDays,
   }) async {
     final cleanName = name?.trim();
     if (cleanName == null || cleanName.isEmpty) {
@@ -709,6 +762,29 @@ class IqrokuState extends ChangeNotifier {
               age: age ?? 7,
               avatarAsset: avatarAsset,
             );
+
+      // Set child PIN if provided
+      if (childPin != null && childPin.isNotEmpty) {
+        try {
+          await authService.setChildPin(child.id, childPin);
+        } catch (e) {
+          debugPrint('Failed to set child PIN: $e');
+        }
+      }
+
+      // Set child schedule if provided
+      if (studyStartTime != null && studyEndTime != null) {
+        try {
+          await authService.setChildSchedule(
+            childId: child.id,
+            startTime: studyStartTime,
+            endTime: studyEndTime,
+            days: studyDays ?? [1, 2, 3, 4, 5],
+          );
+        } catch (e) {
+          debugPrint('Failed to set child schedule: $e');
+        }
+      }
 
       if (childProfiles.isEmpty) {
         childProfiles.add(child);
@@ -799,6 +875,7 @@ class IqrokuState extends ChangeNotifier {
     currentMode = AppMode.none;
     currentChildAccount = null;
     parentPinVerified = false;
+    childPinVerified = false;
     _persist();
     notifyListeners();
   }
@@ -807,12 +884,18 @@ class IqrokuState extends ChangeNotifier {
 
   void selectMode(AppMode mode) {
     currentMode = mode;
+    if (mode != AppMode.child) {
+      currentChildAccount = null;
+      childPinVerified = false;
+    }
     notifyListeners();
   }
 
   void enterParentMode() {
     currentMode = AppMode.parent;
     parentPinVerified = false; // Will be set to true after PIN verification
+    currentChildAccount = null;
+    childPinVerified = false;
     notifyListeners();
   }
 
@@ -825,6 +908,7 @@ class IqrokuState extends ChangeNotifier {
     currentMode = AppMode.child;
     currentChildAccount = child;
     selectedChildId = child.id;
+    childPinVerified = true;
     notifyListeners();
   }
 
@@ -832,12 +916,30 @@ class IqrokuState extends ChangeNotifier {
     currentMode = AppMode.none;
     currentChildAccount = null;
     parentPinVerified = false;
+    childPinVerified = false;
     notifyListeners();
   }
 
   void selectChildForMode(String childId) {
     selectedChildId = childId;
-    // Will show PIN entry for this child
+    // Find the child and set as currentChildAccount
+    final child = childProfiles.firstWhere(
+      (c) => c.id == childId,
+      orElse: () => childProfiles.first,
+    );
+    // Create a ChildAccount from ChildProfile
+    currentChildAccount = ChildAccount(
+      id: child.id,
+      name: child.name,
+      age: child.age,
+      avatarAsset: child.avatarAsset,
+    );
+    childPinVerified = false;
+    notifyListeners();
+  }
+
+  void markChildPinSet() {
+    // Child PIN was just set, proceed to learning mode
     notifyListeners();
   }
 
@@ -856,9 +958,14 @@ class IqrokuState extends ChangeNotifier {
 
   Future<bool> verifyParentPin(String pin) async {
     try {
-      return await authService.verifyParentPin(pin);
+      final result = await authService.verifyParentPin(pin);
+      return result;
     } catch (e) {
       debugPrint('Failed to verify parent PIN: $e');
+      // If pin_not_set, return false but log the issue
+      if (e.toString().contains('pin_not_set')) {
+        debugPrint('Parent PIN is not set in database');
+      }
       return false;
     }
   }
@@ -888,7 +995,10 @@ class IqrokuState extends ChangeNotifier {
 
   // --- Notifications ---
 
-  Future<void> loadUnreadCount({String userType = 'parent', String? childId}) async {
+  Future<void> loadUnreadCount({
+    String userType = 'parent',
+    String? childId,
+  }) async {
     try {
       unreadNotifications = await authService.getUnreadCount(
         userType: userType,
@@ -912,7 +1022,10 @@ class IqrokuState extends ChangeNotifier {
     }
   }
 
-  Future<void> markAllNotificationsRead({String userType = 'parent', String? childId}) async {
+  Future<void> markAllNotificationsRead({
+    String userType = 'parent',
+    String? childId,
+  }) async {
     try {
       await authService.markAllNotificationsRead(
         userType: userType,
@@ -933,9 +1046,8 @@ class IqrokuState extends ChangeNotifier {
     final child = currentChildAccount;
     if (child == null) return true;
 
-    // Check if page is at or after repeat_from_page
     if (bookId == child.repeatFromBook && pageNumber < child.repeatFromPage) {
-      return false;
+      return statusForIqroPage(bookId, pageNumber) == LearningStatus.fluent;
     }
 
     // Check if page is sequential (no skipping)
@@ -996,24 +1108,202 @@ class IqrokuState extends ChangeNotifier {
   }
 
   void selectIqroBook(int bookId) {
-    if (!_canAccessIqroBook(bookId)) {
-      _showSubscriptionNotice();
-      return;
-    }
     unawaited(cancelVoicePractice());
     selectedIqroBook = bookId;
-    selectedIqroPage = _firstActivePageForBook(bookId);
+    selectedIqroPage = _canAccessIqroBook(bookId)
+        ? _firstActivePageForBook(bookId)
+        : 1;
+    if (!_canAccessIqroBook(bookId)) {
+      _showIqroAccessNotice(bookId, 1);
+    } else {
+      subscriptionNotice = null;
+    }
     _persist();
     notifyListeners();
   }
 
   void selectIqroPage(int page) {
+    if (isIqroBookPremiumLocked(selectedIqroBook)) {
+      selectedIqroPage = page.clamp(1, selectedIqroTotalPages);
+      _showIqroAccessNotice(selectedIqroBook, selectedIqroPage);
+      _persist();
+      return;
+    }
     if (!_canAccessIqroPage(selectedIqroBook, page)) {
-      _showSubscriptionNotice();
+      _showIqroAccessNotice(selectedIqroBook, page);
       return;
     }
     unawaited(cancelVoicePractice());
     selectedIqroPage = page.clamp(1, selectedIqroTotalPages);
+    subscriptionNotice = null;
+    _persist();
+    notifyListeners();
+  }
+
+  Future<void> resendEmailVerification({String? email}) async {
+    final targetEmail = (email ?? pendingVerificationEmail ?? parentAccount?.email)
+        ?.trim();
+    if (targetEmail == null || targetEmail.isEmpty) {
+      authError = 'Email wajib diisi.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    authMessage = null;
+    notifyListeners();
+
+    try {
+      final flow = await authService.resendVerification(targetEmail);
+      pendingVerificationEmail = targetEmail;
+      emailVerificationDevToken = flow?.devToken;
+      emailVerificationRequired = flow?.required ?? emailVerificationRequired;
+      authMessage = 'Link verifikasi sudah dikirim. Cek email untuk lanjut.';
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> verifyEmailToken(String token) async {
+    if (token.trim().isEmpty) {
+      authError = 'Kode verifikasi wajib diisi.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    authMessage = null;
+    notifyListeners();
+
+    try {
+      final verifiedParent = await authService.verifyEmail(token.trim());
+      parentAccount = verifiedParent;
+      pendingVerificationEmail = verifiedParent.email;
+      emailVerificationDevToken = null;
+      emailVerificationRequired = false;
+      authMessage = 'Email berhasil diverifikasi.';
+      _persist();
+      continueAfterEmailVerification();
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void continueAfterEmailVerification() {
+    authError = null;
+    authMessage = null;
+    launchStage = childSetupCompleted || childProfiles.isNotEmpty
+        ? AppLaunchStage.authenticated
+        : AppLaunchStage.setupChild;
+    _persist();
+    notifyListeners();
+  }
+
+  Future<void> requestPasswordReset(String email) async {
+    if (email.trim().isEmpty) {
+      authError = 'Email wajib diisi.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    authMessage = null;
+    notifyListeners();
+
+    try {
+      final flow = await authService.requestPasswordReset(email.trim());
+      passwordResetEmail = email.trim();
+      passwordResetDevToken = flow?.devToken;
+      authMessage =
+          'Instruksi reset password sudah dikirim jika email terdaftar.';
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> confirmPasswordReset({
+    required String token,
+    required String password,
+  }) async {
+    if (token.trim().isEmpty || password.isEmpty) {
+      authError = 'Kode dan password baru wajib diisi.';
+      notifyListeners();
+      return;
+    }
+
+    authLoading = true;
+    authError = null;
+    authMessage = null;
+    notifyListeners();
+
+    try {
+      await authService.confirmPasswordReset(
+        token: token.trim(),
+        password: password,
+      );
+      passwordResetDevToken = null;
+      authMessage = 'Password berhasil diganti. Silakan masuk lagi.';
+      launchStage = AppLaunchStage.login;
+    } catch (error) {
+      authError = _authErrorMessage(error);
+    } finally {
+      authLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void applyParentReviewResult({
+    required String attemptId,
+    required LearningStatus status,
+    int? repeatFromPage,
+  }) {
+    final index = learningAttempts.indexWhere((attempt) {
+      return attempt.id == attemptId;
+    });
+    if (index == -1) {
+      return;
+    }
+
+    final attempt = learningAttempts[index];
+    final updatedAttempt = attempt.copyWith(
+      status: status,
+      assessmentStatus: status == LearningStatus.fluent
+          ? ReadingAssessmentStatus.fluent
+          : ReadingAssessmentStatus.needsReview,
+      note: status == LearningStatus.fluent
+          ? 'Bacaan disetujui orang tua. Lanjut ke halaman berikutnya.'
+          : 'Orang tua meminta mengulang dari halaman ${repeatFromPage ?? attempt.pageNumber}.',
+    );
+    learningAttempts[index] = updatedAttempt;
+    final reviewedPage = repeatFromPage ?? attempt.pageNumber;
+    _progressForBook(attempt.childId, attempt.bookId)[reviewedPage] = status;
+
+    if (repeatFromPage != null) {
+      final childIndex = childProfiles.indexWhere((child) {
+        return child.id == attempt.childId;
+      });
+      if (childIndex != -1) {
+        childProfiles[childIndex] = childProfiles[childIndex].copyWith(
+          repeatFromBook: attempt.bookId,
+          repeatFromPage: repeatFromPage,
+        );
+      }
+    }
+
+    _syncChildProgress(attempt.childId, attempt.bookId);
+    subscriptionNotice = null;
     _persist();
     notifyListeners();
   }
@@ -1110,7 +1400,7 @@ class IqrokuState extends ChangeNotifier {
       audioPath: audioPath,
       note: audioPath == null
           ? 'Percobaan baca suara tersimpan tanpa file audio.'
-          : 'Rekaman tersimpan. Menunggu penilaian bacaan.',
+          : 'Rekaman tersimpan. Menunggu review orang tua.',
     );
     learningAttempts.insert(0, attempt);
 
@@ -1121,7 +1411,6 @@ class IqrokuState extends ChangeNotifier {
     _persist();
     notifyListeners();
     unawaited(_syncLearningAttempt(attempt));
-    unawaited(_runAssessment(attempt.id));
   }
 
   Future<void> cancelVoicePractice() async {
@@ -1165,6 +1454,41 @@ class IqrokuState extends ChangeNotifier {
     } catch (_) {
       playingAttemptId = null;
       playbackError = 'Rekaman belum bisa diputar. Coba rekam ulang.';
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleReviewPlayback({
+    required String attemptId,
+    required String? audioPath,
+  }) async {
+    if (audioPath == null || audioPath.isEmpty) {
+      playbackError = 'File rekaman belum tersedia untuk review ini.';
+      notifyListeners();
+      return;
+    }
+
+    if (playingAttemptId == attemptId) {
+      await audioPlaybackService.stop();
+      playingAttemptId = null;
+      playbackError = null;
+      notifyListeners();
+      return;
+    }
+
+    try {
+      await audioPlaybackService.stop();
+      playingAttemptId = attemptId;
+      playingQuranAudioUrl = null;
+      playbackError = null;
+      notifyListeners();
+      await audioPlaybackService.play(
+        authService.backendUrl(audioPath),
+        headers: authService.audioPlaybackHeaders(),
+      );
+    } catch (_) {
+      playingAttemptId = null;
+      playbackError = 'Rekaman belum bisa diputar. Coba muat ulang review.';
       notifyListeners();
     }
   }
@@ -1266,7 +1590,7 @@ class IqrokuState extends ChangeNotifier {
       assessmentStatus: ReadingAssessmentStatus.recorded,
       audioPath: audioPath,
       note:
-          'Rekaman hafalan ${selectedSurahData.name} tersimpan. Penilaian AI hafalan akan disambungkan di tahap berikutnya.',
+          'Rekaman hafalan ${selectedSurahData.name} tersimpan. Menunggu review orang tua.',
     );
     learningAttempts.insert(0, attempt);
 
@@ -1286,7 +1610,7 @@ class IqrokuState extends ChangeNotifier {
 
     final nextPage = selectedIqroPage + 1;
     if (!_canAccessIqroPage(selectedIqroBook, nextPage)) {
-      _showSubscriptionNotice();
+      _showIqroAccessNotice(selectedIqroBook, nextPage);
       return;
     }
 
@@ -1457,18 +1781,40 @@ class IqrokuState extends ChangeNotifier {
   }
 
   bool _canAccessIqroBook(int bookId) {
-    return familyPlusActive || bookId <= freeIqroBookLimit;
+    return familyPlusActive || bookId == freeIqroBookLimit;
   }
 
   bool _canAccessIqroPage(int bookId, int pageNumber) {
-    return familyPlusActive ||
-        (bookId == freeIqroBookLimit && pageNumber <= freeIqroPageLimit);
+    if (!_canAccessIqroBook(bookId)) {
+      return false;
+    }
+
+    final child = selectedChild;
+    if (bookId == child.repeatFromBook && pageNumber < child.repeatFromPage) {
+      return statusForIqroPage(bookId, pageNumber) == LearningStatus.fluent;
+    }
+
+    return true;
+  }
+
+  void _showIqroAccessNotice(int bookId, int pageNumber) {
+    final child = selectedChild;
+    if (!_canAccessIqroBook(bookId)) {
+      subscriptionNotice =
+          'Akun Free bisa belajar seluruh Iqro jilid 1. Aktifkan IqroKu Plus $subscriptionPriceLabel untuk membuka jilid 2 sampai 6.';
+    } else if (bookId == child.repeatFromBook &&
+        pageNumber < child.repeatFromPage) {
+      subscriptionNotice =
+          'Orang tua meminta ulang dari Iqro ${child.repeatFromBook} halaman ${child.repeatFromPage}. Mulai dari halaman itu dulu.';
+    } else {
+      subscriptionNotice =
+          'Halaman ini belum bisa dibuka. Cek progress belajar atau status subscription.';
+    }
+    notifyListeners();
   }
 
   void _showSubscriptionNotice() {
-    subscriptionNotice =
-        'Akun Free hanya sampai Iqro 1 halaman 10. Aktifkan IqroKu Plus $subscriptionPriceLabel untuk lanjut belajar.';
-    notifyListeners();
+    _showIqroAccessNotice(selectedIqroBook, selectedIqroPage);
   }
 
   void _ensureSelectedIqroAccess() {
@@ -1476,107 +1822,15 @@ class IqrokuState extends ChangeNotifier {
       return;
     }
 
+    final child = selectedChild;
+    if (selectedIqroBook == child.repeatFromBook &&
+        selectedIqroPage < child.repeatFromPage) {
+      selectedIqroPage = child.repeatFromPage.clamp(1, selectedIqroTotalPages);
+      return;
+    }
+
     selectedIqroBook = freeIqroBookLimit;
-    selectedIqroPage = selectedIqroPage.clamp(1, freeIqroPageLimit);
-  }
-
-  Future<void> _runAssessment(String attemptId) async {
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    final assessing = _replaceLearningAttempt(
-      attemptId,
-      (attempt) => attempt.copyWith(
-        assessmentStatus: ReadingAssessmentStatus.assessing,
-        note: 'Sedang menilai kelancaran, durasi, dan konsistensi bacaan.',
-      ),
-    );
-    if (assessing == null) {
-      return;
-    }
-    _persist();
-    notifyListeners();
-
-    final currentAttempt = learningAttempts.firstWhere(
-      (attempt) => attempt.id == attemptId,
-      orElse: () => assessing,
-    );
-    final result = await _activeAssessmentService.assess(
-      AssessmentRequest(
-        childId: currentAttempt.childId,
-        bookId: currentAttempt.bookId,
-        pageNumber: currentAttempt.pageNumber,
-        targetLines: _targetLinesFor(
-          currentAttempt.bookId,
-          currentAttempt.pageNumber,
-        ),
-        audioPath: currentAttempt.audioPath,
-        durationSeconds: currentAttempt.durationSeconds,
-        attemptId: attemptId,
-      ),
-    );
-    final assessed = _replaceLearningAttempt(attemptId, (attempt) {
-      return attempt.copyWith(
-        status: result.status,
-        assessmentStatus: result.status == LearningStatus.fluent
-            ? ReadingAssessmentStatus.fluent
-            : ReadingAssessmentStatus.needsReview,
-        score: result.score,
-        feedback: result.feedback,
-        note: result.note,
-      );
-    });
-    if (assessed == null) {
-      return;
-    }
-
-    _progressForBook(assessed.childId, assessed.bookId)[assessed.pageNumber] =
-        assessed.status;
-    _syncChildProgress(assessed.childId, assessed.bookId);
-    _prependAssessmentLearningNote(assessed);
-    _persist();
-    _syncProgressToBackend(
-      childId: assessed.childId,
-      bookId: assessed.bookId,
-      pageNumber: assessed.pageNumber,
-      status: assessed.status,
-    );
-    notifyListeners();
-  }
-
-  LearningAttempt? _replaceLearningAttempt(
-    String attemptId,
-    LearningAttempt Function(LearningAttempt attempt) update,
-  ) {
-    final index = learningAttempts.indexWhere((attempt) {
-      return attempt.id == attemptId;
-    });
-    if (index == -1) {
-      return null;
-    }
-
-    final updated = update(learningAttempts[index]);
-    learningAttempts[index] = updated;
-    return updated;
-  }
-
-  void _prependAssessmentLearningNote(LearningAttempt attempt) {
-    final title = 'Iqro ${attempt.bookId} - Halaman ${attempt.pageNumber}';
-    final scoreText = attempt.score == null
-        ? ''
-        : ' Skor ${attempt.score}/100.';
-    learningNotes.removeWhere((note) => note.title == title);
-    learningNotes.insert(
-      0,
-      LearningNote(
-        title: title,
-        date: _todayLabel(),
-        status: attempt.status,
-        note: '$scoreText ${attempt.feedback ?? attempt.note ?? ''}'.trim(),
-      ),
-    );
-
-    if (learningNotes.length > 20) {
-      learningNotes.removeRange(20, learningNotes.length);
-    }
+    selectedIqroPage = selectedIqroPage.clamp(1, selectedIqroTotalPages);
   }
 
   void _prependLearningNote(LearningStatus status) {
@@ -1694,18 +1948,53 @@ class IqrokuState extends ChangeNotifier {
     return null;
   }
 
-  List<List<String>> _targetLinesFor(int bookId, int pageNumber) {
-    final book = _materialBookFor(bookId);
-    if (book == null) {
-      return const [];
+  Future<void> refreshChildrenFromBackend() async {
+    final parent = parentAccount;
+    if (parent == null || authToken == null || authToken!.isEmpty) {
+      return;
     }
 
-    for (final page in book.pages) {
-      if (page.pageNumber == pageNumber) {
-        return page.lines;
+    try {
+      final previousChildId = selectedChildId;
+      final previousBook = selectedIqroBook;
+      final previousPage = selectedIqroPage;
+      final remoteChildren = await authService.loadChildren(parent.id);
+      childProfiles
+        ..clear()
+        ..addAll(remoteChildren);
+      _iqroProgress.clear();
+
+      if (childProfiles.isEmpty) {
+        selectedChildId = '';
+        currentChildAccount = null;
+        childSetupCompleted = false;
+      } else {
+        selectedChildId =
+            childProfiles.any((child) => child.id == previousChildId)
+            ? previousChildId
+            : childProfiles.first.id;
+        for (final child in childProfiles) {
+          _seedIqroProgressForChild(child.id, currentPage: 1);
+          await _loadRemoteProgressForChild(child.id);
+          _syncChildProgress(child.id, 1);
+        }
+        selectedIqroBook = previousBook;
+        selectedIqroPage = previousPage.clamp(1, selectedIqroTotalPages);
+        _ensureSelectedIqroAccess();
+        childSetupCompleted = true;
       }
+
+      subscriptionNotice = null;
+      _persist();
+      notifyListeners();
+    } on AuthApiException catch (error) {
+      if (error.statusCode == 401) {
+        _handleTokenExpired();
+      }
+      debugPrint('Children refresh failed: ${error.code}');
+    } catch (error) {
+      debugPrint('Children refresh failed: $error');
     }
-    return const [];
   }
 
   Future<void> _finishAuth(AuthResult result) async {
@@ -1738,6 +2027,12 @@ class IqrokuState extends ChangeNotifier {
     selectedIqroBook = 1;
     selectedIqroPage = childProfiles.isEmpty ? 1 : _firstActivePageForBook(1);
     _persist();
+  }
+
+  void _captureEmailVerification(AuthResult result) {
+    pendingVerificationEmail = result.parent.email;
+    emailVerificationDevToken = result.emailVerification?.devToken;
+    emailVerificationRequired = result.emailVerification?.required ?? false;
   }
 
   Future<void> _loadRemoteProgressForChild(String childId) async {
@@ -1821,7 +2116,9 @@ class IqrokuState extends ChangeNotifier {
 
       // Upload audio if available
       if (attempt.audioPath != null && attempt.audioPath!.isNotEmpty) {
-        final uploadId = remoteAttempt.id.isNotEmpty ? remoteAttempt.id : attempt.id;
+        final uploadId = remoteAttempt.id.isNotEmpty
+            ? remoteAttempt.id
+            : attempt.id;
         try {
           await authService.uploadAudio(
             attemptId: uploadId,
@@ -1888,6 +2185,9 @@ class IqrokuState extends ChangeNotifier {
       return switch (error.code) {
         'email_already_registered' => 'Email ini sudah terdaftar. Coba masuk.',
         'invalid_email_or_password' => 'Email atau password belum cocok.',
+        'email_not_verified' => 'Email belum diverifikasi. Cek email dulu.',
+        'invalid_or_expired_token' =>
+          'Kode sudah tidak valid atau kedaluwarsa.',
         'invalid_email' => 'Format email belum benar.',
         'password_min_6' => 'Password minimal 6 karakter.',
         'child_limit_requires_plus' =>
@@ -1981,6 +2281,8 @@ enum AppLaunchStage {
   welcome,
   login,
   register,
+  emailVerification,
+  passwordReset,
   setupChild,
   authenticated,
 }

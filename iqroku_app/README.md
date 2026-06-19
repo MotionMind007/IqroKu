@@ -1,6 +1,6 @@
-# IqroKu
+# IqroKu Flutter App
 
-Flutter prototype for the IqroKu mobile app: Iqro learning, Juz Amma, Qur'an reading, prayer times, qibla direction, child profiles, and learning progress.
+Aplikasi Flutter untuk IqroKu: belajar Iqro, rekaman bacaan anak, dashboard orang tua, review bacaan, Al-Quran, Juz Amma, jadwal sholat, kiblat, doa-doa, murottal, profile, dan subscription gate.
 
 ## Run
 
@@ -28,22 +28,37 @@ The debug APK is generated at:
 build\app\outputs\flutter-apk\app-debug.apk
 ```
 
-## Current Scope
+## Validate
 
-- Mobile-first app shell with bottom navigation.
-- Home dashboard with prayer countdown, shortcuts, and continue-learning cards.
-- Iqro learning page with book tabs, page grid, audio controls, and learning status buttons.
-- Qur'an/Juz Amma page with reading list, memorization mode, and reader preview.
-- Activity page for prayer times and qibla direction.
-- Child profile page with progress summary and learning notes.
+```powershell
+flutter analyze
+flutter test
+flutter build web
+```
+
+## Current Product Rules
+
+- Anak merekam bacaan, orang tua yang menentukan lancar atau perlu ulang.
+- Assessment AI sudah tidak dipakai.
+- Iqro jilid 1 free.
+- Iqro jilid 2 sampai 6 premium, tetap bisa dibuka sebagai preview dengan halaman terkunci.
+- Jadwal sholat, kiblat, doa-doa, Al-Quran, dan murottal free.
+- User free bisa melihat slot iklan di fitur free.
 
 ## Project Structure
 
 ```text
 lib/
-  app/        App shell and shared app state.
-  core/       Theme tokens and reusable UI chrome.
-  data/       Dummy repository used by the prototype.
-  features/   Feature screens: home, learning, quran, activity, profile.
-  models/     Domain models for Iqro, Qur'an, prayer, profile, and progress.
+  app/        App shell and shared app state
+  core/       Theme, services, reusable widgets
+  data/       Local storage and repositories
+  features/   Feature screens
+  models/     Domain models
 ```
+
+## Dokumentasi Lanjut
+
+- Arsitektur: `../docs/ARCHITECTURE.md`
+- Flow produk: `../docs/FLOWS.md`
+- Panduan perubahan: `../docs/CHANGE_GUIDE.md`
+- Checklist production: `../docs/PRODUCTION_CHECKLIST.md`

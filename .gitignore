@@ -24,11 +24,22 @@ Thumbs.db
 *.log
 *.tmp
 *.swp
+eror.txt
+
+# Local/raw working assets and generated conversion outputs
+/*.png
+/Iqro_Complete_*.pdf
+/iqro_clean_report.json
+/iqro_complete_jilid_1-6*.json
+/iqroku_app/assets/icons/hafalan.png
 
 # Local backend development data
 backend/data/dev-store.json
 /data/
 /uploads/
+
+# Node modules
+**/node_modules/
 
 # Production secrets (template is committed, actual .env is not)
 backend/.env

@@ -8,6 +8,9 @@ class AppAssets {
   static const homeMosque = 'assets/brand/home_mosque.png';
   static const avatarMale = 'assets/brand/male-avatar.png';
   static const avatarFemale = 'assets/brand/female-avatar.png';
+  static const parentAvatar = 'assets/brand/parent.png';
+  static const boyKid = 'assets/brand/boykids.png';
+  static const femaleKid = 'assets/brand/femalekids.png';
 
   static const home = 'assets/icons/home.png';
   static const navHome = 'assets/icons/nav_home.png';
@@ -19,6 +22,7 @@ class AppAssets {
   static const iqroBook = 'assets/icons/iqro_book.png';
   static const juzAmma = 'assets/icons/juz_amma.png';
   static const juzAmmaNew = 'assets/icons/juz_amma_new.png';
+  static const hafalan = 'assets/icons/hafalan.png';
   static const murottal = 'assets/icons/murottal.png';
   static const kabah = 'assets/icons/kabah.png';
   static const doaDoa = 'assets/icons/doa_doa.png';

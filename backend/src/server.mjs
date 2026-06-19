@@ -1,8 +1,7 @@
 import { createServer } from 'node:http';
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
-import { execSync } from 'node:child_process';
 import * as db from './db.mjs';
 
 // Initialize PostgreSQL connection
@@ -14,13 +13,17 @@ if (!DATABASE_URL) {
 }
 db.initDb(DATABASE_URL);
 
-// MiMo AI Configuration
-const MIMO_API_URL = process.env.MIMO_API_URL || 'https://api.xiaomimimo.com/v1';
-const MIMO_API_KEY = process.env.MIMO_API_KEY || '';
-const MIMO_ASR_MODEL = process.env.MIMO_ASR_MODEL || 'mimo-v2.5-asr';
-const MIMO_PRO_MODEL = process.env.MIMO_PRO_MODEL || 'mimo-v2.5-pro';
-
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://iqroku.motionmind.store';
+const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN === 'true';
+const REQUIRE_EMAIL_VERIFICATION = process.env.REQUIRE_EMAIL_VERIFICATION === 'true';
+const AUTH_LINK_BASE_URL = process.env.AUTH_LINK_BASE_URL || ALLOWED_ORIGIN;
+const EMAIL_VERIFICATION_TTL_MINUTES = Number(process.env.EMAIL_VERIFICATION_TTL_MINUTES ?? 60 * 24);
+const PASSWORD_RESET_TTL_MINUTES = Number(process.env.PASSWORD_RESET_TTL_MINUTES ?? 30);
+
+// Google Sign-In: the audience the client's idToken must be issued for.
+// Defaults to the serverClientId used by the Flutter app.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID
+  || '55523615051-81vpiqk0jiamubrnjb0ss4i6irpifm2t.apps.googleusercontent.com';
 
 const port = Number(process.env.PORT ?? 8787);
 const ADMIN_TOKEN = process.env.IQROKU_ADMIN_TOKEN || 'admin-dev-token';
@@ -29,7 +32,19 @@ if (ADMIN_TOKEN === 'admin-dev-token' && process.env.NODE_ENV === 'production') 
   process.exit(1);
 }
 const MAX_BODY_SIZE = Number(process.env.MAX_BODY_SIZE) || 5 * 1024 * 1024; // 5MB max request body
+const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES) || MAX_BODY_SIZE;
 const MAX_STRING_LENGTH = 500; // max string field length
+const UPLOAD_ROOT = resolve(process.env.IQROKU_UPLOAD_ROOT || 'uploads');
+const AUDIO_UPLOAD_DIR = resolve(UPLOAD_ROOT, 'audio');
+const ALLOWED_AUDIO_CONTENT_TYPES = new Set([
+  'audio/aac',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/webm',
+  'video/mp4',
+]);
+const ALLOWED_AUDIO_EXTENSIONS = new Set(['.aac', '.m4a', '.mp3', '.mp4', '.wav', '.webm']);
 
 // --- Rate Limiter ---
 const rateLimits = new Map();
@@ -103,6 +118,58 @@ async function authenticateRequest(request) {
   throw httpError(401, 'invalid_auth_token');
 }
 
+// Constant-time string comparison to avoid leaking the admin token via timing.
+function safeStrEqual(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) {
+    // Compare against itself to keep the timing roughly constant, then fail.
+    timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
+}
+
+function secureCookieAttribute() {
+  return process.env.NODE_ENV === 'production' ? '; Secure' : '';
+}
+
+// Verify a Google Sign-In ID token with Google and return its trusted claims.
+// Never trust email/sub coming from the request body — only what Google signs.
+async function verifyGoogleIdToken(idToken) {
+  if (!idToken) {
+    throw httpError(400, 'missing_id_token');
+  }
+  let payload;
+  try {
+    const res = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+    );
+    if (!res.ok) {
+      throw httpError(401, 'invalid_google_token');
+    }
+    payload = await res.json();
+  } catch (err) {
+    if (err.statusCode) throw err;
+    throw httpError(502, 'google_verification_failed');
+  }
+
+  // aud must match our client id; iss must be Google; email must be present+verified.
+  if (payload.aud !== GOOGLE_CLIENT_ID) {
+    throw httpError(401, 'google_token_wrong_audience');
+  }
+  if (payload.iss !== 'accounts.google.com' && payload.iss !== 'https://accounts.google.com') {
+    throw httpError(401, 'google_token_wrong_issuer');
+  }
+  if (payload.exp && Number(payload.exp) * 1000 < Date.now()) {
+    throw httpError(401, 'google_token_expired');
+  }
+  if (!payload.email || payload.email_verified === 'false' || payload.email_verified === false) {
+    throw httpError(401, 'google_email_unverified');
+  }
+  return { email: String(payload.email), sub: String(payload.sub), name: payload.name };
+}
+
 function authenticateAdmin(request) {
   const authHeader = request.headers?.['authorization'] ?? '';
   const token = authHeader.startsWith('Bearer ')
@@ -113,13 +180,28 @@ function authenticateAdmin(request) {
   const cookie = request.headers?.['cookie'] ?? '';
   const cookieToken = cookie.match(/admin_token=([^;]+)/)?.[1] ?? '';
 
-  if (token !== ADMIN_TOKEN && cookieToken !== ADMIN_TOKEN) {
+  if (!safeStrEqual(token, ADMIN_TOKEN) && !safeStrEqual(cookieToken, ADMIN_TOKEN)) {
     throw httpError(403, 'admin_access_denied');
   }
 }
 
+// Behind a reverse proxy (nginx) every request's socket address is the proxy
+// itself, so rate limiting on remoteAddress buckets ALL users into one counter.
+// Trust the first hop in X-Forwarded-For (set by our nginx) for the real IP.
+const TRUST_PROXY = (process.env.TRUST_PROXY ?? 'true') !== 'false';
+function getClientIp(request) {
+  if (TRUST_PROXY) {
+    const fwd = request.headers?.['x-forwarded-for'];
+    if (typeof fwd === 'string' && fwd.length > 0) {
+      const first = fwd.split(',')[0].trim();
+      if (first) return first;
+    }
+  }
+  return request.socket?.remoteAddress ?? 'unknown';
+}
+
 const server = createServer(async (request, response) => {
-  const clientIp = request.socket?.remoteAddress ?? 'unknown';
+  const clientIp = getClientIp(request);
   const startTime = Date.now();
   try {
     const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
@@ -210,13 +292,13 @@ async function route(method, url, body, request) {
 
   if (method === 'POST' && path === '/admin/login') {
     const token = cleanString(body.token);
-    if (token !== ADMIN_TOKEN) {
+    if (!safeStrEqual(token, ADMIN_TOKEN)) {
       return { html: renderAdminLogin('Token salah. Silakan coba lagi.') };
     }
     return {
       status: 302,
       headers: {
-        'Set-Cookie': `admin_token=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=86400`,
+        'Set-Cookie': `admin_token=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=86400${secureCookieAttribute()}`,
         'Location': '/admin',
       },
       body: '',
@@ -227,7 +309,7 @@ async function route(method, url, body, request) {
     return {
       status: 302,
       headers: {
-        'Set-Cookie': 'admin_token=; Path=/admin; HttpOnly; Max-Age=0',
+        'Set-Cookie': `admin_token=; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=0${secureCookieAttribute()}`,
         'Location': '/admin/login',
       },
       body: '',
@@ -257,9 +339,15 @@ async function route(method, url, body, request) {
   }
 
   if (method === 'GET' && path.startsWith('/uploads/audio/')) {
+    const authedParent = await authenticateRequest(request);
     const fileName = safeStoredFileName(path.split('/').pop() ?? '');
+    const attempt = await db.findAttemptByAudioFileName(fileName);
+    if (!attempt) {
+      throw httpError(404, 'file_not_found');
+    }
+    await enforceChildOwnership(authedParent.id, attempt.childId);
     return {
-      filePath: resolve('uploads/audio', fileName),
+      filePath: resolve(AUDIO_UPLOAD_DIR, fileName),
       contentType: contentTypeForAudio(fileName),
     };
   }
@@ -297,13 +385,18 @@ async function route(method, url, body, request) {
   }
 
   if (method === 'POST' && path === '/auth/demo-login') {
+    if (!ENABLE_DEMO_LOGIN) {
+      throw httpError(404, 'not_found');
+    }
     const email = cleanString(body.email) || 'parent@iqroku.local';
     const name = cleanString(body.name) || 'Orang Tua';
-    let parent = await db.findParentByEmail(email);
-    if (!parent) {
-      parent = await db.createParent({ id: randomUUID(), email, name });
+    const demoEmail = normalizeDemoEmail(email);
+    const existing = await db.findParentByEmail(demoEmail);
+    if (existing) {
+      throw httpError(409, 'demo_account_exists');
     }
-    const token = `demo_${parent.id}`;
+    const parent = await db.createParent({ id: randomUUID(), email: demoEmail, name });
+    const token = createSessionToken(parent.id);
     await storeSession(token, parent.id);
     return { parent: publicParent(parent), session: { token, type: 'demo' } };
   }
@@ -325,6 +418,13 @@ async function route(method, url, body, request) {
       name,
       passwordHash: hashPassword(password),
     });
+    const verification = await createAuthFlowToken(parent, 'email_verification', EMAIL_VERIFICATION_TTL_MINUTES);
+    emitAuthFlowToken({
+      type: 'email_verification',
+      email,
+      token: verification.token,
+      path: '/auth/verify-email',
+    });
     const token = createSessionToken(parent.id);
     await storeSession(token, parent.id);
     return {
@@ -332,6 +432,9 @@ async function route(method, url, body, request) {
       body: {
         parent: publicParent(parent),
         session: { token, type: 'password' },
+        emailVerification: authFlowResponse(verification, {
+          required: REQUIRE_EMAIL_VERIFICATION,
+        }),
       },
     };
   }
@@ -342,6 +445,9 @@ async function route(method, url, body, request) {
     const parent = await db.findParentByEmail(email);
     if (!parent || !parent.passwordHash || !verifyPassword(password, parent.passwordHash)) {
       throw httpError(401, 'invalid_email_or_password');
+    }
+    if (REQUIRE_EMAIL_VERIFICATION && !parent.emailVerified) {
+      throw httpError(403, 'email_not_verified');
     }
 
     const token = createSessionToken(parent.id);
@@ -354,12 +460,16 @@ async function route(method, url, body, request) {
 
   if (method === 'POST' && path === '/auth/google') {
     const idToken = cleanString(requiredBody(body, 'idToken'));
-    const email = normalizeEmail(requiredBody(body, 'email'));
-    const name = truncateString(cleanString(body.name) || 'User');
-    const googleId = cleanString(body.googleId);
+
+    // Verify the token with Google and derive identity from the SIGNED claims,
+    // not from anything the client sent in the body.
+    const claims = await verifyGoogleIdToken(idToken);
+    const email = normalizeEmail(claims.email);
+    const googleId = cleanString(claims.sub);
+    const name = truncateString(cleanString(claims.name || body.name) || 'User');
 
     if (!googleId) {
-      throw httpError(400, 'missing_google_id');
+      throw httpError(401, 'invalid_google_token');
     }
 
     // Try to find existing user by email
@@ -368,7 +478,10 @@ async function route(method, url, body, request) {
     if (parent) {
       // Update Google ID if not set
       if (!parent.googleId) {
-        await db.updateParent(parent.id, { googleId });
+        parent = await db.updateParent(parent.id, { googleId });
+      }
+      if (!parent.emailVerified) {
+        parent = await db.markParentEmailVerified(parent.id);
       }
     } else {
       // Create new user
@@ -388,6 +501,59 @@ async function route(method, url, body, request) {
     };
   }
 
+  if (method === 'POST' && path === '/auth/verify-email') {
+    const token = cleanString(requiredBody(body, 'token'));
+    const parent = await consumeAuthFlowToken('email_verification', token);
+    const verified = await db.markParentEmailVerified(parent.id);
+    return { ok: true, parent: publicParent(verified) };
+  }
+
+  if (method === 'POST' && path === '/auth/resend-verification') {
+    const email = normalizeEmail(requiredBody(body, 'email'));
+    const parent = await db.findParentByEmail(email);
+    let flow;
+    if (parent && !parent.emailVerified) {
+      await db.revokeAuthTokens(parent.id, 'email_verification');
+      const verification = await createAuthFlowToken(parent, 'email_verification', EMAIL_VERIFICATION_TTL_MINUTES);
+      flow = authFlowResponse(verification);
+      emitAuthFlowToken({
+        type: 'email_verification',
+        email,
+        token: verification.token,
+        path: '/auth/verify-email',
+      });
+    }
+    return { ok: true, emailVerification: flow };
+  }
+
+  if (method === 'POST' && path === '/auth/password-reset/request') {
+    const email = normalizeEmail(requiredBody(body, 'email'));
+    const parent = await db.findParentByEmail(email);
+    let flow;
+    if (parent?.passwordHash) {
+      await db.revokeAuthTokens(parent.id, 'password_reset');
+      const reset = await createAuthFlowToken(parent, 'password_reset', PASSWORD_RESET_TTL_MINUTES);
+      flow = authFlowResponse(reset);
+      emitAuthFlowToken({
+        type: 'password_reset',
+        email,
+        token: reset.token,
+        path: '/auth/password-reset/confirm',
+      });
+    }
+    return { ok: true, passwordReset: flow };
+  }
+
+  if (method === 'POST' && path === '/auth/password-reset/confirm') {
+    const token = cleanString(requiredBody(body, 'token'));
+    const password = cleanString(requiredBody(body, 'password'));
+    validatePassword(password);
+    const parent = await consumeAuthFlowToken('password_reset', token);
+    await db.updateParentPassword(parent.id, hashPassword(password));
+    await db.revokeAuthTokens(parent.id, 'password_reset');
+    return { ok: true };
+  }
+
   // --- Protected routes (require user auth) ---
   if (method === 'GET' && path === '/children') {
     const authedParent = await authenticateRequest(request);
@@ -395,7 +561,8 @@ async function route(method, url, body, request) {
     if (parentId !== authedParent.id) {
       throw httpError(403, 'access_denied');
     }
-    return db.findChildrenByParent(parentId);
+    const children = await db.findChildrenByParent(parentId);
+    return children.map(publicChild);
   }
 
   if (method === 'POST' && path === '/children') {
@@ -412,7 +579,7 @@ async function route(method, url, body, request) {
       age: clampNumber(Number(body.age ?? 7), 1, 18),
       avatarAsset: cleanString(body.avatarAsset) || 'assets/brand/male-avatar.png',
     });
-    return { status: 201, body: child };
+    return { status: 201, body: publicChild(child) };
   }
 
   if (method === 'GET' && path === '/progress') {
@@ -509,83 +676,11 @@ async function route(method, url, body, request) {
   }
 
   if (method === 'POST' && path === '/assessments/mock') {
-    const authedParent = await authenticateRequest(request);
-    const attemptId = requiredBody(body, 'attemptId');
-    const attempt = await db.findAttemptById(attemptId);
-    if (!attempt) {
-      throw httpError(404, 'attempt_not_found');
-    }
-    await enforceChildOwnership(authedParent.id, attempt.childId);
-    const result = scoreAttempt({
-      pageNumber: attempt.pageNumber,
-      durationSeconds: attempt.durationSeconds,
-      targetLines: Array.isArray(body.targetLines) ? body.targetLines : [],
-    });
-    return db.updateAttempt(attempt.id, {
-      score: result.score,
-      status: result.status,
-      feedback: result.feedback,
-      note: result.note,
-      assessmentStatus: result.status === 'fluent' ? 'fluent' : 'needsReview',
-      assessedAt: now(),
-    });
+    throw httpError(410, 'assessment_disabled');
   }
 
   if (method === 'POST' && path === '/assessments/ai') {
-    console.log('[API] AI Assessment requested');
-    const authedParent = await authenticateRequest(request);
-    const attemptId = requiredBody(body, 'attemptId');
-    console.log('[API] Attempt ID:', attemptId);
-
-    const attempt = await db.findAttemptById(attemptId);
-    if (!attempt) {
-      console.log('[API] Attempt not found:', attemptId);
-      throw httpError(404, 'attempt_not_found');
-    }
-    await enforceChildOwnership(authedParent.id, attempt.childId);
-
-    // Get audio file
-    const audioPath = attempt.audioPath;
-    console.log('[API] Audio path from DB:', audioPath);
-
-    if (!audioPath) {
-      console.log('[API] No audio recorded for attempt:', attemptId);
-      throw httpError(400, 'no_audio_recorded');
-    }
-
-    // Read audio file
-    const audioFileName = audioPath.split('/').pop();
-    const audioFullPath = resolve('uploads/audio', audioFileName);
-    console.log('[API] Looking for audio at:', audioFullPath);
-
-    let audioBuffer;
-    try {
-      audioBuffer = await readFile(audioFullPath);
-      console.log('[API] Audio file read successfully, size:', audioBuffer.length);
-    } catch (err) {
-      console.log('[API] Audio file not found:', audioFullPath, err.message);
-      throw httpError(404, 'audio_file_not_found');
-    }
-
-    // Get target lines
-    const targetLines = Array.isArray(body.targetLines) ? body.targetLines : [];
-
-    // Call MiMo AI for assessment
-    const result = await assessWithMiMo({
-      audioBuffer,
-      targetLines,
-      pageNumber: attempt.pageNumber,
-      bookId: attempt.bookId,
-    });
-
-    return db.updateAttempt(attempt.id, {
-      score: result.score,
-      status: result.status,
-      feedback: result.feedback,
-      note: result.note,
-      assessmentStatus: result.status === 'fluent' ? 'fluent' : 'needsReview',
-      assessedAt: now(),
-    });
+    throw httpError(410, 'assessment_disabled');
   }
 
   if (method === 'POST' && path === '/subscriptions/activate') {
@@ -649,12 +744,13 @@ async function route(method, url, body, request) {
     if (!valid) {
       throw httpError(401, 'invalid_pin');
     }
-    return { valid: true, child };
+    return { valid: true, child: publicChild(child) };
   }
 
-  if (method === 'POST' && path === '/children/:id/set-pin') {
+  const childPinAction = childSetPinAction(path);
+  if (method === 'POST' && childPinAction) {
     const authedParent = await authenticateRequest(request);
-    const childId = path.split('/')[2];
+    const childId = childPinAction.id;
     await enforceChildOwnership(authedParent.id, childId);
     const pin = cleanString(body.pin);
     if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
@@ -662,18 +758,19 @@ async function route(method, url, body, request) {
     }
     const pinHash = hashPassword(pin);
     const child = await db.setChildPin(childId, pinHash);
-    return { ok: true, child };
+    return { ok: true, child: publicChild(child) };
   }
 
-  if (method === 'POST' && path === '/children/:id/schedule') {
+  const childSchedule = childScheduleAction(path);
+  if (method === 'POST' && childSchedule) {
     const authedParent = await authenticateRequest(request);
-    const childId = path.split('/')[2];
+    const childId = childSchedule.id;
     await enforceChildOwnership(authedParent.id, childId);
     const startTime = cleanString(body.startTime);
     const endTime = cleanString(body.endTime);
     const days = Array.isArray(body.days) ? body.days : [1, 2, 3, 4, 5];
     const child = await db.updateChildSchedule(childId, startTime, endTime, days);
-    return { ok: true, child };
+    return { ok: true, child: publicChild(child) };
   }
 
   // --- Review System ---
@@ -691,25 +788,10 @@ async function route(method, url, body, request) {
     }
     await enforceChildOwnership(authedParent.id, attempt.childId);
 
-    // Mark attempt as approved
-    await db.updateAttemptReview(attemptId, 'approved', authedParent.id);
-
-    // Update progress status
-    await db.updateProgressReview(
-      attempt.childId, attempt.bookId, attempt.pageNumber,
-      'approved', authedParent.id,
-    );
-
-    // Notify child
-    await db.createNotification({
-      userId: attempt.childId,
-      userType: 'child',
-      type: 'review_result',
-      title: 'Bacaan Direview',
-      message: `Bacaan halaman ${attempt.pageNumber} sudah direview. Kamu bisa lanjut! ✅`,
-      data: { attemptId, bookId: attempt.bookId, pageNumber: attempt.pageNumber, result: 'approved' },
+    await db.approveReview({
+      attempt,
+      reviewedBy: authedParent.id,
     });
-
     return { ok: true, status: 'approved' };
   }
 
@@ -717,34 +799,23 @@ async function route(method, url, body, request) {
     const authedParent = await authenticateRequest(request);
     const attemptId = requiredBody(body, 'attemptId');
     const fromPage = Number(body.fromPage);
+    if (!Number.isInteger(fromPage) || fromPage < 1) {
+      throw httpError(400, 'invalid_repeat_page');
+    }
     const attempt = await db.findAttemptById(attemptId);
     if (!attempt) {
       throw httpError(404, 'attempt_not_found');
     }
     await enforceChildOwnership(authedParent.id, attempt.childId);
+    if (fromPage > attempt.pageNumber) {
+      throw httpError(400, 'invalid_repeat_page');
+    }
 
-    // Mark attempt as needs repeat
-    await db.updateAttemptReview(attemptId, 'needs_repeat', authedParent.id);
-
-    // Set repeat from page
-    await db.setRepeatFromPage(attempt.childId, attempt.bookId, fromPage);
-
-    // Update progress status
-    await db.updateProgressReview(
-      attempt.childId, attempt.bookId, attempt.pageNumber,
-      'needs_repeat', authedParent.id,
-    );
-
-    // Notify child
-    await db.createNotification({
-      userId: attempt.childId,
-      userType: 'child',
-      type: 'review_result',
-      title: 'Perlu Mengulang',
-      message: `Bacaan perlu diulang dari halaman ${fromPage}. Semangat! 🔄`,
-      data: { attemptId, bookId: attempt.bookId, pageNumber: attempt.pageNumber, fromPage, result: 'needs_repeat' },
+    await db.repeatReview({
+      attempt,
+      reviewedBy: authedParent.id,
+      fromPage,
     });
-
     return { ok: true, status: 'needs_repeat', fromPage };
   }
 
@@ -773,9 +844,20 @@ async function route(method, url, body, request) {
     return { count: await db.countUnreadNotifications(authedParent.id, 'parent') };
   }
 
-  if (method === 'POST' && path === '/notifications/:id/read') {
-    const notificationId = path.split('/')[2];
-    await db.markNotificationRead(notificationId);
+  const notificationRead = notificationReadAction(path);
+  if (method === 'POST' && notificationRead) {
+    const authedParent = await authenticateRequest(request);
+    const notification = await db.findNotificationById(notificationRead.id);
+    if (!notification) {
+      throw httpError(404, 'notification_not_found');
+    }
+    // Verify the notification belongs to this parent, or to one of their children.
+    if (notification.user_type === 'child') {
+      await enforceChildOwnership(authedParent.id, notification.user_id);
+    } else if (notification.user_id !== authedParent.id) {
+      throw httpError(403, 'access_denied');
+    }
+    await db.markNotificationRead(notification.id);
     return { ok: true };
   }
 
@@ -836,6 +918,8 @@ function sendJson(response, status, body) {
     'access-control-allow-origin': ALLOWED_ORIGIN,
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
     'access-control-allow-headers': 'content-type,authorization',
+    'x-content-type-options': 'nosniff',
+    'vary': 'Origin',
   });
   response.end(JSON.stringify(body));
 }
@@ -862,8 +946,9 @@ async function sendFile(response, filePath, contentType = 'application/octet-str
     const content = await readFile(filePath);
     response.writeHead(200, {
       'content-type': contentType,
-      'cache-control': 'public, max-age=3600',
+      'cache-control': 'private, no-store',
       'access-control-allow-origin': ALLOWED_ORIGIN,
+      'x-content-type-options': 'nosniff',
     });
     response.end(content);
   } catch (error) {
@@ -907,6 +992,14 @@ function normalizeEmail(value) {
   return email;
 }
 
+function normalizeDemoEmail(value) {
+  const email = normalizeEmail(value);
+  if (!email.endsWith('@iqroku.local')) {
+    throw httpError(400, 'demo_email_must_use_iqroku_local');
+  }
+  return email;
+}
+
 function validatePassword(password) {
   if (password.length < 6) {
     throw httpError(400, 'password_min_6');
@@ -936,9 +1029,85 @@ function createSessionToken(parentId) {
   return `session_${parentId}_${randomBytes(24).toString('hex')}`;
 }
 
+function createOneTimeToken() {
+  return randomBytes(32).toString('base64url');
+}
+
+function hashAuthToken(token) {
+  return createHash('sha256').update(String(token)).digest('hex');
+}
+
+async function createAuthFlowToken(parent, purpose, ttlMinutes) {
+  const token = createOneTimeToken();
+  const expiresAt = addMinutes(new Date(), ttlMinutes).toISOString();
+  await db.createAuthToken({
+    parentId: parent.id,
+    purpose,
+    tokenHash: hashAuthToken(token),
+    expiresAt,
+    metadata: { email: parent.email },
+  });
+  return { token, expiresAt };
+}
+
+async function consumeAuthFlowToken(purpose, token) {
+  const record = await db.findValidAuthToken({
+    purpose,
+    tokenHash: hashAuthToken(token),
+  });
+  if (!record) {
+    throw httpError(400, 'invalid_or_expired_token');
+  }
+  await db.markAuthTokenUsed(record.id);
+  const parent = await db.findParentById(record.parentId);
+  if (!parent) {
+    throw httpError(400, 'invalid_or_expired_token');
+  }
+  return parent;
+}
+
+function authFlowResponse(flow, extra = {}) {
+  return {
+    ...extra,
+    expiresAt: flow.expiresAt,
+    devToken: process.env.NODE_ENV === 'production' ? undefined : flow.token,
+  };
+}
+
+function emitAuthFlowToken({ type, email, token, path }) {
+  const link = `${AUTH_LINK_BASE_URL.replace(/\/$/, '')}${path}?token=${encodeURIComponent(token)}`;
+  if (process.env.NODE_ENV === 'production') {
+    console.log(JSON.stringify({
+      ts: new Date().toISOString(),
+      event: 'auth_token_created',
+      type,
+      email,
+      delivery: 'pending_email_provider',
+    }));
+    return;
+  }
+  console.log(JSON.stringify({
+    ts: new Date().toISOString(),
+    event: 'auth_token_created',
+    type,
+    email,
+    token,
+    link,
+  }));
+}
+
 function publicParent(parent) {
-  const { passwordHash, ...safeParent } = parent;
+  const { passwordHash, pinHash, ...safeParent } = parent;
   return safeParent;
+}
+
+function publicChild(child) {
+  if (!child) return child;
+  const { pinHash, ...safeChild } = child;
+  return {
+    ...safeChild,
+    hasPin: Boolean(pinHash),
+  };
 }
 
 function requiredBody(body, key) {
@@ -964,233 +1133,6 @@ async function enforceChildLimit(parentId) {
   if (count >= limit) {
     throw httpError(402, 'child_limit_requires_plus');
   }
-}
-
-function scoreAttempt({ pageNumber, durationSeconds, targetLines }) {
-  // More realistic mock scoring with randomness
-  const baseScore = 50;
-  const durationScore = Math.min(Math.max(durationSeconds, 1), 30) * 0.5;
-  const pageScore = (pageNumber % 3) * 2;
-  const materialBonus = targetLines.length > 0 ? 5 : 0;
-  const randomVariation = Math.floor(Math.random() * 11) - 5; // -5 to +5
-
-  const score = Math.round(Math.min(Math.max(baseScore + durationScore + pageScore + materialBonus + randomVariation, 40), 95));
-  const passed = score >= 75;
-
-  return {
-    score,
-    status: passed ? 'fluent' : 'review',
-    feedback: passed
-      ? 'Bacaan sudah cukup lancar. Pertahankan tempo dan lanjutkan dengan percaya diri.'
-      : 'Sudah bagus berani membaca. Ulangi pelan-pelan bagian yang masih tersendat.',
-    note: passed
-      ? 'Hasil penilaian: lancar dengan toleransi latihan anak.'
-      : 'Hasil penilaian: perlu ulang agar bacaan makin mantap.',
-  };
-}
-
-async function assessWithMiMo({ audioBuffer, targetLines, pageNumber, bookId }) {
-  if (!MIMO_API_KEY) {
-    console.warn('[AI] MIMO_API_KEY not set, falling back to mock scoring');
-    return scoreAttempt({ pageNumber, durationSeconds: 10, targetLines });
-  }
-
-  try {
-    console.log('[AI] Starting assessment...');
-    console.log('[AI] Audio size:', audioBuffer.length, 'bytes');
-    console.log('[AI] Target lines:', targetLines.length);
-
-    // Step 1: Transcribe audio using MiMo ASR
-    console.log('[AI] Transcribing audio with MiMo ASR...');
-    const transcribedText = await transcribeWithMiMoASR(audioBuffer);
-    console.log('[AI] Transcribed text:', transcribedText.substring(0, 100) + '...');
-
-    // Step 2: Compare and generate feedback using MiMo Pro
-    const targetText = targetLines.map(line => line.join(' ')).join('\n');
-    console.log('[AI] Generating feedback with MiMo Pro...');
-    const feedback = await generateFeedbackWithMiMo(transcribedText, targetText, pageNumber, bookId);
-
-    // Calculate score based on comparison
-    const similarity = calculateSimilarity(transcribedText, targetText);
-    const score = Math.round(60 + (similarity * 36)); // Scale 0-1 to 60-96
-    const passed = score >= 80;
-
-    console.log('[AI] Similarity:', similarity, 'Score:', score, 'Passed:', passed);
-
-    return {
-      score,
-      status: passed ? 'fluent' : 'review',
-      feedback: feedback.feedback,
-      note: feedback.note,
-    };
-  } catch (error) {
-    console.error('[AI] MiMo AI assessment failed:', error.message);
-    console.error('[AI] Falling back to mock scoring');
-    return scoreAttempt({ pageNumber, durationSeconds: 10, targetLines });
-  }
-}
-
-async function transcribeWithMiMoASR(audioBuffer) {
-  // Convert audio to wav using ffmpeg
-  const tmpDir = '/tmp/iqroku_audio';
-  await mkdir(tmpDir, { recursive: true });
-
-  const tmpInput = resolve(tmpDir, `input_${Date.now()}.m4a`);
-  const tmpOutput = resolve(tmpDir, `output_${Date.now()}.wav`);
-
-  try {
-    // Write input file
-    await writeFile(tmpInput, audioBuffer);
-
-    // Convert to wav (16kHz, mono)
-    execSync(`ffmpeg -i ${tmpInput} -ar 16000 -ac 1 -f wav ${tmpOutput} -y`, {
-      stdio: 'pipe',
-    });
-
-    // Read converted file
-    const wavBuffer = await readFile(tmpOutput);
-    const base64Audio = wavBuffer.toString('base64');
-    const dataUrl = `data:audio/wav;base64,${base64Audio}`;
-
-    const response = await fetch(`${MIMO_API_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${MIMO_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MIMO_ASR_MODEL,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'input_audio',
-                input_audio: {
-                  data: dataUrl,
-                  format: 'wav',
-                },
-              },
-            ],
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`MiMo ASR failed: ${response.status} - ${error}`);
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
-  } finally {
-    // Cleanup temp files
-    try {
-      await unlink(tmpInput).catch(() => {});
-      await unlink(tmpOutput).catch(() => {});
-    } catch (_) {
-      // Ignore cleanup errors
-    }
-  }
-}
-
-async function generateFeedbackWithMiMo(transcribed, target, pageNumber, bookId) {
-  const response = await fetch(`${MIMO_API_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${MIMO_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MIMO_PRO_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: `Kamu adalah guru ngaji yang sabar dan mendukung untuk anak-anak. Tugasmu adalah menilai bacaan Iqro dengan detail dan memberikan umpan balik yang membangun.
-
-TUGASAN: Iqro ${bookId}, Halaman ${pageNumber}
-
-FORMAT RESPONSE (JSON):
-{
-  "score": <angka 0-100>,
-  "correct_parts": "<bagian yang benar, misal: 'Alif (✓), Ba (✓)'",
-  "wrong_parts": "<bagian yang salah dengan koreksi, misal: 'ب dibaca ت - seharusnya Ba bukan Ta'",
-  "feedback": "<umpan balik untuk anak: 2-3 kalimat, positif, sebutkan huruf Arab dan Latinnya>",
-  "note": "<catatan untuk orang tua: detail teknis kesalahan dan saran perbaikan>"
-}
-
-ATURAN PENILAIAN:
-- Perhatikan setiap huruf yang dibaca anak
-- Bandingkan dengan teks target huruf per huruf
-- Jika ada huruf yang salah sebut, sebutkan huruf yang benar
-- Berikan pujian untuk bagian yang benar
-- Koreksi bagian yang salah dengan cara yang lembut
-- Skor: 90-100 = Sangat Lancar, 70-89 = Lancar, 40-69 = Perlu Belajar, 0-39 = Perlu Ulang
-- Gunakan nama Latin huruf (Alif, Ba, Ta, dll) agar anak mudah paham
-
-CONTOH RESPONSE:
-{
-  "score": 65,
-  "correct_parts": "Alif (✓) dan Lam (✓) sudah benar",
-  "wrong_parts": "ب (Ba) salah dibaca ت (Ta) - coba rapatkan bibir",
-  "feedback": "Alhamdulillah, Alif dan Lam sudah benar! Untuk ب (Ba), coba rapatkan bibir atas dan bawah ya. Ulangi lagi!",
-  "note": "Anak masih tertukar ب dan ت. Perlu latihan pembedaan huruf yang mirip. Fokus pada posisi bibir untuk Ba."
-}`,
-        },
-        {
-          role: 'user',
-          content: `Teks target (yang seharusnya dibaca):\n${target}\n\nHasil rekaman anak:\n${transcribed}\n\nBandingkan huruf per huruf. Berikan penilaian detail.`,
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`MiMo Pro failed: ${response.status} - ${error}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
-
-  try {
-    // Try to parse JSON response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-  } catch (_) {
-    // Fallback if JSON parsing fails
-  }
-
-  return {
-    feedback: 'Bacaan sudah bagus. Terus berlatih ya!',
-    note: 'Perlu evaluasi lebih lanjut.',
-  };
-}
-
-function calculateSimilarity(text1, text2) {
-  if (!text1 || !text2) return 0;
-
-  // Normalize Arabic text
-  const normalize = (t) => t.replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]/g, '').trim();
-  const a = normalize(text1);
-  const b = normalize(text2);
-
-  if (a === b) return 1;
-  if (!a || !b) return 0;
-
-  // Simple character-based similarity
-  let matches = 0;
-  const maxLen = Math.max(a.length, b.length);
-  const minLen = Math.min(a.length, b.length);
-
-  for (let i = 0; i < minLen; i++) {
-    if (a[i] === b[i]) matches++;
-  }
-
-  return matches / maxLen;
 }
 
 function publicPrayer(prayer) {
@@ -1233,6 +1175,30 @@ function attemptAudioUpload(path) {
     return null;
   }
   return { attemptId: decodeURIComponent(match[1]) };
+}
+
+function childSetPinAction(path) {
+  const match = /^\/children\/([^/]+)\/set-pin$/.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { id: decodeURIComponent(match[1]) };
+}
+
+function childScheduleAction(path) {
+  const match = /^\/children\/([^/]+)\/schedule$/.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { id: decodeURIComponent(match[1]) };
+}
+
+function notificationReadAction(path) {
+  const match = /^\/notifications\/([^/]+)\/read$/.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { id: decodeURIComponent(match[1]) };
 }
 
 function multipartBoundary(contentType) {
@@ -1312,11 +1278,11 @@ function dispositionValue(disposition, key) {
 }
 
 async function storeAttemptAudio({ attemptId, originalFileName, contentType, content }) {
-  const directory = resolve('uploads/audio');
-  await mkdir(directory, { recursive: true });
+  validateAudioUpload({ originalFileName, contentType, content });
+  await mkdir(AUDIO_UPLOAD_DIR, { recursive: true });
   const extension = audioExtension(originalFileName, contentType);
   const fileName = safeStoredFileName(`${attemptId}-${Date.now()}${extension}`);
-  await writeFile(resolve(directory, fileName), content);
+  await writeFile(resolve(AUDIO_UPLOAD_DIR, fileName), content);
   return {
     fileName,
     contentType: contentType || contentTypeForAudio(fileName),
@@ -1325,9 +1291,45 @@ async function storeAttemptAudio({ attemptId, originalFileName, contentType, con
   };
 }
 
+function validateAudioUpload({ originalFileName = '', contentType = '', content }) {
+  if (!Buffer.isBuffer(content) || content.length === 0) {
+    throw httpError(400, 'audio_file_empty');
+  }
+  if (content.length > MAX_AUDIO_UPLOAD_BYTES) {
+    throw httpError(413, 'audio_file_too_large');
+  }
+
+  const normalizedType = contentType.split(';')[0].trim().toLowerCase();
+  if (normalizedType && !ALLOWED_AUDIO_CONTENT_TYPES.has(normalizedType)) {
+    throw httpError(415, 'unsupported_audio_type');
+  }
+
+  const extension = extname(originalFileName).toLowerCase();
+  if (extension && !ALLOWED_AUDIO_EXTENSIONS.has(extension)) {
+    throw httpError(415, 'unsupported_audio_extension');
+  }
+
+  if (!looksLikeAudio(content)) {
+    throw httpError(415, 'invalid_audio_file');
+  }
+}
+
+function looksLikeAudio(content) {
+  if (content.length < 12) {
+    return false;
+  }
+  const ascii = content.subarray(0, 16).toString('latin1');
+  if (ascii.startsWith('RIFF') && ascii.includes('WAVE')) return true;
+  if (ascii.startsWith('ID3')) return true;
+  if (content[0] === 0xff && (content[1] & 0xe0) === 0xe0) return true;
+  if (ascii.includes('ftyp')) return true;
+  if (ascii.startsWith('\x1aE\xdf\xa3')) return true;
+  return false;
+}
+
 function audioExtension(fileName = '', contentType = '') {
   const extension = extname(fileName).toLowerCase();
-  if (['.m4a', '.mp3', '.aac', '.wav', '.webm', '.mp4'].includes(extension)) {
+  if (ALLOWED_AUDIO_EXTENSIONS.has(extension)) {
     return extension;
   }
   if (contentType.includes('mpeg')) {
@@ -1489,7 +1491,7 @@ function renderAdminDashboard(metrics) {
     ['MRR Estimasi', rupiah(metrics.totals.monthlyRevenue)],
     ['Rekaman Bacaan', metrics.totals.attempts],
     ['Assessment Selesai', metrics.totals.assessedAttempts],
-    ['Pending Assessment', metrics.totals.pendingAttempts],
+    ['Pending Review', metrics.totals.pendingAttempts],
     ['Parent Aktif Hari Ini', metrics.totals.activeParentsToday],
     ['Halaman Lancar', metrics.totals.fluentPages],
     ['Perlu Ulang', metrics.totals.reviewPages],
@@ -1639,7 +1641,7 @@ function renderAdminDashboard(metrics) {
       <header>
         <div>
           <h1>IqroKu Admin</h1>
-          <p>Prototype dashboard untuk user, subscription, revenue, rekaman, dan assessment.</p>
+          <p>Prototype dashboard untuk user, subscription, revenue, rekaman, dan review.</p>
         </div>
         <div>
           <span class="badge">Generated ${escapeHtml(formatDateTime(metrics.generatedAt))}</span>
@@ -1992,7 +1994,7 @@ function renderSubscriptionsTable(subscriptions, parents) {
 function renderAttemptsTable(attempts) {
   return `<section>
     <div class="section-head">
-      <h2>Rekaman & Assessment Terbaru</h2>
+      <h2>Rekaman & Review Terbaru</h2>
       <span class="muted">${attempts.length} terbaru</span>
     </div>
     ${attempts.length ? `<table>
@@ -2002,7 +2004,6 @@ function renderAttemptsTable(attempts) {
           <th>Parent</th>
           <th>Materi</th>
           <th>Status</th>
-          <th>Skor</th>
           <th>Created</th>
         </tr>
       </thead>
@@ -2013,7 +2014,6 @@ function renderAttemptsTable(attempts) {
             <td>${escapeHtml(attempt.parentEmail)}</td>
             <td>Iqro ${attempt.bookId} - Halaman ${attempt.pageNumber}</td>
             <td>${renderAttemptStatus(attempt.assessmentStatus)}</td>
-            <td>${attempt.score ?? '-'}</td>
             <td>${escapeHtml(formatDateTime(attempt.createdAt ?? attempt.assessedAt))}</td>
           </tr>
         `).join('')}
@@ -2092,6 +2092,12 @@ function now() {
 function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
+  return next;
+}
+
+function addMinutes(date, minutes) {
+  const next = new Date(date);
+  next.setMinutes(next.getMinutes() + minutes);
   return next;
 }
 

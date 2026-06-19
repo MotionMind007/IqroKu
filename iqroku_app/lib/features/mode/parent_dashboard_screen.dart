@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../core/assets/app_assets.dart';
 import '../../core/theme/app_theme.dart';
+import '../../features/activity/activity_screen.dart';
+import '../../features/prayers/daily_prayers_screen.dart';
+import '../../features/quran/quran_screen.dart';
+import '../../models/learning_status.dart';
 import '../../models/profile_models.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
@@ -15,6 +20,18 @@ class ParentDashboardScreen extends StatefulWidget {
 
 class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   int _selectedTab = 0;
+  _ParentFeature? _activeFeature;
+
+  void _openFeature(_ParentFeature feature) {
+    setState(() {
+      _activeFeature = feature;
+      _selectedTab = 1;
+    });
+  }
+
+  void _closeFeature() {
+    setState(() => _activeFeature = null);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,8 +53,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             child: Row(
               children: [
                 _buildTab(0, Icons.rate_review, 'Review'),
-                _buildTab(1, Icons.notifications, 'Notifikasi'),
-                _buildTab(2, Icons.settings, 'Pengaturan'),
+                _buildTab(1, Icons.apps, 'Fitur'),
+                _buildTab(2, Icons.notifications, 'Notifikasi'),
+                _buildTab(3, Icons.settings, 'Pengaturan'),
               ],
             ),
           ),
@@ -47,6 +65,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               index: _selectedTab,
               children: [
                 _ReviewTab(state: widget.state),
+                _FeatureTab(
+                  state: widget.state,
+                  activeFeature: _activeFeature,
+                  onOpenFeature: _openFeature,
+                  onCloseFeature: _closeFeature,
+                ),
                 _NotificationTab(state: widget.state),
                 _SettingsTab(state: widget.state),
               ],
@@ -74,13 +98,200 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           ),
           child: Column(
             children: [
-              Icon(icon, color: isSelected ? AppColors.primary : AppColors.muted),
+              Icon(
+                icon,
+                color: isSelected ? AppColors.primary : AppColors.muted,
+              ),
               const SizedBox(height: 4),
               Text(
                 label,
                 style: AppText.mini.copyWith(
                   color: isSelected ? AppColors.primary : AppColors.muted,
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _ParentFeature { quran, prayerSchedule, qibla, dailyPrayers }
+
+class _FeatureTab extends StatelessWidget {
+  const _FeatureTab({
+    required this.state,
+    required this.activeFeature,
+    required this.onOpenFeature,
+    required this.onCloseFeature,
+  });
+
+  final IqrokuState state;
+  final _ParentFeature? activeFeature;
+  final ValueChanged<_ParentFeature> onOpenFeature;
+  final VoidCallback onCloseFeature;
+
+  @override
+  Widget build(BuildContext context) {
+    final feature = activeFeature;
+    if (feature != null) {
+      return _buildFeature(feature);
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _ParentHero(state: state),
+        const SizedBox(height: 16),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: 0.92,
+          children: [
+            _FeatureCard(
+              asset: AppAssets.quranNew,
+              title: "Al-Qur'an",
+              subtitle: 'Baca, hafalan, dan murottal',
+              onTap: () {
+                state.backToQuranList();
+                onOpenFeature(_ParentFeature.quran);
+              },
+            ),
+            _FeatureCard(
+              asset: AppAssets.prayerTime,
+              title: 'Jadwal Solat',
+              subtitle: 'Waktu solat harian',
+              onTap: () {
+                state.activityView = ActivityView.schedule;
+                onOpenFeature(_ParentFeature.prayerSchedule);
+              },
+            ),
+            _FeatureCard(
+              asset: AppAssets.qiblaCompass,
+              title: 'Kiblat',
+              subtitle: 'Arah kiblat keluarga',
+              onTap: () {
+                state.activityView = ActivityView.qibla;
+                onOpenFeature(_ParentFeature.qibla);
+              },
+            ),
+            _FeatureCard(
+              asset: AppAssets.doaDoa,
+              title: 'Doa Harian',
+              subtitle: 'Kumpulan doa anak',
+              onTap: () {
+                state.loadDailyPrayers(forceRefresh: true);
+                onOpenFeature(_ParentFeature.dailyPrayers);
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFeature(_ParentFeature feature) {
+    return switch (feature) {
+      _ParentFeature.quran => QuranScreen(state: state, onBack: onCloseFeature),
+      _ParentFeature.prayerSchedule => PrayerScheduleScreen(
+        state: state,
+        onBack: onCloseFeature,
+      ),
+      _ParentFeature.qibla => QiblaCompassScreen(
+        state: state,
+        onBack: onCloseFeature,
+      ),
+      _ParentFeature.dailyPrayers => DailyPrayersScreen(
+        state: state,
+        onBack: onCloseFeature,
+      ),
+    };
+  }
+}
+
+class _ParentHero extends StatelessWidget {
+  const _ParentHero({required this.state});
+
+  final IqrokuState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final parentName = state.parentAccount?.name ?? 'Orang Tua';
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            ClipOval(
+              child: Image.asset(
+                AppAssets.parentAvatar,
+                width: 72,
+                height: 72,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(parentName, style: AppText.bodyStrong),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Akses cepat ibadah keluarga',
+                    style: AppText.caption.copyWith(color: AppColors.muted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureCard extends StatelessWidget {
+  const _FeatureCard({
+    required this.asset,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final String asset;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Center(child: Image.asset(asset, fit: BoxFit.contain)),
+              ),
+              const SizedBox(height: 10),
+              Text(title, style: AppText.bodyStrong),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.caption.copyWith(color: AppColors.muted),
               ),
             ],
           ),
@@ -131,7 +342,11 @@ class _ReviewTabState extends State<_ReviewTab> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check_circle_outline, size: 64, color: AppColors.primary.withValues(alpha: 0.5)),
+            Icon(
+              Icons.check_circle_outline,
+              size: 64,
+              color: AppColors.primary.withValues(alpha: 0.5),
+            ),
             const SizedBox(height: 16),
             Text('Tidak ada rekaman yang perlu direview', style: AppText.body),
           ],
@@ -147,6 +362,7 @@ class _ReviewTabState extends State<_ReviewTab> {
         itemBuilder: (context, index) {
           final review = _pendingReviews[index];
           return _ReviewCard(
+            state: widget.state,
             review: review,
             onApprove: () => _approveReview(review),
             onRepeat: (fromPage) => _repeatReview(review, fromPage),
@@ -159,14 +375,22 @@ class _ReviewTabState extends State<_ReviewTab> {
   Future<void> _approveReview(Map<String, Object?> review) async {
     try {
       await widget.state.authService.approveReview(review['id'] as String);
+      if (!mounted) return;
+      widget.state.applyParentReviewResult(
+        attemptId: review['id'] as String,
+        status: LearningStatus.fluent,
+      );
+      await widget.state.refreshChildrenFromBackend();
+      if (!mounted) return;
       _loadPendingReviews();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bacaan berhasil di-approve')),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal: $e')),
-      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Gagal: $e')));
     }
   }
 
@@ -176,25 +400,38 @@ class _ReviewTabState extends State<_ReviewTab> {
         attemptId: review['id'] as String,
         fromPage: fromPage,
       );
+      if (!mounted) return;
+      widget.state.applyParentReviewResult(
+        attemptId: review['id'] as String,
+        status: LearningStatus.review,
+        repeatFromPage: fromPage,
+      );
+      await widget.state.refreshChildrenFromBackend();
+      if (!mounted) return;
       _loadPendingReviews();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Anak diminta mengulang dari halaman $fromPage')),
+        SnackBar(
+          content: Text('Anak diminta mengulang dari halaman $fromPage'),
+        ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal: $e')),
-      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Gagal: $e')));
     }
   }
 }
 
 class _ReviewCard extends StatelessWidget {
   const _ReviewCard({
+    required this.state,
     required this.review,
     required this.onApprove,
     required this.onRepeat,
   });
 
+  final IqrokuState state;
   final Map<String, Object?> review;
   final VoidCallback onApprove;
   final Function(int fromPage) onRepeat;
@@ -205,78 +442,104 @@ class _ReviewCard extends StatelessWidget {
     final bookId = review['book_id'] as int? ?? 1;
     final pageNumber = review['page_number'] as int? ?? 1;
     final duration = review['duration_seconds'] as int? ?? 0;
+    final attemptId = review['id'] as String? ?? '';
+    final audioPath =
+        review['audio_path'] as String? ?? review['audio_url'] as String?;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return AnimatedBuilder(
+      animation: state,
+      builder: (context, _) {
+        final isPlaying = state.playingAttemptId == attemptId;
+        final canPlay = attemptId.isNotEmpty && audioPath != null;
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.child_care, color: AppColors.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(childName, style: AppText.bodyStrong),
+                Row(
+                  children: [
+                    const Icon(Icons.child_care, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(childName, style: AppText.bodyStrong)),
+                    Text(
+                      'Iqro $bookId - Hal $pageNumber',
+                      style: AppText.caption.copyWith(color: AppColors.primary),
+                    ),
+                  ],
                 ),
-                Text(
-                  'Iqro $bookId - Hal $pageNumber',
-                  style: AppText.caption.copyWith(color: AppColors.primary),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text('Durasi: ${duration}s', style: AppText.caption),
-            const SizedBox(height: 12),
-            // Audio player placeholder
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.play_arrow),
-                    onPressed: () {
-                      // TODO: Play audio
-                    },
+                const SizedBox(height: 8),
+                Text('Durasi: ${duration}s', style: AppText.caption),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  Expanded(
-                    child: Text('Putar rekaman', style: AppText.caption),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          isPlaying ? Icons.stop_circle : Icons.play_arrow,
+                        ),
+                        color: AppColors.primary,
+                        onPressed: canPlay
+                            ? () => state.toggleReviewPlayback(
+                                attemptId: attemptId,
+                                audioPath: audioPath,
+                              )
+                            : null,
+                      ),
+                      Expanded(
+                        child: Text(
+                          canPlay
+                              ? isPlaying
+                                    ? 'Memutar rekaman'
+                                    : 'Putar rekaman'
+                              : 'Rekaman belum tersedia',
+                          style: AppText.caption,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (state.playbackError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    state.playbackError!,
+                    style: AppText.caption.copyWith(color: AppColors.coral),
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Action buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showRepeatDialog(context),
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Ulangi'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.coral,
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showRepeatDialog(context),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Perlu Ulang'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.coral,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: onApprove,
-                    icon: const Icon(Icons.check),
-                    label: const Text('Lancar'),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: onApprove,
+                        icon: const Icon(Icons.check),
+                        label: const Text('Lancar'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -398,10 +661,7 @@ class _NotificationTabState extends State<_NotificationTab> {
 }
 
 class _NotificationCard extends StatelessWidget {
-  const _NotificationCard({
-    required this.notification,
-    required this.onTap,
-  });
+  const _NotificationCard({required this.notification, required this.onTap});
 
   final Map<String, Object?> notification;
   final VoidCallback onTap;
@@ -422,14 +682,16 @@ class _NotificationCard extends StatelessWidget {
         ),
         title: Text(title, style: AppText.bodyStrong),
         subtitle: Text(message, style: AppText.caption),
-        trailing: read ? null : Container(
-          width: 8,
-          height: 8,
-          decoration: const BoxDecoration(
-            color: AppColors.primary,
-            shape: BoxShape.circle,
-          ),
-        ),
+        trailing: read
+            ? null
+            : Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
         onTap: onTap,
       ),
     );
@@ -451,6 +713,7 @@ class _SettingsTab extends StatelessWidget {
           children: state.childProfiles.map((child) {
             return _SettingsTile(
               icon: Icons.child_care,
+              asset: _childAvatarFor(child),
               title: child.name,
               subtitle: '${child.age} tahun • Atur PIN & Jadwal',
               onTap: () => _showChildSettings(context, child),
@@ -490,7 +753,12 @@ class _SettingsTab extends StatelessWidget {
     );
   }
 
-  void _showChangePinDialog(BuildContext context, {required bool isParent, String? childId, String? childName}) {
+  void _showChangePinDialog(
+    BuildContext context, {
+    required bool isParent,
+    String? childId,
+    String? childName,
+  }) {
     showDialog(
       context: context,
       builder: (context) => _ChangePinDialog(
@@ -519,9 +787,22 @@ class _ChildSettingsSheet extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.child_care, size: 32, color: Color(0xFF23864B)),
+              ClipOval(
+                child: Image.asset(
+                  _childAvatarFor(child),
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                ),
+              ),
               const SizedBox(width: 12),
-              Text(child.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              Text(
+                child.name,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -550,7 +831,8 @@ class _ChildSettingsSheet extends StatelessWidget {
               Navigator.pop(context);
               showDialog(
                 context: context,
-                builder: (context) => _ScheduleDialog(state: state, child: child),
+                builder: (context) =>
+                    _ScheduleDialog(state: state, child: child),
               );
             },
           ),
@@ -593,7 +875,9 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.isParent ? 'Ubah PIN Orang Tua' : 'Atur PIN ${widget.childName ?? "Anak"}';
+    final title = widget.isParent
+        ? 'Ubah PIN Orang Tua'
+        : 'Atur PIN ${widget.childName ?? "Anak"}';
 
     return AlertDialog(
       title: Text(title),
@@ -635,7 +919,11 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
         FilledButton(
           onPressed: _isLoading ? null : _savePin,
           child: _isLoading
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Text('Simpan'),
         ),
       ],
@@ -670,9 +958,9 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
 
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('PIN berhasil disimpan')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('PIN berhasil disimpan')));
       }
     } catch (e) {
       setState(() => _error = 'Gagal menyimpan PIN');
@@ -713,7 +1001,10 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
               Expanded(
                 child: OutlinedButton(
                   onPressed: () async {
-                    final time = await showTimePicker(context: context, initialTime: _startTime);
+                    final time = await showTimePicker(
+                      context: context,
+                      initialTime: _startTime,
+                    );
                     if (time != null) setState(() => _startTime = time);
                   },
                   child: Text('Mulai: ${_startTime.format(context)}'),
@@ -723,7 +1014,10 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
               Expanded(
                 child: OutlinedButton(
                   onPressed: () async {
-                    final time = await showTimePicker(context: context, initialTime: _endTime);
+                    final time = await showTimePicker(
+                      context: context,
+                      initialTime: _endTime,
+                    );
                     if (time != null) setState(() => _endTime = time);
                   },
                   child: Text('Selesai: ${_endTime.format(context)}'),
@@ -756,7 +1050,11 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
         FilledButton(
           onPressed: _isLoading ? null : _saveSchedule,
           child: _isLoading
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Text('Simpan'),
         ),
       ],
@@ -786,8 +1084,10 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
     try {
       await widget.state.authService.setChildSchedule(
         childId: widget.child.id,
-        startTime: '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}',
-        endTime: '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}',
+        startTime:
+            '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}',
+        endTime:
+            '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}',
         days: _selectedDays.toList()..sort(),
       );
 
@@ -799,9 +1099,9 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal: $e')));
       }
     } finally {
       setState(() => _isLoading = false);
@@ -822,9 +1122,7 @@ class _SettingsSection extends StatelessWidget {
       children: [
         Text(title, style: AppText.sectionTitle),
         const SizedBox(height: 8),
-        Card(
-          child: Column(children: children),
-        ),
+        Card(child: Column(children: children)),
       ],
     );
   }
@@ -834,11 +1132,13 @@ class _SettingsTile extends StatelessWidget {
   const _SettingsTile({
     required this.icon,
     required this.title,
+    this.asset,
     this.subtitle,
     required this.onTap,
   });
 
   final IconData icon;
+  final String? asset;
   final String title;
   final String? subtitle;
   final VoidCallback onTap;
@@ -846,11 +1146,26 @@ class _SettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: AppColors.primary),
+      leading: asset == null
+          ? Icon(icon, color: AppColors.primary)
+          : ClipOval(
+              child: Image.asset(
+                asset!,
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+              ),
+            ),
       title: Text(title),
       subtitle: subtitle != null ? Text(subtitle!) : null,
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
     );
   }
+}
+
+String _childAvatarFor(ChildProfile child) {
+  return child.avatarAsset == AppAssets.avatarFemale
+      ? AppAssets.femaleKid
+      : AppAssets.boyKid;
 }

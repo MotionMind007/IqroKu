@@ -27,6 +27,10 @@ sudo ./setup-vps.sh
 # 4. Deploy app
 chmod +x deploy.sh
 ./deploy.sh
+
+# 5. Run database migrations after code deploy
+cd /opt/iqroku
+npm run migrate --prefix backend
 ```
 
 ## File Overview
@@ -38,6 +42,7 @@ chmod +x deploy.sh
 | `ecosystem.config.cjs` | PM2 process config |
 | `nginx-iqroku.conf` | Nginx site config for iqroku.motionmind.store |
 | `schema.sql` | PostgreSQL database schema |
+| `migrations/` | Idempotent schema changes applied by `npm run migrate --prefix backend` |
 | `.env.production` | Environment template (fill in secrets) |
 | `backup.sh` | Daily database backup script |
 
@@ -49,3 +54,4 @@ chmod +x deploy.sh
 - Logs: `pm2 logs iqroku`
 - Restart: `pm2 restart iqroku`
 - Deploy new version: `cd /opt/iqroku && ./deploy/deploy.sh`
+- Migration status: `cd /opt/iqroku && npm run migrate:status --prefix backend`

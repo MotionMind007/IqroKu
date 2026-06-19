@@ -12,6 +12,8 @@ void main() {
         'currentLesson': 'Iqro 2 - Halaman 5',
         'progress': 0.65,
         'avatarAsset': 'assets/brand/male-avatar.png',
+        'repeatFromPage': 8,
+        'repeatFromBook': 2,
       };
 
       final profile = ChildProfile.fromJson(json);
@@ -22,6 +24,8 @@ void main() {
       expect(profile.currentLesson, 'Iqro 2 - Halaman 5');
       expect(profile.progress, 0.65);
       expect(profile.avatarAsset, 'assets/brand/male-avatar.png');
+      expect(profile.repeatFromPage, 8);
+      expect(profile.repeatFromBook, 2);
     });
 
     test('fromJson with null values uses defaults', () {
@@ -42,6 +46,8 @@ void main() {
       expect(profile.currentLesson, 'Iqro 1 - Halaman 1');
       expect(profile.progress, 0.0);
       expect(profile.avatarAsset, 'assets/brand/male-avatar.png');
+      expect(profile.repeatFromPage, 1);
+      expect(profile.repeatFromBook, 1);
     });
 
     test('fromJson with missing fields uses defaults', () {
@@ -70,6 +76,8 @@ void main() {
       expect(json['name'], 'Ahmad');
       expect(json['age'], 8);
       expect(json['progress'], 0.65);
+      expect(json['repeatFromPage'], 1);
+      expect(json['repeatFromBook'], 1);
     });
 
     test('copyWith creates new instance with changes', () {
@@ -82,10 +90,16 @@ void main() {
         avatarAsset: 'assets/brand/male-avatar.png',
       );
 
-      final updated = original.copyWith(name: 'Muhammad', progress: 0.75);
+      final updated = original.copyWith(
+        name: 'Muhammad',
+        progress: 0.75,
+        repeatFromPage: 3,
+      );
 
       expect(updated.name, 'Muhammad');
       expect(updated.progress, 0.75);
+      expect(updated.repeatFromPage, 3);
+      expect(updated.repeatFromBook, 1);
       expect(updated.id, 'child-1'); // unchanged
       expect(updated.age, 8); // unchanged
     });
@@ -267,9 +281,9 @@ void main() {
 
   group('ReadingAssessmentStatus', () {
     test('has correct labels', () {
-      expect(ReadingAssessmentStatus.recorded.label, 'Menunggu Penilaian');
-      expect(ReadingAssessmentStatus.assessing.label, 'Menilai Bacaan');
-      expect(ReadingAssessmentStatus.fluent.label, 'Lancar');
+      expect(ReadingAssessmentStatus.recorded.label, 'Menunggu Review');
+      expect(ReadingAssessmentStatus.assessing.label, 'Menunggu Review');
+      expect(ReadingAssessmentStatus.fluent.label, 'Disetujui');
       expect(ReadingAssessmentStatus.needsReview.label, 'Perlu Ulang');
     });
   });
