@@ -12,6 +12,7 @@ import { createAdminPanel } from './admin.mjs';
 import { createLearningRoutes } from './learning.mjs';
 import { createNotificationRoutes } from './notifications.mjs';
 import { createFamilyRoutes } from './family.mjs';
+import { createProgressRoutes } from './progress.mjs';
 
 // Initialize PostgreSQL connection
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -272,6 +273,17 @@ const familyRoutes = createFamilyRoutes({
   randomUUID,
   hashPassword,
   verifyPassword,
+  httpError,
+});
+
+const progressRoutes = createProgressRoutes({
+  db,
+  authenticateRequest,
+  enforceChildOwnership,
+  requiredBody,
+  requiredQuery,
+  cleanString,
+  clampNumber,
   httpError,
 });
 
@@ -690,33 +702,9 @@ async function route(method, url, body, request) {
     return familyResult;
   }
 
-  if (method === 'GET' && path === '/progress') {
-    const authedParent = await authenticateRequest(request);
-    const childId = requiredQuery(url, 'childId');
-    await enforceChildOwnership(authedParent.id, childId);
-    return db.findProgressByChild(childId);
-  }
-
-  if (method === 'PUT' && path === '/progress') {
-    const authedParent = await authenticateRequest(request);
-    const childId = requiredBody(body, 'childId');
-    await enforceChildOwnership(authedParent.id, childId);
-    const bookId = clampNumber(Number(requiredBody(body, 'bookId')), 1, 99);
-    const pageNumber = clampNumber(Number(requiredBody(body, 'pageNumber')), 1, 999);
-    const status = cleanString(requiredBody(body, 'status'));
-    const VALID_STATUSES = ['notStarted', 'learning', 'fluent', 'review'];
-    if (!VALID_STATUSES.includes(status)) {
-      throw httpError(400, 'invalid_status');
-    }
-    return db.upsertProgress({ childId, bookId, pageNumber, status });
-  }
-
-  if (method === 'POST' && path === '/assessments/mock') {
-    throw httpError(410, 'assessment_disabled');
-  }
-
-  if (method === 'POST' && path === '/assessments/ai') {
-    throw httpError(410, 'assessment_disabled');
+  const progressResult = await progressRoutes.handle(method, path, url, body, request);
+  if (progressResult) {
+    return progressResult;
   }
 
   if (method === 'POST' && path === '/subscriptions/activate') {

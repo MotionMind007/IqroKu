@@ -39,6 +39,7 @@ iqroku_app/lib/features/mode/parent_dashboard_screen.dart
 iqroku_app/lib/features/learning/learning_screen.dart
 backend/src/server.mjs
 backend/src/learning.mjs
+backend/src/progress.mjs
 backend/src/db.mjs
 deploy/schema.sql
 ```

@@ -45,6 +45,7 @@ const adminSource = await readFile(new URL('../src/admin.mjs', import.meta.url),
 const familySource = await readFile(new URL('../src/family.mjs', import.meta.url), 'utf8');
 const learningSource = await readFile(new URL('../src/learning.mjs', import.meta.url), 'utf8');
 const notificationSource = await readFile(new URL('../src/notifications.mjs', import.meta.url), 'utf8');
+const progressSource = await readFile(new URL('../src/progress.mjs', import.meta.url), 'utf8');
 const upsertDeviceTokenSource =
   dbSource.match(/export async function upsertDeviceToken[\s\S]*?export async function disableDeviceToken/)?.[0] ??
   '';
@@ -77,8 +78,10 @@ test('audio downloads authenticate before serving stored files', () => {
 });
 
 test('AI and mock assessment endpoints are disabled', () => {
-  assert.match(serverSource, /path === '\/assessments\/mock'[\s\S]*throw httpError\(410, 'assessment_disabled'\);/);
-  assert.match(serverSource, /path === '\/assessments\/ai'[\s\S]*throw httpError\(410, 'assessment_disabled'\);/);
+  assert.match(serverSource, /createProgressRoutes\(\{/);
+  assert.match(serverSource, /progressRoutes\.handle\(method, path, url, body, request\)/);
+  assert.match(progressSource, /path === '\/assessments\/mock'[\s\S]*throw httpError\(410, 'assessment_disabled'\);/);
+  assert.match(progressSource, /path === '\/assessments\/ai'[\s\S]*throw httpError\(410, 'assessment_disabled'\);/);
   assert.doesNotMatch(serverSource, /MIMO_API_KEY/);
   assert.doesNotMatch(serverSource, /assessWithMiMo/);
 });
@@ -91,6 +94,14 @@ test('child dynamic routes are matched with concrete path regex helpers', () => 
   assert.match(familySource, /function childScheduleAction\(path\)/);
   assert.doesNotMatch(serverSource, /path === '\/children\/:id\/set-pin'/);
   assert.doesNotMatch(serverSource, /path === '\/children\/:id\/schedule'/);
+});
+
+test('progress routes require child ownership and validate statuses', () => {
+  assert.match(progressSource, /path === '\/progress'/);
+  assert.match(progressSource, /await enforceChildOwnership\(authedParent\.id, childId\);/);
+  assert.match(progressSource, /const validStatuses = \['notStarted', 'learning', 'fluent', 'review'\]/);
+  assert.match(progressSource, /throw httpError\(400, 'invalid_status'\)/);
+  assert.match(progressSource, /db\.upsertProgress\(\{ childId, bookId, pageNumber, status \}\)/);
 });
 
 test('nginx proxies uploads through backend authorization instead of public alias serving', () => {
