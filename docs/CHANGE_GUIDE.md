@@ -68,6 +68,7 @@ iqroku_app/lib/core/services/
 iqroku_app/lib/features/learning/learning_screen.dart
 iqroku_app/lib/features/mode/parent_dashboard_screen.dart
 backend/src/server.mjs
+backend/src/auth.mjs
 backend/src/db.mjs
 ```
 

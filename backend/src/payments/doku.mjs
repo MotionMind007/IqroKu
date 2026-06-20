@@ -242,11 +242,14 @@ export function createDokuPayments({
     ) {
       throw httpError(401, 'stale_doku_signature');
     }
+    if (typeof request.rawBody !== 'string') {
+      throw httpError(400, 'missing_doku_raw_body');
+    }
     const expected = dokuSignature({
       requestId,
       timestamp,
       targetPath,
-      rawBody: request.rawBody ?? '',
+      rawBody: request.rawBody,
     });
     if (!safeStrEqual(signature, expected)) {
       throw httpError(401, 'invalid_doku_signature');

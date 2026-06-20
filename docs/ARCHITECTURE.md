@@ -73,6 +73,7 @@ Backend module pendukung:
 
 - `backend/src/observability.mjs`: structured JSON log untuk request/error/event.
 - `backend/src/external-fetch.mjs`: wrapper `fetch` dengan timeout dan retry konservatif.
+- `backend/src/auth.mjs`: session bearer auth, Google token verification, password/PIN hash helpers, dan email auth flow.
 - `backend/src/payments/doku.mjs`: DOKU checkout, webhook signature, return/failed page, dan serializer payment order.
 - `backend/src/push.mjs`: FCM HTTP v1 sender.
 

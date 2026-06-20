@@ -40,6 +40,7 @@ const pushSource = await readFile(new URL('../src/push.mjs', import.meta.url), '
 const dokuSource = await readFile(new URL('../src/payments/doku.mjs', import.meta.url), 'utf8');
 const externalFetchSource = await readFile(new URL('../src/external-fetch.mjs', import.meta.url), 'utf8');
 const observabilitySource = await readFile(new URL('../src/observability.mjs', import.meta.url), 'utf8');
+const authSource = await readFile(new URL('../src/auth.mjs', import.meta.url), 'utf8');
 const upsertDeviceTokenSource =
   dbSource.match(/export async function upsertDeviceToken[\s\S]*?export async function disableDeviceToken/)?.[0] ??
   '';
@@ -96,10 +97,11 @@ test('auth verification and reset use one-time hashed tokens', () => {
   assert.match(serverSource, /path === '\/auth\/verify-email'/);
   assert.match(serverSource, /path === '\/auth\/password-reset\/request'/);
   assert.match(serverSource, /path === '\/auth\/password-reset\/confirm'/);
-  assert.match(serverSource, /createHash\('sha256'\)\.update\(String\(token\)\)\.digest\('hex'\)/);
-  assert.match(serverSource, /db\.findValidAuthToken/);
-  assert.match(serverSource, /db\.markAuthTokenUsed/);
-  assert.doesNotMatch(serverSource, /INSERT INTO auth_tokens[\s\S]*token\s*,/);
+  assert.match(serverSource, /createAuthServices\(\{/);
+  assert.match(authSource, /createHash\('sha256'\)\.update\(String\(token\)\)\.digest\('hex'\)/);
+  assert.match(authSource, /db\.findValidAuthToken/);
+  assert.match(authSource, /db\.markAuthTokenUsed/);
+  assert.doesNotMatch(authSource, /INSERT INTO auth_tokens[\s\S]*token\s*,/);
 });
 
 test('email provider sends auth flow tokens without production token logs', () => {
@@ -107,11 +109,11 @@ test('email provider sends auth flow tokens without production token logs', () =
   assert.match(serverSource, /RESEND_API_KEY/);
   assert.match(serverSource, /EMAIL_FROM/);
   assert.match(serverSource, /EMAIL_SEND_RETRIES/);
-  assert.match(serverSource, /async function sendAuthFlowEmail/);
-  assert.match(serverSource, /https:\/\/api\.resend\.com\/emails/);
-  assert.match(serverSource, /'authorization': `Bearer \$\{RESEND_API_KEY\}`/);
-  assert.match(serverSource, /label: 'resend_email'/);
-  assert.match(serverSource, /process\.env\.NODE_ENV !== 'production'[\s\S]*payload\.token = token/);
+  assert.match(authSource, /async function sendAuthFlowEmail/);
+  assert.match(authSource, /https:\/\/api\.resend\.com\/emails/);
+  assert.match(authSource, /'authorization': `Bearer \$\{config\.resendApiKey\}`/);
+  assert.match(authSource, /label: 'resend_email'/);
+  assert.match(authSource, /process\.env\.NODE_ENV !== 'production'[\s\S]*payload\.token = token/);
   assert.match(envTemplateSource, /EMAIL_PROVIDER=none/);
   assert.match(envTemplateSource, /RESEND_API_KEY=/);
   assert.match(envTemplateSource, /EMAIL_FROM=/);
@@ -119,8 +121,8 @@ test('email provider sends auth flow tokens without production token logs', () =
 });
 
 test('session tokens and auth cleanup avoid credential exposure', () => {
-  assert.match(serverSource, /function createSessionToken\(\)/);
-  assert.match(serverSource, /session_\$\{randomBytes\(32\)\.toString\('base64url'\)\}/);
+  assert.match(authSource, /function createSessionToken\(\)/);
+  assert.match(authSource, /session_\$\{randomBytes\(32\)\.toString\('base64url'\)\}/);
   assert.doesNotMatch(serverSource, /session_\$\{parentId\}/);
   assert.doesNotMatch(serverSource, /createSessionToken\(parent\.id\)/);
   assert.match(serverSource, /async function cleanupExpiredAuthData\(\)/);
@@ -197,7 +199,9 @@ test('DOKU payment foundation verifies webhooks and keeps premium server-side', 
   assert.match(dokuSource, /function verifySignature\(request\)/);
   assert.match(dokuSource, /createHmac\('sha256', config\.secretKey\)/);
   assert.match(dokuSource, /Client-Id:\$\{config\.clientId\}/);
-  assert.match(dokuSource, /request\.rawBody \?\? ''/);
+  assert.match(dokuSource, /typeof request\.rawBody !== 'string'/);
+  assert.match(dokuSource, /missing_doku_raw_body/);
+  assert.doesNotMatch(dokuSource, /request\.rawBody \?\? ''/);
   assert.match(dokuSource, /await db\.applyPaymentNotification/);
   assert.match(dbSource, /export async function applyPaymentNotification/);
   assert.match(dbSource, /ON CONFLICT \(provider, request_id\) DO NOTHING/);
@@ -219,7 +223,7 @@ test('backend emits request ids and uses timeout/retry wrappers for external cal
   assert.match(externalFetchSource, /async function fetchTextWithTimeoutAndRetry/);
   assert.match(externalFetchSource, /function shouldRetryExternalStatus\(status\)/);
   assert.match(externalFetchSource, /status === 408 \|\| status === 429 \|\| status >= 500/);
-  assert.match(serverSource, /label: 'google_tokeninfo'/);
+  assert.match(authSource, /label: 'google_tokeninfo'/);
   assert.match(dokuSource, /label: 'doku_checkout'/);
   assert.match(envTemplateSource, /GOOGLE_VERIFY_RETRIES=2/);
 });

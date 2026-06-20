@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import * as db from './db.mjs';
@@ -7,6 +7,7 @@ import * as push from './push.mjs';
 import { fetchTextWithTimeoutAndRetry } from './external-fetch.mjs';
 import { logError, logEvent, logRequest } from './observability.mjs';
 import { createDokuPayments, DOKU_WEBHOOK_PATH } from './payments/doku.mjs';
+import { createAuthServices } from './auth.mjs';
 
 // Initialize PostgreSQL connection
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -167,42 +168,43 @@ const dokuPayments = createDokuPayments({
   addMinutes,
 });
 
-// --- Session Store (PostgreSQL-backed) ---
+const authServices = createAuthServices({
+  config: {
+    googleClientId: GOOGLE_CLIENT_ID,
+    googleVerifyTimeoutMs: GOOGLE_VERIFY_TIMEOUT_MS,
+    googleVerifyRetries: GOOGLE_VERIFY_RETRIES,
+    authLinkBaseUrl: AUTH_LINK_BASE_URL,
+    emailProvider: EMAIL_PROVIDER,
+    resendApiKey: RESEND_API_KEY,
+    emailFrom: EMAIL_FROM,
+    emailReplyTo: EMAIL_REPLY_TO,
+    emailSendTimeoutMs: EMAIL_SEND_TIMEOUT_MS,
+    emailSendRetries: EMAIL_SEND_RETRIES,
+  },
+  db,
+  fetchTextWithTimeoutAndRetry,
+  httpError,
+  addMinutes,
+  escapeHtml,
+  formatDateTime,
+  logError,
+  logEvent,
+});
 
-async function storeSession(token, parentId) {
-  await db.createSession(token, parentId);
-}
-
-async function resolveSessionToken(token) {
-  return db.resolveSession(token);
-}
-
-async function revokeSession(token) {
-  await db.deleteSession(token);
-}
-
-// --- Auth Middleware ---
-async function authenticateRequest(request) {
-  const authHeader = request.headers?.['authorization'] ?? '';
-  const token = authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7).trim()
-    : '';
-
-  if (!token) {
-    throw httpError(401, 'missing_auth_token');
-  }
-
-  // Check session store (PostgreSQL)
-  const parentId = await resolveSessionToken(token);
-  if (parentId) {
-    const parent = await db.findParentById(parentId);
-    if (parent) {
-      return parent;
-    }
-  }
-
-  throw httpError(401, 'invalid_auth_token');
-}
+const {
+  authenticateRequest,
+  authFlowResponse,
+  consumeAuthFlowToken,
+  createAuthFlowToken,
+  createSessionToken,
+  hashPassword,
+  revokeSession,
+  sendAuthFlowEmail,
+  storeSession,
+  validatePassword,
+  verifyGoogleIdToken,
+  verifyPassword,
+} = authServices;
 
 // Constant-time string comparison to avoid leaking the admin token via timing.
 function safeStrEqual(a, b) {
@@ -218,48 +220,6 @@ function safeStrEqual(a, b) {
 
 function secureCookieAttribute() {
   return process.env.NODE_ENV === 'production' ? '; Secure' : '';
-}
-
-// Verify a Google Sign-In ID token with Google and return its trusted claims.
-// Never trust email/sub coming from the request body — only what Google signs.
-async function verifyGoogleIdToken(idToken) {
-  if (!idToken) {
-    throw httpError(400, 'missing_id_token');
-  }
-  let payload;
-  try {
-    const res = await fetchTextWithTimeoutAndRetry(
-      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
-      {},
-      {
-        label: 'google_tokeninfo',
-        timeoutMs: GOOGLE_VERIFY_TIMEOUT_MS,
-        retries: GOOGLE_VERIFY_RETRIES,
-      },
-    );
-    if (!res.ok) {
-      throw httpError(401, 'invalid_google_token');
-    }
-    payload = JSON.parse(res.text || '{}');
-  } catch (err) {
-    if (err.statusCode) throw err;
-    throw httpError(502, 'google_verification_failed');
-  }
-
-  // aud must match our client id; iss must be Google; email must be present+verified.
-  if (payload.aud !== GOOGLE_CLIENT_ID) {
-    throw httpError(401, 'google_token_wrong_audience');
-  }
-  if (payload.iss !== 'accounts.google.com' && payload.iss !== 'https://accounts.google.com') {
-    throw httpError(401, 'google_token_wrong_issuer');
-  }
-  if (payload.exp && Number(payload.exp) * 1000 < Date.now()) {
-    throw httpError(401, 'google_token_expired');
-  }
-  if (!payload.email || payload.email_verified === 'false' || payload.email_verified === false) {
-    throw httpError(401, 'google_email_unverified');
-  }
-  return { email: String(payload.email), sub: String(payload.sub), name: payload.name };
 }
 
 function authenticateAdmin(request) {
@@ -1307,186 +1267,6 @@ function normalizeDemoEmail(value) {
     throw httpError(400, 'demo_email_must_use_iqroku_local');
   }
   return email;
-}
-
-function validatePassword(password) {
-  if (password.length < 6) {
-    throw httpError(400, 'password_min_6');
-  }
-  if (password.length > 128) {
-    throw httpError(400, 'password_too_long');
-  }
-}
-
-function hashPassword(password) {
-  const salt = randomBytes(16).toString('hex');
-  const hash = scryptSync(password, salt, 64).toString('hex');
-  return `scrypt:${salt}:${hash}`;
-}
-
-function verifyPassword(password, encoded) {
-  const [scheme, salt, expectedHex] = String(encoded).split(':');
-  if (scheme !== 'scrypt' || !salt || !expectedHex) {
-    return false;
-  }
-  const expected = Buffer.from(expectedHex, 'hex');
-  const actual = scryptSync(password, salt, expected.length);
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
-}
-
-function createSessionToken() {
-  return `session_${randomBytes(32).toString('base64url')}`;
-}
-
-function createOneTimeToken() {
-  return randomBytes(32).toString('base64url');
-}
-
-function hashAuthToken(token) {
-  return createHash('sha256').update(String(token)).digest('hex');
-}
-
-async function createAuthFlowToken(parent, purpose, ttlMinutes) {
-  const token = createOneTimeToken();
-  const expiresAt = addMinutes(new Date(), ttlMinutes).toISOString();
-  await db.createAuthToken({
-    parentId: parent.id,
-    purpose,
-    tokenHash: hashAuthToken(token),
-    expiresAt,
-    metadata: { email: parent.email },
-  });
-  return { token, expiresAt };
-}
-
-async function consumeAuthFlowToken(purpose, token) {
-  const record = await db.findValidAuthToken({
-    purpose,
-    tokenHash: hashAuthToken(token),
-  });
-  if (!record) {
-    throw httpError(400, 'invalid_or_expired_token');
-  }
-  await db.markAuthTokenUsed(record.id);
-  const parent = await db.findParentById(record.parentId);
-  if (!parent) {
-    throw httpError(400, 'invalid_or_expired_token');
-  }
-  return parent;
-}
-
-function authFlowResponse(flow, extra = {}) {
-  return {
-    ...extra,
-    expiresAt: flow.expiresAt,
-    devToken: process.env.NODE_ENV === 'production' ? undefined : flow.token,
-  };
-}
-
-async function sendAuthFlowEmail({ type, email, token, expiresAt, path }) {
-  const link = `${AUTH_LINK_BASE_URL.replace(/\/$/, '')}${path}?token=${encodeURIComponent(token)}`;
-  const message = authEmailMessage({ type, token, expiresAt, link });
-  const configured = EMAIL_PROVIDER === 'resend' && RESEND_API_KEY && EMAIL_FROM;
-  if (!configured) {
-    logAuthFlowToken({
-      type,
-      email,
-      token,
-      link,
-      delivery: EMAIL_PROVIDER === 'none' ? 'email_provider_not_configured' : 'email_provider_incomplete',
-    });
-    return;
-  }
-
-  try {
-    await sendResendEmail({
-      to: email,
-      subject: message.subject,
-      html: message.html,
-      text: message.text,
-    });
-    logEvent('info', 'auth_email_sent', {
-      provider: EMAIL_PROVIDER,
-      type,
-      email,
-    });
-  } catch (error) {
-    logError('auth_email_failed', error, {
-      provider: EMAIL_PROVIDER,
-      type,
-      email,
-    });
-  }
-}
-
-function logAuthFlowToken({ type, email, token, link, delivery }) {
-  const payload = {
-    type,
-    email,
-    delivery,
-  };
-  if (process.env.NODE_ENV !== 'production') {
-    payload.token = token;
-    payload.link = link;
-  }
-  logEvent('info', 'auth_token_created', payload);
-}
-
-function authEmailMessage({ type, token, expiresAt, link }) {
-  const isReset = type === 'password_reset';
-  const title = isReset ? 'Reset Password IqroKu' : 'Verifikasi Email IqroKu';
-  const intro = isReset
-    ? 'Gunakan kode di bawah ini untuk mengatur ulang password akun IqroKu.'
-    : 'Gunakan kode di bawah ini untuk memverifikasi email akun IqroKu.';
-  const outro = isReset
-    ? 'Abaikan email ini jika kamu tidak meminta reset password.'
-    : 'Abaikan email ini jika kamu tidak membuat akun IqroKu.';
-  const expiry = formatDateTime(expiresAt);
-  return {
-    subject: title,
-    text: `${intro}\n\nKode: ${token}\nBerlaku sampai: ${expiry}\n\n${outro}`,
-    html: `<!doctype html>
-<html lang="id">
-  <body style="margin:0;padding:24px;background:#f8f6ef;color:#17201b;font-family:Arial,sans-serif;">
-    <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e7e1d6;border-radius:16px;padding:24px;">
-      <h1 style="margin:0 0 12px;font-size:24px;color:#0f5b39;">${escapeHtml(title)}</h1>
-      <p style="margin:0 0 18px;font-size:15px;line-height:1.5;">${escapeHtml(intro)}</p>
-      <div style="font-size:22px;font-weight:800;letter-spacing:2px;background:#e7f5ec;color:#0f5b39;border-radius:12px;padding:16px;text-align:center;word-break:break-all;">
-        ${escapeHtml(token)}
-      </div>
-      <p style="margin:18px 0 0;font-size:13px;color:#6d756f;">Berlaku sampai: ${escapeHtml(expiry)}</p>
-      <p style="margin:10px 0 0;font-size:13px;color:#6d756f;">${escapeHtml(outro)}</p>
-      <p style="margin:18px 0 0;font-size:12px;color:#6d756f;">Link teknis: ${escapeHtml(link)}</p>
-    </div>
-  </body>
-</html>`,
-  };
-}
-
-async function sendResendEmail({ to, subject, html, text }) {
-  const response = await fetchTextWithTimeoutAndRetry('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'authorization': `Bearer ${RESEND_API_KEY}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: EMAIL_FROM,
-        to: [to],
-        subject,
-        html,
-        text,
-        ...(EMAIL_REPLY_TO ? { reply_to: EMAIL_REPLY_TO } : {}),
-      }),
-    },
-    {
-      label: 'resend_email',
-      timeoutMs: EMAIL_SEND_TIMEOUT_MS,
-      retries: EMAIL_SEND_RETRIES,
-    });
-  if (!response.ok) {
-    throw new Error(`resend_${response.status}${response.text ? `: ${response.text.slice(0, 200)}` : ''}`);
-  }
 }
 
 function queuePushNotification(notification) {
