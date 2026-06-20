@@ -176,7 +176,8 @@ fi
 section 7 "Nginx upload protection"
 if command -v nginx >/dev/null 2>&1; then
     LIVE_NGINX_CONFIG="$(mktemp)"
-    if nginx -T > "$LIVE_NGINX_CONFIG" 2>/dev/null; then
+    if nginx -T > "$LIVE_NGINX_CONFIG" 2>/dev/null \
+        || { command -v sudo >/dev/null 2>&1 && sudo -n nginx -T > "$LIVE_NGINX_CONFIG" 2>/dev/null; }; then
         if grep -Eq 'location[[:space:]]+/uploads/' "$LIVE_NGINX_CONFIG" \
             && grep -Eq 'alias[[:space:]]+/opt/iqroku/uploads/' "$LIVE_NGINX_CONFIG"; then
             fail "live nginx serves /uploads/ with alias; this bypasses backend auth"
@@ -184,7 +185,7 @@ if command -v nginx >/dev/null 2>&1; then
             pass "live nginx does not expose /uploads/ through public alias"
         fi
     else
-        fail "nginx -T failed"
+        fail "nginx -T failed; run as root or allow limited sudo: <user> ALL=(root) NOPASSWD: /usr/sbin/nginx -T"
     fi
     rm -f "$LIVE_NGINX_CONFIG"
 else

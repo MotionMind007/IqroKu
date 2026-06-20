@@ -188,6 +188,8 @@ test('operations checks cover health, backups, disk, permissions, and upload aut
   assert.match(opsCheckSource, /DISK_WARN_PERCENT="\$\{DISK_WARN_PERCENT:-85\}"/);
   assert.match(opsCheckSource, /FIREBASE_SERVICE_ACCOUNT_PATH/);
   assert.match(opsCheckSource, /live nginx serves \/uploads\/ with alias/);
+  assert.match(opsCheckSource, /sudo -n nginx -T/);
+  assert.match(opsCheckSource, /NOPASSWD: \/usr\/sbin\/nginx -T/);
   assert.match(deployScriptSource, /OPS_BASE_URL="\$\{OPS_BASE_URL:-https:\/\/iqroku\.motionmind\.store\}"/);
   assert.match(deployScriptSource, /cp "\$APP_DIR\/deploy\/ops-check\.sh" "\$APP_DIR\/ops-check\.sh"/);
   assert.match(setupVpsSource, /ops-check\.sh/);

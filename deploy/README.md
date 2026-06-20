@@ -265,6 +265,20 @@ What it checks:
 - Firebase service account file permission is `600` or stricter when configured.
 - Live Nginx does not serve `/uploads/` through a public `alias`.
 
+If cron runs as a non-root user and `nginx -T` cannot read SSL files, allow only this read-only config dump:
+
+```bash
+sudo visudo -f /etc/sudoers.d/iqroku-ops-check
+```
+
+```text
+ubuntu ALL=(root) NOPASSWD: /usr/sbin/nginx -T
+```
+
+```bash
+sudo chmod 440 /etc/sudoers.d/iqroku-ops-check
+```
+
 Common commands:
 
 ```bash
