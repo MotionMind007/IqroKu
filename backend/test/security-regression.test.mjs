@@ -142,6 +142,19 @@ test('admin routes support optional backend IP allowlist', () => {
   assert.match(envTemplateSource, /ADMIN_ALLOWED_IPS=/);
 });
 
+test('admin parent deletion requires admin auth and explicit email confirmation', () => {
+  assert.match(serverSource, /function adminParentAction\(path\)/);
+  assert.match(serverSource, /\^\\\/admin\\\/parents\\\/\(\[\^\/\]\+\)\\\/\(delete\)\$/);
+  assert.match(serverSource, /authenticateAdmin\(request\);[\s\S]*const parent = await db\.findParentById\(parentAction\.id\)/);
+  assert.match(serverSource, /const confirmEmail = normalizeEmail\(requiredBody\(body, 'confirmEmail'\)\)/);
+  assert.match(serverSource, /confirmEmail !== parent\.email/);
+  assert.match(serverSource, /await db\.deleteParent\(parent\.id\)/);
+  assert.match(serverSource, /Ketik email untuk hapus/);
+  assert.match(dbSource, /export async function deleteParent/);
+  assert.match(dbSource, /DELETE FROM notifications/);
+  assert.match(dbSource, /DELETE FROM parents WHERE id = \$1 RETURNING \*/);
+});
+
 test('DOKU payment foundation verifies webhooks and keeps premium server-side', () => {
   assert.match(serverSource, /const DOKU_CLIENT_ID =/);
   assert.match(serverSource, /const DOKU_SECRET_KEY =/);

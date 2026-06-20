@@ -121,6 +121,7 @@ GET  /admin/prayers
 POST /admin/prayers
 POST /admin/prayers/:id/update
 POST /admin/prayers/:id/delete
+POST /admin/parents/:id/delete
 ```
 
 Protected user routes memakai `Authorization: Bearer <session_token>`.

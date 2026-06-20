@@ -470,6 +470,25 @@ async function route(method, url, body, request) {
     return { html: renderAdminPrayers(prayers, 'Perubahan doa sudah tersimpan.') };
   }
 
+  const parentAction = adminParentAction(path);
+  if (method === 'POST' && parentAction?.action === 'delete') {
+    authenticateAdmin(request);
+    const parent = await db.findParentById(parentAction.id);
+    if (!parent) {
+      throw httpError(404, 'parent_not_found');
+    }
+    const confirmEmail = normalizeEmail(requiredBody(body, 'confirmEmail'));
+    if (confirmEmail !== parent.email) {
+      const metrics = await db.getAdminMetrics();
+      return {
+        html: renderAdminDashboard(metrics, `Konfirmasi email tidak cocok untuk ${parent.email}.`),
+      };
+    }
+    await db.deleteParent(parent.id);
+    const metrics = await db.getAdminMetrics();
+    return { html: renderAdminDashboard(metrics, `User ${parent.email} sudah dihapus.`) };
+  }
+
   if (method === 'POST' && path === '/auth/demo-login') {
     if (!ENABLE_DEMO_LOGIN) {
       throw httpError(404, 'not_found');
@@ -1933,6 +1952,14 @@ function adminPrayerAction(path) {
   return { id: decodeURIComponent(match[1]), action: match[2] };
 }
 
+function adminParentAction(path) {
+  const match = /^\/admin\/parents\/([^/]+)\/(delete)$/.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { id: decodeURIComponent(match[1]), action: match[2] };
+}
+
 function paymentStatusAction(path) {
   const match = /^\/payments\/status\/([^/]+)$/.exec(path);
   if (!match) {
@@ -2261,7 +2288,7 @@ function renderAdminLogin(error = '') {
 </html>`;
 }
 
-function renderAdminDashboard(metrics) {
+function renderAdminDashboard(metrics, notice = '') {
   const cards = [
     ['Total Parent', metrics.totals.parents],
     ['Profil Anak', metrics.totals.children],
@@ -2409,6 +2436,36 @@ function renderAdminDashboard(metrics) {
         padding: 18px 16px;
         color: var(--muted);
       }
+      .notice {
+        margin: 0 0 16px;
+        padding: 12px 14px;
+        border: 1px solid rgba(35, 134, 75, .22);
+        border-radius: 12px;
+        background: #e7f5ec;
+        color: var(--primary-dark);
+        font-weight: 800;
+      }
+      .danger-form {
+        display: grid;
+        gap: 8px;
+        min-width: 220px;
+      }
+      .danger-form input {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font: inherit;
+      }
+      .danger-form button {
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: var(--coral);
+        color: #fff;
+        font-weight: 800;
+        cursor: pointer;
+      }
       @media (max-width: 920px) {
         .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         header { flex-direction: column; }
@@ -2428,6 +2485,8 @@ function renderAdminDashboard(metrics) {
           <p><a href="/admin/prayers">Kelola Doa</a> · <a href="/admin/metrics">View JSON metrics</a> · <a href="/admin/logout">Logout</a></p>
         </div>
       </header>
+
+      ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
 
       <div class="grid">
         ${cards.map(([label, value]) => `
@@ -2721,6 +2780,7 @@ function renderParentsTable(parents, limit) {
           <th>Plan</th>
           <th>Anak</th>
           <th>Created</th>
+          <th>Aksi</th>
         </tr>
       </thead>
       <tbody>
@@ -2731,6 +2791,12 @@ function renderParentsTable(parents, limit) {
             <td><span class="pill ${parent.plan === 'Free' ? 'free' : ''}">${escapeHtml(parent.plan)}</span></td>
             <td>${parent.childrenCount}</td>
             <td>${escapeHtml(formatDateTime(parent.createdAt))}</td>
+            <td>
+              <form class="danger-form" method="post" action="/admin/parents/${encodeURIComponent(parent.id)}/delete">
+                <input name="confirmEmail" type="email" placeholder="Ketik email untuk hapus" autocomplete="off" required>
+                <button type="submit">Delete user</button>
+              </form>
+            </td>
           </tr>
         `).join('')}
       </tbody>

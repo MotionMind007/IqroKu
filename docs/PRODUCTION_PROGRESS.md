@@ -345,6 +345,7 @@ Content-Type: application/json
 - Review parent sekarang transactional. Jika salah satu update gagal, seluruh perubahan review rollback.
 - Constraint database mencegah status di luar enum aplikasi masuk ke tabel utama.
 - Upload audio yang bukan tipe audio valid ditolak sebelum ditulis ke storage.
+- Admin panel bisa menghapus user parent dengan konfirmasi email eksplisit. Data child/progress/attempt/subscription ikut cascade, dan notifikasi parent/child dibersihkan sebelum delete.
 
 ## DOKU Payment Foundation
 

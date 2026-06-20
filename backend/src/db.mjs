@@ -164,6 +164,27 @@ export async function getAllParents() {
   return rows.map(rowToParent);
 }
 
+export async function deleteParent(parentId) {
+  return withTransaction(async (tx) => {
+    const childRows = await tx.query(
+      'SELECT id FROM children WHERE parent_id = $1',
+      [parentId],
+    );
+    const childIds = childRows.rows.map((row) => row.id);
+    await tx.query(
+      `DELETE FROM notifications
+       WHERE (user_type = 'parent' AND user_id = $1)
+          OR (user_type = 'child' AND user_id = ANY($2::uuid[]))`,
+      [parentId, childIds],
+    );
+    const row = await tx.queryOne(
+      'DELETE FROM parents WHERE id = $1 RETURNING *',
+      [parentId],
+    );
+    return row ? rowToParent(row) : null;
+  });
+}
+
 function rowToParent(row) {
   return {
     id: row.id,

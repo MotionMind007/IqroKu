@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/assets/app_assets.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/subscription_sheet.dart';
 import '../../features/activity/activity_screen.dart';
 import '../../features/prayers/daily_prayers_screen.dart';
 import '../../features/quran/quran_screen.dart';
@@ -765,6 +766,16 @@ class _SettingsTab extends StatelessWidget {
           title: 'Akun',
           children: [
             _SettingsTile(
+              icon: Icons.workspace_premium_outlined,
+              title: state.subscriptionActive
+                  ? 'IqroKu Plus aktif'
+                  : 'Upgrade IqroKu Plus',
+              subtitle: state.subscriptionActive
+                  ? 'Aktif sampai ${state.subscriptionRenewalLabel}'
+                  : 'Buka Iqro jilid 2-6 dan tambah profil anak',
+              onTap: () => _showUpgradeSheet(context),
+            ),
+            _SettingsTile(
               icon: Icons.lock,
               title: 'Ubah PIN Orang Tua',
               onTap: () => _showChangePinDialog(context, isParent: true),
@@ -777,6 +788,17 @@ class _SettingsTab extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+
+  void _showUpgradeSheet(BuildContext context) {
+    showIqrokuPlusSheet(
+      context: context,
+      onConfirm: state.startFamilyPlusCheckout,
+      active: state.subscriptionActive,
+      renewalLabel: state.subscriptionRenewalLabel,
+      loading: state.subscriptionCheckoutLoading,
+      errorMessage: state.subscriptionError,
     );
   }
 
