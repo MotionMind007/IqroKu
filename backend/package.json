@@ -8,7 +8,7 @@
     "start": "node src/server.mjs",
     "migrate": "node scripts/migrate.mjs",
     "migrate:status": "node scripts/migrate.mjs --status",
-    "check": "node --check src/server.mjs && node --check src/db.mjs && node --check src/push.mjs && node --check src/observability.mjs && node --check src/external-fetch.mjs && node --check src/auth.mjs && node --check src/admin.mjs && node --check src/payments/doku.mjs",
+    "check": "node --check src/server.mjs && node --check src/db.mjs && node --check src/push.mjs && node --check src/observability.mjs && node --check src/external-fetch.mjs && node --check src/auth.mjs && node --check src/admin.mjs && node --check src/learning.mjs && node --check src/payments/doku.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {

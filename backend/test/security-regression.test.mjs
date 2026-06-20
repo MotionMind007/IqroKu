@@ -42,6 +42,7 @@ const externalFetchSource = await readFile(new URL('../src/external-fetch.mjs', 
 const observabilitySource = await readFile(new URL('../src/observability.mjs', import.meta.url), 'utf8');
 const authSource = await readFile(new URL('../src/auth.mjs', import.meta.url), 'utf8');
 const adminSource = await readFile(new URL('../src/admin.mjs', import.meta.url), 'utf8');
+const learningSource = await readFile(new URL('../src/learning.mjs', import.meta.url), 'utf8');
 const upsertDeviceTokenSource =
   dbSource.match(/export async function upsertDeviceToken[\s\S]*?export async function disableDeviceToken/)?.[0] ??
   '';
@@ -65,9 +66,11 @@ test('public serializers strip PIN hashes from parent and child responses', () =
 });
 
 test('audio downloads authenticate before serving stored files', () => {
-  assert.match(serverSource, /if \(method === 'GET' && path\.startsWith\('\/uploads\/audio\/'\)\)/);
-  assert.match(serverSource, /const authedParent = await authenticateRequest\(request\);/);
-  assert.match(serverSource, /await enforceChildOwnership\(authedParent\.id, attempt\.childId\);/);
+  assert.match(serverSource, /createLearningRoutes\(\{/);
+  assert.match(serverSource, /learningRoutes\.handle\(method, path, url, body, request\)/);
+  assert.match(learningSource, /if \(method === 'GET' && path\.startsWith\('\/uploads\/audio\/'\)\)/);
+  assert.match(learningSource, /const authedParent = await authenticateRequest\(request\);/);
+  assert.match(learningSource, /await enforceChildOwnership\(authedParent\.id, attempt\.childId\);/);
   assert.match(serverSource, /'cache-control': 'private, no-store'/);
 });
 
@@ -237,8 +240,8 @@ test('review decisions are applied through one database transaction', () => {
   assert.match(dbSource, /await client\.query\('ROLLBACK'\)/);
   assert.match(dbSource, /export async function approveReview/);
   assert.match(dbSource, /export async function repeatReview/);
-  assert.match(serverSource, /await db\.approveReview\(\{/);
-  assert.match(serverSource, /await db\.repeatReview\(\{/);
+  assert.match(learningSource, /await db\.approveReview\(\{/);
+  assert.match(learningSource, /await db\.repeatReview\(\{/);
 });
 
 test('audio upload handling enforces size, type, extension, and content sniffing', () => {
@@ -247,13 +250,13 @@ test('audio upload handling enforces size, type, extension, and content sniffing
   assert.match(serverSource, /const GENERIC_AUDIO_UPLOAD_CONTENT_TYPES = new Set/);
   assert.match(serverSource, /'application\/octet-stream'/);
   assert.match(serverSource, /const ALLOWED_AUDIO_EXTENSIONS = new Set/);
-  assert.match(serverSource, /validateAudioUpload\(\{ originalFileName, contentType, content \}\);/);
-  assert.match(serverSource, /throw httpError\(413, 'audio_file_too_large'\)/);
-  assert.match(serverSource, /throw httpError\(415, 'unsupported_audio_type'\)/);
-  assert.match(serverSource, /throw httpError\(415, 'unsupported_audio_extension'\)/);
-  assert.match(serverSource, /throw httpError\(415, 'invalid_audio_file'\)/);
-  assert.match(serverSource, /GENERIC_AUDIO_UPLOAD_CONTENT_TYPES\.has\(normalizedType\)/);
-  assert.match(serverSource, /function looksLikeAudio\(content\)/);
+  assert.match(learningSource, /validateAudioUpload\(\{ originalFileName, contentType, content \}\);/);
+  assert.match(learningSource, /throw httpError\(413, 'audio_file_too_large'\)/);
+  assert.match(learningSource, /throw httpError\(415, 'unsupported_audio_type'\)/);
+  assert.match(learningSource, /throw httpError\(415, 'unsupported_audio_extension'\)/);
+  assert.match(learningSource, /throw httpError\(415, 'invalid_audio_file'\)/);
+  assert.match(learningSource, /genericAudioUploadContentTypes\.has\(normalizedType\)/);
+  assert.match(learningSource, /function looksLikeAudio\(content\)/);
 });
 
 test('basic HTTP response hardening is enabled for JSON, files, and admin cookies', () => {
