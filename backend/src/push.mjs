@@ -1,5 +1,7 @@
 import { createSign } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { fetchJsonWithTimeoutAndRetry } from './external-fetch.mjs';
+import { logEvent } from './observability.mjs';
 
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -196,110 +198,4 @@ function isInvalidTokenError(status, error) {
     text.includes('INVALID_ARGUMENT') ||
     text.includes('registration-token-not-registered')
   );
-}
-
-async function fetchJsonWithTimeoutAndRetry(url, options = {}, config = {}) {
-  const label = config.label || 'external_request';
-  const timeoutMs = Math.max(1, Number(config.timeoutMs ?? 10_000));
-  const retries = Math.max(0, Number(config.retries ?? 0));
-  let lastError;
-
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    const startedAt = Date.now();
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-      });
-      const text = await response.text();
-      const json = safeParseJson(text);
-      const durationMs = Date.now() - startedAt;
-      if (attempt < retries && shouldRetryExternalStatus(response.status)) {
-        logEvent('warn', 'external_request_retry', {
-          label,
-          attempt: attempt + 1,
-          status: response.status,
-          ms: durationMs,
-        });
-        await sleep(backoffMs(attempt));
-        continue;
-      }
-      logEvent(response.ok ? 'info' : 'warn', 'external_request', {
-        label,
-        status: response.status,
-        ms: durationMs,
-        attempt: attempt + 1,
-      });
-      return {
-        ok: response.ok,
-        status: response.status,
-        json,
-        text,
-      };
-    } catch (error) {
-      lastError = error;
-      clearTimeout(timeout);
-      const durationMs = Date.now() - startedAt;
-      if (attempt < retries) {
-        logEvent('warn', 'external_request_retry', {
-          label,
-          attempt: attempt + 1,
-          ms: durationMs,
-          error: error.name === 'AbortError' ? 'timeout' : error.message,
-        });
-        await sleep(backoffMs(attempt));
-        continue;
-      }
-      logEvent('error', 'external_request_failed', {
-        label,
-        attempt: attempt + 1,
-        ms: durationMs,
-        error: error.message,
-      });
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  throw lastError ?? new Error(`${label}_failed`);
-}
-
-function safeParseJson(text) {
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch (_) {
-    return {};
-  }
-}
-
-function shouldRetryExternalStatus(status) {
-  return status === 408 || status === 429 || status >= 500;
-}
-
-function backoffMs(attempt) {
-  return Math.min(1000, 150 * 2 ** attempt);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function logEvent(level, event, fields = {}) {
-  const payload = Object.fromEntries(
-    Object.entries({
-      ts: new Date().toISOString(),
-      level,
-      event,
-      ...fields,
-    }).filter(([, value]) => value !== undefined),
-  );
-  const line = JSON.stringify(payload);
-  if (level === 'error') {
-    console.error(line);
-    return;
-  }
-  console.log(line);
 }

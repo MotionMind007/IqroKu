@@ -155,6 +155,8 @@ File yang kemungkinan disentuh:
 
 ```text
 backend/src/server.mjs
+backend/src/payments/doku.mjs
+backend/src/external-fetch.mjs
 backend/src/db.mjs
 deploy/schema.sql
 deploy/migrations/007_doku_payments.sql

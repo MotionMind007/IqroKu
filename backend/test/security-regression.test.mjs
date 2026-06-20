@@ -37,6 +37,9 @@ const performanceIndexesMigration = await readFile(
   'utf8',
 );
 const pushSource = await readFile(new URL('../src/push.mjs', import.meta.url), 'utf8');
+const dokuSource = await readFile(new URL('../src/payments/doku.mjs', import.meta.url), 'utf8');
+const externalFetchSource = await readFile(new URL('../src/external-fetch.mjs', import.meta.url), 'utf8');
+const observabilitySource = await readFile(new URL('../src/observability.mjs', import.meta.url), 'utf8');
 const upsertDeviceTokenSource =
   dbSource.match(/export async function upsertDeviceToken[\s\S]*?export async function disableDeviceToken/)?.[0] ??
   '';
@@ -180,20 +183,22 @@ test('DOKU payment foundation verifies webhooks and keeps premium server-side', 
   assert.match(serverSource, /const DOKU_CLIENT_ID =/);
   assert.match(serverSource, /const DOKU_SECRET_KEY =/);
   assert.match(serverSource, /const DOKU_SEND_RETRIES =/);
-  assert.match(serverSource, /const DOKU_CHECKOUT_PATH = '\/checkout\/v1\/payment'/);
+  assert.match(serverSource, /createDokuPayments\(\{/);
+  assert.match(dokuSource, /export const DOKU_CHECKOUT_PATH = '\/checkout\/v1\/payment'/);
   assert.match(serverSource, /path === '\/payments\/doku\/checkout'/);
-  assert.match(serverSource, /const authedParent = await authenticateRequest\(request\);[\s\S]*return createDokuCheckout\(authedParent\);/);
+  assert.match(serverSource, /const authedParent = await authenticateRequest\(request\);[\s\S]*return dokuPayments\.createCheckout\(authedParent\);/);
   assert.match(serverSource, /path === '\/subscriptions\/status'/);
   assert.match(serverSource, /subscription: publicSubscription\(subscription\)/);
   assert.match(serverSource, /path === '\/payments\/doku\/return'/);
   assert.match(serverSource, /path === '\/payments\/doku\/failed'/);
-  assert.match(serverSource, /function renderDokuRedirectPage/);
+  assert.match(serverSource, /dokuPayments\.renderRedirectPage/);
   assert.match(serverSource, /path === DOKU_WEBHOOK_PATH/);
-  assert.match(serverSource, /function verifyDokuSignature\(request\)/);
-  assert.match(serverSource, /createHmac\('sha256', DOKU_SECRET_KEY\)/);
-  assert.match(serverSource, /Client-Id:\$\{DOKU_CLIENT_ID\}/);
-  assert.match(serverSource, /request\.rawBody \?\? ''/);
-  assert.match(serverSource, /await db\.applyPaymentNotification/);
+  assert.match(serverSource, /dokuPayments\.handleWebhook\(body, request\)/);
+  assert.match(dokuSource, /function verifySignature\(request\)/);
+  assert.match(dokuSource, /createHmac\('sha256', config\.secretKey\)/);
+  assert.match(dokuSource, /Client-Id:\$\{config\.clientId\}/);
+  assert.match(dokuSource, /request\.rawBody \?\? ''/);
+  assert.match(dokuSource, /await db\.applyPaymentNotification/);
   assert.match(dbSource, /export async function applyPaymentNotification/);
   assert.match(dbSource, /ON CONFLICT \(provider, request_id\) DO NOTHING/);
   assert.match(dbSource, /previousStatus !== 'paid'/);
@@ -206,14 +211,16 @@ test('DOKU payment foundation verifies webhooks and keeps premium server-side', 
 test('backend emits request ids and uses timeout/retry wrappers for external calls', () => {
   assert.match(serverSource, /const requestId = cleanString\(request\.headers\?\.\['x-request-id'\]\) \|\| randomUUID\(\)/);
   assert.match(serverSource, /response\.setHeader\('x-request-id', requestId\)/);
-  assert.match(serverSource, /function logRequest\(\{ requestId, method, path, status, ms, ip, error \}\)/);
-  assert.match(serverSource, /function logEvent\(level, event, fields = \{\}\)/);
-  assert.match(serverSource, /logEvent\([\s\S]*'http_request'/);
-  assert.match(serverSource, /async function fetchTextWithTimeoutAndRetry/);
-  assert.match(serverSource, /function shouldRetryExternalStatus\(status\)/);
-  assert.match(serverSource, /status === 408 \|\| status === 429 \|\| status >= 500/);
+  assert.match(serverSource, /from '\.\/observability\.mjs'/);
+  assert.match(serverSource, /from '\.\/external-fetch\.mjs'/);
+  assert.match(observabilitySource, /function logRequest\(\{ requestId, method, path, status, ms, ip, error \}\)/);
+  assert.match(observabilitySource, /function logEvent\(level, event, fields = \{\}\)/);
+  assert.match(observabilitySource, /logEvent\([\s\S]*'http_request'/);
+  assert.match(externalFetchSource, /async function fetchTextWithTimeoutAndRetry/);
+  assert.match(externalFetchSource, /function shouldRetryExternalStatus\(status\)/);
+  assert.match(externalFetchSource, /status === 408 \|\| status === 429 \|\| status >= 500/);
   assert.match(serverSource, /label: 'google_tokeninfo'/);
-  assert.match(serverSource, /label: 'doku_checkout'/);
+  assert.match(dokuSource, /label: 'doku_checkout'/);
   assert.match(envTemplateSource, /GOOGLE_VERIFY_RETRIES=2/);
 });
 
@@ -282,7 +289,8 @@ test('push sender uses FCM HTTP v1 without firebase-admin dependency', () => {
   assert.match(pushSource, /FIREBASE_SERVICE_ACCOUNT_JSON/);
   assert.match(pushSource, /FCM_SEND_RETRIES/);
   assert.match(pushSource, /FCM_OAUTH_RETRIES/);
-  assert.match(pushSource, /async function fetchJsonWithTimeoutAndRetry/);
+  assert.match(pushSource, /from '\.\/external-fetch\.mjs'/);
+  assert.match(externalFetchSource, /async function fetchJsonWithTimeoutAndRetry/);
   assert.match(pushSource, /label: 'fcm_message_send'/);
   assert.match(pushSource, /label: 'fcm_oauth_token'/);
   assert.match(envTemplateSource, /FCM_SEND_RETRIES=2/);

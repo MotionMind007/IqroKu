@@ -4,6 +4,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import * as db from './db.mjs';
 import * as push from './push.mjs';
+import { fetchTextWithTimeoutAndRetry } from './external-fetch.mjs';
+import { logError, logEvent, logRequest } from './observability.mjs';
+import { createDokuPayments, DOKU_WEBHOOK_PATH } from './payments/doku.mjs';
 
 // Initialize PostgreSQL connection
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -40,9 +43,6 @@ const DOKU_CHECKOUT_DUE_MINUTES = Number(process.env.DOKU_CHECKOUT_DUE_MINUTES ?
 const DOKU_SEND_TIMEOUT_MS = Number(process.env.DOKU_SEND_TIMEOUT_MS ?? 15_000);
 const DOKU_SEND_RETRIES = Number(process.env.DOKU_SEND_RETRIES ?? 1);
 const DOKU_SIGNATURE_TOLERANCE_MS = Number(process.env.DOKU_SIGNATURE_TOLERANCE_MS ?? 15 * 60 * 1000);
-const DOKU_PROVIDER = 'doku';
-const DOKU_CHECKOUT_PATH = '/checkout/v1/payment';
-const DOKU_WEBHOOK_PATH = '/payments/doku/webhook';
 
 // Google Sign-In: the audience the client's idToken must be issued for.
 // Defaults to the serverClientId used by the Flutter app.
@@ -142,6 +142,30 @@ if (CLEANUP_EXPIRED_AUTH_INTERVAL_MS > 0) {
   setInterval(cleanupExpiredAuthData, CLEANUP_EXPIRED_AUTH_INTERVAL_MS).unref();
   setTimeout(cleanupExpiredAuthData, 10_000).unref();
 }
+
+const dokuPayments = createDokuPayments({
+  config: {
+    clientId: DOKU_CLIENT_ID,
+    secretKey: DOKU_SECRET_KEY,
+    baseUrl: DOKU_BASE_URL,
+    checkoutReturnUrl: DOKU_CHECKOUT_RETURN_URL,
+    checkoutFailedUrl: DOKU_CHECKOUT_FAILED_URL,
+    notificationUrl: DOKU_NOTIFICATION_URL,
+    checkoutAmount: DOKU_CHECKOUT_AMOUNT,
+    checkoutDueMinutes: DOKU_CHECKOUT_DUE_MINUTES,
+    sendTimeoutMs: DOKU_SEND_TIMEOUT_MS,
+    sendRetries: DOKU_SEND_RETRIES,
+    signatureToleranceMs: DOKU_SIGNATURE_TOLERANCE_MS,
+  },
+  db,
+  fetchTextWithTimeoutAndRetry,
+  httpError,
+  safeStrEqual,
+  escapeHtml,
+  optionalString,
+  truncateString,
+  addMinutes,
+});
 
 // --- Session Store (PostgreSQL-backed) ---
 
@@ -431,15 +455,15 @@ async function route(method, url, body, request) {
   }
 
   if (method === 'GET' && path === '/payments/doku/return') {
-    return { html: renderDokuRedirectPage({ status: 'success', url }) };
+    return { html: dokuPayments.renderRedirectPage({ status: 'success', url }) };
   }
 
   if (method === 'GET' && path === '/payments/doku/failed') {
-    return { html: renderDokuRedirectPage({ status: 'failed', url }) };
+    return { html: dokuPayments.renderRedirectPage({ status: 'failed', url }) };
   }
 
   if (method === 'POST' && path === DOKU_WEBHOOK_PATH) {
-    return handleDokuWebhook(body, request);
+    return dokuPayments.handleWebhook(body, request);
   }
 
   // --- Admin routes (require admin token) ---
@@ -898,7 +922,7 @@ async function route(method, url, body, request) {
 
   if (method === 'POST' && path === '/payments/doku/checkout') {
     const authedParent = await authenticateRequest(request);
-    return createDokuCheckout(authedParent);
+    return dokuPayments.createCheckout(authedParent);
   }
 
   const paymentStatus = paymentStatusAction(path);
@@ -911,7 +935,7 @@ async function route(method, url, body, request) {
     if (order.parentId !== authedParent.id) {
       throw httpError(403, 'access_denied');
     }
-    return publicPaymentOrder(order);
+    return dokuPayments.publicPaymentOrder(order);
   }
 
   // --- PIN Management ---
@@ -1502,347 +1526,6 @@ async function sendPushNotification(notification) {
   );
 }
 
-async function createDokuCheckout(parent) {
-  assertDokuConfigured();
-  if (!Number.isInteger(DOKU_CHECKOUT_AMOUNT) || DOKU_CHECKOUT_AMOUNT <= 0) {
-    throw httpError(500, 'payment_amount_invalid');
-  }
-
-  const invoiceNumber = createDokuInvoiceNumber();
-  const requestId = randomUUID();
-  const expiresAt = addMinutes(new Date(), DOKU_CHECKOUT_DUE_MINUTES).toISOString();
-  await db.createPaymentOrder({
-    id: randomUUID(),
-    parentId: parent.id,
-    provider: DOKU_PROVIDER,
-    invoiceNumber,
-    requestId,
-    plan: 'plus',
-    amount: DOKU_CHECKOUT_AMOUNT,
-    currency: 'IDR',
-    status: 'pending',
-    expiresAt,
-  });
-
-  const payload = buildDokuCheckoutPayload({ parent, invoiceNumber });
-  const rawBody = JSON.stringify(payload);
-  let responsePayload;
-  try {
-    responsePayload = await sendDokuRequest({
-      requestId,
-      targetPath: DOKU_CHECKOUT_PATH,
-      rawBody,
-    });
-  } catch (error) {
-    await db.updatePaymentOrderProviderResponse({
-      invoiceNumber,
-      status: 'failed',
-      rawResponse: { error: error.message },
-    });
-    throw error;
-  }
-
-  const checkoutUrl = dokuCheckoutUrl(responsePayload);
-  if (!checkoutUrl) {
-    await db.updatePaymentOrderProviderResponse({
-      invoiceNumber,
-      status: 'failed',
-      rawResponse: responsePayload,
-    });
-    throw httpError(502, 'doku_checkout_url_missing');
-  }
-
-  const order = await db.updatePaymentOrderProviderResponse({
-    invoiceNumber,
-    checkoutUrl,
-    providerOrderId: dokuProviderOrderId(responsePayload),
-    rawResponse: responsePayload,
-  });
-
-  return {
-    ok: true,
-    checkoutUrl,
-    payment: publicPaymentOrder(order),
-  };
-}
-
-async function handleDokuWebhook(body, request) {
-  assertDokuConfigured();
-  verifyDokuSignature(request);
-
-  const invoiceNumber = dokuNotificationInvoiceNumber(body);
-  if (!invoiceNumber) {
-    throw httpError(400, 'missing_invoice_number');
-  }
-
-  const requestId = requiredHeader(request, 'request-id');
-  const order = await db.findPaymentOrderByInvoiceNumber(invoiceNumber);
-  if (!order) {
-    await db.recordPaymentEvent({
-      provider: DOKU_PROVIDER,
-      requestId,
-      invoiceNumber,
-      eventType: dokuNotificationEventType(body),
-      signatureValid: true,
-      payload: body,
-    });
-    throw httpError(404, 'payment_order_not_found');
-  }
-
-  const amount = dokuNotificationAmount(body);
-  if (amount !== null && amount !== order.amount) {
-    await db.recordPaymentEvent({
-      provider: DOKU_PROVIDER,
-      requestId,
-      invoiceNumber,
-      eventType: 'amount_mismatch',
-      signatureValid: true,
-      payload: body,
-    });
-    throw httpError(400, 'payment_amount_mismatch');
-  }
-
-  const result = await db.applyPaymentNotification({
-    provider: DOKU_PROVIDER,
-    requestId,
-    invoiceNumber,
-    eventType: dokuNotificationEventType(body),
-    signatureValid: true,
-    payload: body,
-    status: dokuNotificationOrderStatus(body),
-    paidAt: dokuNotificationPaidAt(body),
-  });
-
-  return {
-    ok: true,
-    duplicate: result.duplicate,
-    payment: result.order ? publicPaymentOrder(result.order) : undefined,
-  };
-}
-
-function assertDokuConfigured() {
-  if (!DOKU_CLIENT_ID || !DOKU_SECRET_KEY) {
-    throw httpError(503, 'payment_provider_not_configured');
-  }
-}
-
-function buildDokuCheckoutPayload({ parent, invoiceNumber }) {
-  return {
-    order: {
-      amount: DOKU_CHECKOUT_AMOUNT,
-      invoice_number: invoiceNumber,
-      currency: 'IDR',
-      callback_url: DOKU_CHECKOUT_RETURN_URL,
-      callback_url_cancel: DOKU_CHECKOUT_FAILED_URL,
-      callback_url_result: DOKU_CHECKOUT_RETURN_URL,
-      auto_redirect: true,
-      line_items: [
-        {
-          name: 'IqroKu Plus 1 Bulan',
-          price: DOKU_CHECKOUT_AMOUNT,
-          quantity: 1,
-        },
-      ],
-    },
-    payment: {
-      payment_due_date: Math.max(1, Math.round(DOKU_CHECKOUT_DUE_MINUTES)),
-    },
-    customer: {
-      id: parent.id,
-      name: truncateString(parent.name || 'Orang Tua'),
-      email: parent.email,
-    },
-    additional_info: {
-      override_notification_url: DOKU_NOTIFICATION_URL,
-      integration: {
-        name: 'iqroku-backend',
-        version: '0.2.0',
-      },
-    },
-  };
-}
-
-async function sendDokuRequest({ requestId, targetPath, rawBody }) {
-  const timestamp = dokuTimestamp();
-  const signature = dokuSignature({
-    requestId,
-    timestamp,
-    targetPath,
-    rawBody,
-  });
-
-  try {
-    const response = await fetchTextWithTimeoutAndRetry(`${DOKU_BASE_URL}${targetPath}`, {
-      method: 'POST',
-      headers: {
-        'client-id': DOKU_CLIENT_ID,
-        'request-id': requestId,
-        'request-timestamp': timestamp,
-        'request-target': targetPath,
-        'signature': signature,
-        'content-type': 'application/json',
-      },
-      body: rawBody,
-    }, {
-      label: 'doku_checkout',
-      timeoutMs: DOKU_SEND_TIMEOUT_MS,
-      retries: DOKU_SEND_RETRIES,
-    });
-    let payload;
-    try {
-      payload = response.text ? JSON.parse(response.text) : {};
-    } catch (_) {
-      payload = { raw: response.text };
-    }
-    if (!response.ok) {
-      throw httpError(502, `doku_checkout_failed_${response.status}`);
-    }
-    return payload;
-  } catch (error) {
-    if (error.statusCode) {
-      throw error;
-    }
-    throw httpError(502, 'doku_checkout_request_failed');
-  }
-}
-
-function verifyDokuSignature(request) {
-  const clientId = requiredHeader(request, 'client-id');
-  if (clientId !== DOKU_CLIENT_ID) {
-    throw httpError(401, 'invalid_doku_client_id');
-  }
-  const requestId = requiredHeader(request, 'request-id');
-  const timestamp = requiredHeader(request, 'request-timestamp');
-  const signature = requiredHeader(request, 'signature');
-  const targetPath = optionalHeader(request, 'request-target')
-    || new URL(request.url ?? DOKU_WEBHOOK_PATH, `http://${request.headers.host ?? 'localhost'}`).pathname;
-  if (targetPath !== DOKU_WEBHOOK_PATH) {
-    throw httpError(401, 'invalid_doku_request_target');
-  }
-  const parsedTimestamp = Date.parse(timestamp);
-  if (!Number.isFinite(parsedTimestamp)) {
-    throw httpError(401, 'invalid_doku_timestamp');
-  }
-  if (
-    DOKU_SIGNATURE_TOLERANCE_MS > 0
-    && Math.abs(Date.now() - parsedTimestamp) > DOKU_SIGNATURE_TOLERANCE_MS
-  ) {
-    throw httpError(401, 'stale_doku_signature');
-  }
-  const expected = dokuSignature({
-    requestId,
-    timestamp,
-    targetPath,
-    rawBody: request.rawBody ?? '',
-  });
-  if (!safeStrEqual(signature, expected)) {
-    throw httpError(401, 'invalid_doku_signature');
-  }
-}
-
-function dokuSignature({ requestId, timestamp, targetPath, rawBody }) {
-  const digest = createHash('sha256').update(rawBody).digest('base64');
-  const component = [
-    `Client-Id:${DOKU_CLIENT_ID}`,
-    `Request-Id:${requestId}`,
-    `Request-Timestamp:${timestamp}`,
-    `Request-Target:${targetPath}`,
-    `Digest:${digest}`,
-  ].join('\n');
-  return `HMACSHA256=${createHmac('sha256', DOKU_SECRET_KEY).update(component).digest('base64')}`;
-}
-
-function dokuTimestamp() {
-  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-}
-
-function createDokuInvoiceNumber() {
-  const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
-  return `IQK${stamp}${randomBytes(4).toString('hex').toUpperCase()}`;
-}
-
-function dokuCheckoutUrl(payload) {
-  return optionalString(payload?.response?.payment?.url)
-    || optionalString(payload?.payment?.url)
-    || optionalString(payload?.checkout_url)
-    || optionalString(payload?.url);
-}
-
-function dokuProviderOrderId(payload) {
-  return optionalString(payload?.response?.order?.invoice_number)
-    || optionalString(payload?.order?.invoice_number)
-    || optionalString(payload?.response?.order?.id)
-    || optionalString(payload?.order?.id);
-}
-
-function dokuNotificationInvoiceNumber(payload) {
-  return optionalString(payload?.order?.invoice_number)
-    || optionalString(payload?.order?.invoiceNumber)
-    || optionalString(payload?.invoice_number)
-    || optionalString(payload?.invoiceNumber);
-}
-
-function dokuNotificationAmount(payload) {
-  const value = payload?.order?.amount ?? payload?.order?.total_amount ?? payload?.amount ?? null;
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-  const amount = Number(value);
-  return Number.isFinite(amount) ? amount : null;
-}
-
-function dokuNotificationEventType(payload) {
-  return optionalString(payload?.transaction?.status)
-    || optionalString(payload?.transaction?.type)
-    || optionalString(payload?.payment?.type)
-    || optionalString(payload?.event)
-    || 'payment_notification';
-}
-
-function dokuNotificationOrderStatus(payload) {
-  const rawStatus = optionalString(payload?.transaction?.status || payload?.status).toLowerCase();
-  if (['success', 'capture', 'settlement', 'paid'].includes(rawStatus)) {
-    return 'paid';
-  }
-  if (['failed', 'deny', 'failure'].includes(rawStatus)) {
-    return 'failed';
-  }
-  if (['expired', 'expire'].includes(rawStatus)) {
-    return 'expired';
-  }
-  if (['cancelled', 'canceled', 'cancel'].includes(rawStatus)) {
-    return 'cancelled';
-  }
-  return 'pending';
-}
-
-function dokuNotificationPaidAt(payload) {
-  const raw = optionalString(payload?.transaction?.date)
-    || optionalString(payload?.transaction?.paid_at)
-    || optionalString(payload?.paid_at);
-  if (!raw) {
-    return null;
-  }
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function publicPaymentOrder(order) {
-  return {
-    invoiceNumber: order.invoiceNumber,
-    provider: order.provider,
-    plan: order.plan,
-    amount: order.amount,
-    currency: order.currency,
-    status: order.status,
-    checkoutUrl: order.checkoutUrl,
-    paidAt: order.paidAt,
-    expiresAt: order.expiresAt,
-    createdAt: order.createdAt,
-    updatedAt: order.updatedAt,
-  };
-}
-
 function publicSubscription(subscription) {
   if (!subscription) {
     return {
@@ -1861,87 +1544,6 @@ function publicSubscription(subscription) {
     activeUntil: subscription.activeUntil ?? null,
     activatedAt: subscription.activatedAt ?? null,
   };
-}
-
-function renderDokuRedirectPage({ status, url }) {
-  const success = status === 'success';
-  const title = success ? 'Pembayaran Diproses' : 'Pembayaran Belum Berhasil';
-  const message = success
-    ? 'Terima kasih. Jika pembayaran sudah berhasil, status IqroKu Plus akan aktif setelah notifikasi DOKU diterima.'
-    : 'Pembayaran belum selesai atau dibatalkan. Kamu bisa kembali ke aplikasi dan mencoba lagi.';
-  const invoiceNumber = url.searchParams.get('invoice_number')
-    || url.searchParams.get('invoiceNumber')
-    || url.searchParams.get('order_id')
-    || '';
-  return `<!doctype html>
-<html lang="id">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="robots" content="noindex">
-    <title>${escapeHtml(title)} - IqroKu</title>
-    <style>
-      :root { color-scheme: light; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        background: #f8f6ef;
-        color: #17201b;
-        font-family: Arial, sans-serif;
-      }
-      main {
-        width: min(420px, calc(100vw - 32px));
-        background: #fff;
-        border: 1px solid #e8e1d6;
-        border-radius: 18px;
-        padding: 24px;
-        box-shadow: 0 16px 48px rgba(23, 32, 27, 0.08);
-      }
-      .badge {
-        width: 52px;
-        height: 52px;
-        display: grid;
-        place-items: center;
-        border-radius: 999px;
-        margin-bottom: 18px;
-        color: #fff;
-        background: ${success ? '#208c53' : '#c95f4b'};
-        font-size: 28px;
-        font-weight: 800;
-      }
-      h1 { margin: 0 0 10px; font-size: 26px; line-height: 1.15; }
-      p { margin: 0 0 14px; color: #68716b; font-size: 15px; line-height: 1.5; }
-      .invoice {
-        margin-top: 16px;
-        padding: 12px 14px;
-        border-radius: 12px;
-        background: #f2eee6;
-        color: #17201b;
-        font-size: 13px;
-        word-break: break-all;
-      }
-      a {
-        display: inline-block;
-        margin-top: 10px;
-        color: #208c53;
-        font-weight: 700;
-        text-decoration: none;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <div class="badge">${success ? '&#10003;' : '!'}</div>
-      <h1>${escapeHtml(title)}</h1>
-      <p>${escapeHtml(message)}</p>
-      <p>Kembali ke aplikasi IqroKu, lalu tarik layar untuk refresh jika status Plus belum berubah.</p>
-      ${invoiceNumber ? `<div class="invoice">Invoice: ${escapeHtml(invoiceNumber)}</div>` : ''}
-      <a href="/">Tutup halaman ini</a>
-    </main>
-  </body>
-</html>`;
 }
 
 function publicParent(parent) {
@@ -1975,19 +1577,6 @@ function requiredQuery(url, key) {
     throw httpError(400, `missing_${key}`);
   }
   return value;
-}
-
-function requiredHeader(request, key) {
-  const normalized = optionalHeader(request, key);
-  if (!normalized) {
-    throw httpError(400, `missing_${key.replaceAll('-', '_')}`);
-  }
-  return normalized;
-}
-
-function optionalHeader(request, key) {
-  const value = request.headers?.[key] ?? request.headers?.[key.toLowerCase()];
-  return optionalString(Array.isArray(value) ? value[0] : value);
 }
 
 async function enforceChildLimit(parentId) {
@@ -2967,124 +2556,4 @@ function addMinutes(date, minutes) {
   const next = new Date(date);
   next.setMinutes(next.getMinutes() + minutes);
   return next;
-}
-
-async function fetchTextWithTimeoutAndRetry(url, options = {}, config = {}) {
-  const label = config.label || 'external_request';
-  const timeoutMs = Math.max(1, Number(config.timeoutMs ?? 10_000));
-  const retries = Math.max(0, Number(config.retries ?? 0));
-  let lastError;
-
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    const startedAt = Date.now();
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-      });
-      const text = await response.text();
-      const durationMs = Date.now() - startedAt;
-      if (attempt < retries && shouldRetryExternalStatus(response.status)) {
-        logEvent('warn', 'external_request_retry', {
-          label,
-          attempt: attempt + 1,
-          status: response.status,
-          ms: durationMs,
-        });
-        await sleep(backoffMs(attempt));
-        continue;
-      }
-      logEvent(response.ok ? 'info' : 'warn', 'external_request', {
-        label,
-        status: response.status,
-        ms: durationMs,
-        attempt: attempt + 1,
-      });
-      return {
-        ok: response.ok,
-        status: response.status,
-        headers: response.headers,
-        text,
-      };
-    } catch (error) {
-      lastError = error;
-      clearTimeout(timeout);
-      const durationMs = Date.now() - startedAt;
-      if (attempt < retries) {
-        logEvent('warn', 'external_request_retry', {
-          label,
-          attempt: attempt + 1,
-          ms: durationMs,
-          error: error.name === 'AbortError' ? 'timeout' : error.message,
-        });
-        await sleep(backoffMs(attempt));
-        continue;
-      }
-      logError('external_request_failed', error, {
-        label,
-        attempt: attempt + 1,
-        ms: durationMs,
-      });
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  throw lastError ?? new Error(`${label}_failed`);
-}
-
-function shouldRetryExternalStatus(status) {
-  return status === 408 || status === 429 || status >= 500;
-}
-
-function backoffMs(attempt) {
-  return Math.min(1000, 150 * 2 ** attempt);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function logRequest({ requestId, method, path, status, ms, ip, error }) {
-  logEvent(status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info', 'http_request', {
-    requestId,
-    method,
-    path,
-    status,
-    ms,
-    ip,
-    ...(error ? { error } : {}),
-  });
-}
-
-function logError(event, error, fields = {}) {
-  logEvent('error', event, {
-    ...fields,
-    error: error?.message ?? String(error),
-    stack: process.env.NODE_ENV === 'production' ? undefined : error?.stack,
-  });
-}
-
-function logEvent(level, event, fields = {}) {
-  const payload = compactObject({
-    ts: new Date().toISOString(),
-    level,
-    event,
-    ...fields,
-  });
-  const line = JSON.stringify(payload);
-  if (level === 'error') {
-    console.error(line);
-    return;
-  }
-  console.log(line);
-}
-
-function compactObject(value) {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined),
-  );
 }
