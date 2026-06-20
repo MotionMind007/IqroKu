@@ -348,6 +348,8 @@ Content-Type: application/json
 - Admin panel bisa menghapus user parent dengan konfirmasi email eksplisit. Data child/progress/attempt/subscription ikut cascade, dan notifikasi parent/child dibersihkan sebelum delete.
 - Admin form memakai CSRF token HMAC dengan expiry untuk login dan aksi mutasi admin.
 - CORS preflight `OPTIONS` sekarang dibalas eksplisit dengan status `204` dan header allow-methods/allow-headers.
+- Request backend sekarang memakai structured JSON log dengan `requestId`, method, path, status, durasi, IP, dan error code jika ada.
+- External call Google auth, Resend, DOKU, dan FCM memakai timeout + retry konservatif untuk timeout/network error, `408`, `429`, dan `5xx`.
 
 ## DOKU Payment Foundation
 

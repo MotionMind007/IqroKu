@@ -3,6 +3,10 @@ import { readFile } from 'node:fs/promises';
 
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const FCM_SEND_TIMEOUT_MS = Number(process.env.FCM_SEND_TIMEOUT_MS ?? 10_000);
+const FCM_SEND_RETRIES = Number(process.env.FCM_SEND_RETRIES ?? 2);
+const FCM_OAUTH_TIMEOUT_MS = Number(process.env.FCM_OAUTH_TIMEOUT_MS ?? 10_000);
+const FCM_OAUTH_RETRIES = Number(process.env.FCM_OAUTH_RETRIES ?? 2);
 
 let serviceAccountPromise;
 let accessTokenCache;
@@ -21,7 +25,7 @@ export async function sendPushToTokens({ tokens, title, body, data }) {
     return { sent: 0, failed: 0, invalidTokens: [] };
   }
   if (!pushConfigured()) {
-    console.log('FCM push skipped: Firebase service account env is not configured.');
+    logEvent('info', 'fcm_push_skipped', { reason: 'firebase_service_account_not_configured' });
     return { sent: 0, failed: 0, invalidTokens: [] };
   }
 
@@ -37,7 +41,7 @@ export async function sendPushToTokens({ tokens, title, body, data }) {
   let failed = 0;
 
   for (const token of uniqueTokens) {
-    const response = await fetch(
+    const response = await fetchJsonWithTimeoutAndRetry(
       `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
       {
         method: 'POST',
@@ -57,6 +61,11 @@ export async function sendPushToTokens({ tokens, title, body, data }) {
           },
         }),
       },
+      {
+        label: 'fcm_message_send',
+        timeoutMs: FCM_SEND_TIMEOUT_MS,
+        retries: FCM_SEND_RETRIES,
+      },
     );
 
     if (response.ok) {
@@ -65,12 +74,12 @@ export async function sendPushToTokens({ tokens, title, body, data }) {
     }
 
     failed += 1;
-    const error = await safeJson(response);
+    const error = response.json ?? {};
     if (isInvalidTokenError(response.status, error)) {
       invalidTokens.push(token);
       continue;
     }
-    console.error('FCM push failed:', response.status, JSON.stringify(error));
+    logEvent('error', 'fcm_push_failed', { status: response.status, error });
   }
 
   return { sent, failed, invalidTokens };
@@ -116,15 +125,19 @@ async function getAccessToken(serviceAccount) {
     privateKey: serviceAccount.private_key,
     issuedAtSeconds: nowSeconds,
   });
-  const response = await fetch(GOOGLE_TOKEN_URL, {
+  const response = await fetchJsonWithTimeoutAndRetry(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       assertion,
     }),
+  }, {
+    label: 'fcm_oauth_token',
+    timeoutMs: FCM_OAUTH_TIMEOUT_MS,
+    retries: FCM_OAUTH_RETRIES,
   });
-  const json = await response.json();
+  const json = response.json ?? {};
   if (!response.ok) {
     throw new Error(`Firebase OAuth token request failed: ${JSON.stringify(json)}`);
   }
@@ -173,14 +186,6 @@ function stringifyData(data) {
   );
 }
 
-async function safeJson(response) {
-  try {
-    return await response.json();
-  } catch (_) {
-    return {};
-  }
-}
-
 function isInvalidTokenError(status, error) {
   if (status === 404) {
     return true;
@@ -191,4 +196,110 @@ function isInvalidTokenError(status, error) {
     text.includes('INVALID_ARGUMENT') ||
     text.includes('registration-token-not-registered')
   );
+}
+
+async function fetchJsonWithTimeoutAndRetry(url, options = {}, config = {}) {
+  const label = config.label || 'external_request';
+  const timeoutMs = Math.max(1, Number(config.timeoutMs ?? 10_000));
+  const retries = Math.max(0, Number(config.retries ?? 0));
+  let lastError;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const startedAt = Date.now();
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      const json = safeParseJson(text);
+      const durationMs = Date.now() - startedAt;
+      if (attempt < retries && shouldRetryExternalStatus(response.status)) {
+        logEvent('warn', 'external_request_retry', {
+          label,
+          attempt: attempt + 1,
+          status: response.status,
+          ms: durationMs,
+        });
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+      logEvent(response.ok ? 'info' : 'warn', 'external_request', {
+        label,
+        status: response.status,
+        ms: durationMs,
+        attempt: attempt + 1,
+      });
+      return {
+        ok: response.ok,
+        status: response.status,
+        json,
+        text,
+      };
+    } catch (error) {
+      lastError = error;
+      clearTimeout(timeout);
+      const durationMs = Date.now() - startedAt;
+      if (attempt < retries) {
+        logEvent('warn', 'external_request_retry', {
+          label,
+          attempt: attempt + 1,
+          ms: durationMs,
+          error: error.name === 'AbortError' ? 'timeout' : error.message,
+        });
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+      logEvent('error', 'external_request_failed', {
+        label,
+        attempt: attempt + 1,
+        ms: durationMs,
+        error: error.message,
+      });
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  throw lastError ?? new Error(`${label}_failed`);
+}
+
+function safeParseJson(text) {
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function shouldRetryExternalStatus(status) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function backoffMs(attempt) {
+  return Math.min(1000, 150 * 2 ** attempt);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function logEvent(level, event, fields = {}) {
+  const payload = Object.fromEntries(
+    Object.entries({
+      ts: new Date().toISOString(),
+      level,
+      event,
+      ...fields,
+    }).filter(([, value]) => value !== undefined),
+  );
+  const line = JSON.stringify(payload);
+  if (level === 'error') {
+    console.error(line);
+    return;
+  }
+  console.log(line);
 }

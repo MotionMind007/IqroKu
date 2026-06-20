@@ -99,13 +99,16 @@ test('email provider sends auth flow tokens without production token logs', () =
   assert.match(serverSource, /const EMAIL_PROVIDER =/);
   assert.match(serverSource, /RESEND_API_KEY/);
   assert.match(serverSource, /EMAIL_FROM/);
+  assert.match(serverSource, /EMAIL_SEND_RETRIES/);
   assert.match(serverSource, /async function sendAuthFlowEmail/);
   assert.match(serverSource, /https:\/\/api\.resend\.com\/emails/);
   assert.match(serverSource, /'authorization': `Bearer \$\{RESEND_API_KEY\}`/);
+  assert.match(serverSource, /label: 'resend_email'/);
   assert.match(serverSource, /process\.env\.NODE_ENV !== 'production'[\s\S]*payload\.token = token/);
   assert.match(envTemplateSource, /EMAIL_PROVIDER=none/);
   assert.match(envTemplateSource, /RESEND_API_KEY=/);
   assert.match(envTemplateSource, /EMAIL_FROM=/);
+  assert.match(envTemplateSource, /EMAIL_SEND_RETRIES=2/);
 });
 
 test('session tokens and auth cleanup avoid credential exposure', () => {
@@ -172,6 +175,7 @@ test('admin parent deletion requires admin auth and explicit email confirmation'
 test('DOKU payment foundation verifies webhooks and keeps premium server-side', () => {
   assert.match(serverSource, /const DOKU_CLIENT_ID =/);
   assert.match(serverSource, /const DOKU_SECRET_KEY =/);
+  assert.match(serverSource, /const DOKU_SEND_RETRIES =/);
   assert.match(serverSource, /const DOKU_CHECKOUT_PATH = '\/checkout\/v1\/payment'/);
   assert.match(serverSource, /path === '\/payments\/doku\/checkout'/);
   assert.match(serverSource, /const authedParent = await authenticateRequest\(request\);[\s\S]*return createDokuCheckout\(authedParent\);/);
@@ -191,7 +195,22 @@ test('DOKU payment foundation verifies webhooks and keeps premium server-side', 
   assert.match(dbSource, /previousStatus !== 'paid'/);
   assert.match(envTemplateSource, /DOKU_CLIENT_ID=/);
   assert.match(envTemplateSource, /DOKU_SECRET_KEY=/);
+  assert.match(envTemplateSource, /DOKU_SEND_RETRIES=1/);
   assert.match(envTemplateSource, /DOKU_NOTIFICATION_URL=https:\/\/iqroku\.motionmind\.store\/payments\/doku\/webhook/);
+});
+
+test('backend emits request ids and uses timeout/retry wrappers for external calls', () => {
+  assert.match(serverSource, /const requestId = cleanString\(request\.headers\?\.\['x-request-id'\]\) \|\| randomUUID\(\)/);
+  assert.match(serverSource, /response\.setHeader\('x-request-id', requestId\)/);
+  assert.match(serverSource, /function logRequest\(\{ requestId, method, path, status, ms, ip, error \}\)/);
+  assert.match(serverSource, /function logEvent\(level, event, fields = \{\}\)/);
+  assert.match(serverSource, /logEvent\([\s\S]*'http_request'/);
+  assert.match(serverSource, /async function fetchTextWithTimeoutAndRetry/);
+  assert.match(serverSource, /function shouldRetryExternalStatus\(status\)/);
+  assert.match(serverSource, /status === 408 \|\| status === 429 \|\| status >= 500/);
+  assert.match(serverSource, /label: 'google_tokeninfo'/);
+  assert.match(serverSource, /label: 'doku_checkout'/);
+  assert.match(envTemplateSource, /GOOGLE_VERIFY_RETRIES=2/);
 });
 
 test('review decisions are applied through one database transaction', () => {
@@ -257,6 +276,12 @@ test('push sender uses FCM HTTP v1 without firebase-admin dependency', () => {
   assert.match(pushSource, /https:\/\/fcm\.googleapis\.com\/v1\/projects\/\$\{projectId\}\/messages:send/);
   assert.match(pushSource, /createSign\('RSA-SHA256'\)/);
   assert.match(pushSource, /FIREBASE_SERVICE_ACCOUNT_JSON/);
+  assert.match(pushSource, /FCM_SEND_RETRIES/);
+  assert.match(pushSource, /FCM_OAUTH_RETRIES/);
+  assert.match(pushSource, /async function fetchJsonWithTimeoutAndRetry/);
+  assert.match(pushSource, /label: 'fcm_message_send'/);
+  assert.match(pushSource, /label: 'fcm_oauth_token'/);
+  assert.match(envTemplateSource, /FCM_SEND_RETRIES=2/);
   assert.doesNotMatch(pushSource, /firebase-admin/);
 });
 

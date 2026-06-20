@@ -25,6 +25,7 @@ const EMAIL_PROVIDER = String(process.env.EMAIL_PROVIDER || (RESEND_API_KEY ? 'r
 const EMAIL_FROM = process.env.EMAIL_FROM || '';
 const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || '';
 const EMAIL_SEND_TIMEOUT_MS = Number(process.env.EMAIL_SEND_TIMEOUT_MS ?? 10_000);
+const EMAIL_SEND_RETRIES = Number(process.env.EMAIL_SEND_RETRIES ?? 2);
 const DOKU_ENV = String(process.env.DOKU_ENV || 'sandbox').toLowerCase();
 const DOKU_CLIENT_ID = process.env.DOKU_CLIENT_ID || '';
 const DOKU_SECRET_KEY = process.env.DOKU_SECRET_KEY || '';
@@ -37,6 +38,7 @@ const DOKU_NOTIFICATION_URL = process.env.DOKU_NOTIFICATION_URL || `${ALLOWED_OR
 const DOKU_CHECKOUT_AMOUNT = Number(process.env.DOKU_CHECKOUT_AMOUNT ?? 49_000);
 const DOKU_CHECKOUT_DUE_MINUTES = Number(process.env.DOKU_CHECKOUT_DUE_MINUTES ?? 60);
 const DOKU_SEND_TIMEOUT_MS = Number(process.env.DOKU_SEND_TIMEOUT_MS ?? 15_000);
+const DOKU_SEND_RETRIES = Number(process.env.DOKU_SEND_RETRIES ?? 1);
 const DOKU_SIGNATURE_TOLERANCE_MS = Number(process.env.DOKU_SIGNATURE_TOLERANCE_MS ?? 15 * 60 * 1000);
 const DOKU_PROVIDER = 'doku';
 const DOKU_CHECKOUT_PATH = '/checkout/v1/payment';
@@ -46,6 +48,8 @@ const DOKU_WEBHOOK_PATH = '/payments/doku/webhook';
 // Defaults to the serverClientId used by the Flutter app.
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID
   || '55523615051-81vpiqk0jiamubrnjb0ss4i6irpifm2t.apps.googleusercontent.com';
+const GOOGLE_VERIFY_TIMEOUT_MS = Number(process.env.GOOGLE_VERIFY_TIMEOUT_MS ?? 10_000);
+const GOOGLE_VERIFY_RETRIES = Number(process.env.GOOGLE_VERIFY_RETRIES ?? 2);
 
 const port = Number(process.env.PORT ?? 8787);
 const ADMIN_TOKEN = process.env.IQROKU_ADMIN_TOKEN || 'admin-dev-token';
@@ -130,7 +134,7 @@ async function cleanupExpiredAuthData() {
     await db.cleanupExpiredSessions();
     await db.cleanupExpiredAuthTokens();
   } catch (error) {
-    console.error('Expired auth data cleanup failed:', error.message);
+    logError('expired_auth_cleanup_failed', error);
   }
 }
 
@@ -200,13 +204,19 @@ async function verifyGoogleIdToken(idToken) {
   }
   let payload;
   try {
-    const res = await fetch(
+    const res = await fetchTextWithTimeoutAndRetry(
       `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+      {},
+      {
+        label: 'google_tokeninfo',
+        timeoutMs: GOOGLE_VERIFY_TIMEOUT_MS,
+        retries: GOOGLE_VERIFY_RETRIES,
+      },
     );
     if (!res.ok) {
       throw httpError(401, 'invalid_google_token');
     }
-    payload = await res.json();
+    payload = JSON.parse(res.text || '{}');
   } catch (err) {
     if (err.statusCode) throw err;
     throw httpError(502, 'google_verification_failed');
@@ -313,9 +323,13 @@ function normalizeClientIp(value) {
 const server = createServer(async (request, response) => {
   const clientIp = getClientIp(request);
   const startTime = Date.now();
+  const requestId = cleanString(request.headers?.['x-request-id']) || randomUUID();
+  response.setHeader('x-request-id', requestId);
+  let path = request.url ?? '/';
+  let responseStatus = 500;
   try {
     const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
-    const path = url.pathname;
+    path = url.pathname;
 
     // Rate limit: stricter for auth endpoints
     const isAuthEndpoint = path.startsWith('/auth/');
@@ -326,56 +340,67 @@ const server = createServer(async (request, response) => {
 
     if ((request.method ?? 'GET') === 'OPTIONS') {
       sendCorsPreflight(response, request);
-      logRequest(request.method ?? 'OPTIONS', path, 204, Date.now() - startTime, clientIp);
+      responseStatus = 204;
+      logRequest({ requestId, method: request.method ?? 'OPTIONS', path, status: responseStatus, ms: Date.now() - startTime, ip: clientIp });
       return;
     }
 
     const body = await readJson(request);
     const result = await route(request.method ?? 'GET', url, body, request);
-    const responseStatus = typeof result.status === 'number' ? result.status : 200;
+    responseStatus = typeof result.status === 'number' ? result.status : 200;
     if (result.html) {
       sendHtml(response, responseStatus, result.html, result.headers);
-      logRequest(request.method ?? 'GET', path, responseStatus, Date.now() - startTime, clientIp);
+      logRequest({ requestId, method: request.method ?? 'GET', path, status: responseStatus, ms: Date.now() - startTime, ip: clientIp });
       return;
     }
     if (result.filePath) {
       await sendFile(response, result.filePath, result.contentType);
-      logRequest(request.method ?? 'GET', path, 200, Date.now() - startTime, clientIp);
+      responseStatus = 200;
+      logRequest({ requestId, method: request.method ?? 'GET', path, status: responseStatus, ms: Date.now() - startTime, ip: clientIp });
       return;
     }
     if (result.status === 302 && result.headers) {
       sendRedirect(response, result.status, result.headers);
-      logRequest(request.method ?? 'GET', path, result.status, Date.now() - startTime, clientIp);
+      responseStatus = result.status;
+      logRequest({ requestId, method: request.method ?? 'GET', path, status: responseStatus, ms: Date.now() - startTime, ip: clientIp });
       return;
     }
     sendJson(response, responseStatus, result.body ?? result);
-    logRequest(request.method ?? 'GET', path, responseStatus, Date.now() - startTime, clientIp);
+    logRequest({ requestId, method: request.method ?? 'GET', path, status: responseStatus, ms: Date.now() - startTime, ip: clientIp });
   } catch (error) {
-    const status = error.statusCode ?? 500;
-    sendJson(response, status, {
-      error: status === 500 ? 'internal_error' : error.message,
+    responseStatus = error.statusCode ?? 500;
+    sendJson(response, responseStatus, {
+      error: responseStatus === 500 ? 'internal_error' : error.message,
     });
-    logRequest(request.method ?? 'GET', request.url ?? '/', status, Date.now() - startTime, clientIp);
-    if (status === 500) {
-      console.error(error);
+    logRequest({
+      requestId,
+      method: request.method ?? 'GET',
+      path,
+      status: responseStatus,
+      ms: Date.now() - startTime,
+      ip: clientIp,
+      error: responseStatus === 500 ? 'internal_error' : error.message,
+    });
+    if (responseStatus === 500) {
+      logError('request_failed', error, { requestId, method: request.method ?? 'GET', path });
     }
   }
 });
 
 server.listen(port, () => {
-  console.log(`IqroKu backend listening on http://localhost:${port}`);
+  logEvent('info', 'server_listening', { port });
 });
 
 // --- Graceful Shutdown ---
 function gracefulShutdown(signal) {
-  console.log(`\n${signal} received. Shutting down gracefully...`);
+  logEvent('info', 'server_shutdown_started', { signal });
   server.close(async () => {
     try {
       await db.closeDb();
     } catch (_) {
       // best-effort close
     }
-    console.log('Server closed.');
+    logEvent('info', 'server_shutdown_complete');
     process.exit(0);
   });
   // Force exit after 5s if connections don't close
@@ -802,7 +827,7 @@ async function route(method, url, body, request) {
         queuePushNotification(notification);
       }
     } catch (err) {
-      console.error('Failed to create notification:', err);
+      logError('notification_create_failed', err, { childId, bookId, pageNumber, attemptId });
     }
 
     return { status: 201, body: attempt };
@@ -1356,29 +1381,22 @@ async function sendAuthFlowEmail({ type, email, token, expiresAt, path }) {
       html: message.html,
       text: message.text,
     });
-    console.log(JSON.stringify({
-      ts: new Date().toISOString(),
-      event: 'auth_email_sent',
+    logEvent('info', 'auth_email_sent', {
       provider: EMAIL_PROVIDER,
       type,
       email,
-    }));
+    });
   } catch (error) {
-    console.error(JSON.stringify({
-      ts: new Date().toISOString(),
-      event: 'auth_email_failed',
+    logError('auth_email_failed', error, {
       provider: EMAIL_PROVIDER,
       type,
       email,
-      error: error.message,
-    }));
+    });
   }
 }
 
 function logAuthFlowToken({ type, email, token, link, delivery }) {
   const payload = {
-    ts: new Date().toISOString(),
-    event: 'auth_token_created',
     type,
     email,
     delivery,
@@ -1387,7 +1405,7 @@ function logAuthFlowToken({ type, email, token, link, delivery }) {
     payload.token = token;
     payload.link = link;
   }
-  console.log(JSON.stringify(payload));
+  logEvent('info', 'auth_token_created', payload);
 }
 
 function authEmailMessage({ type, token, expiresAt, link }) {
@@ -1422,10 +1440,7 @@ function authEmailMessage({ type, token, expiresAt, link }) {
 }
 
 async function sendResendEmail({ to, subject, html, text }) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), EMAIL_SEND_TIMEOUT_MS);
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
+  const response = await fetchTextWithTimeoutAndRetry('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'authorization': `Bearer ${RESEND_API_KEY}`,
@@ -1439,14 +1454,14 @@ async function sendResendEmail({ to, subject, html, text }) {
         text,
         ...(EMAIL_REPLY_TO ? { reply_to: EMAIL_REPLY_TO } : {}),
       }),
-      signal: controller.signal,
+    },
+    {
+      label: 'resend_email',
+      timeoutMs: EMAIL_SEND_TIMEOUT_MS,
+      retries: EMAIL_SEND_RETRIES,
     });
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '');
-      throw new Error(`resend_${response.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`);
-    }
-  } finally {
-    clearTimeout(timeout);
+  if (!response.ok) {
+    throw new Error(`resend_${response.status}${response.text ? `: ${response.text.slice(0, 200)}` : ''}`);
   }
 }
 
@@ -1455,7 +1470,10 @@ function queuePushNotification(notification) {
     return;
   }
   sendPushNotification(notification).catch((error) => {
-    console.error('Failed to send push notification:', error.message);
+    logError('push_notification_failed', error, {
+      notificationId: notification.id,
+      notificationType: notification.type,
+    });
   });
 }
 
@@ -1645,8 +1663,6 @@ function buildDokuCheckoutPayload({ parent, invoiceNumber }) {
 }
 
 async function sendDokuRequest({ requestId, targetPath, rawBody }) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DOKU_SEND_TIMEOUT_MS);
   const timestamp = dokuTimestamp();
   const signature = dokuSignature({
     requestId,
@@ -1656,7 +1672,7 @@ async function sendDokuRequest({ requestId, targetPath, rawBody }) {
   });
 
   try {
-    const response = await fetch(`${DOKU_BASE_URL}${targetPath}`, {
+    const response = await fetchTextWithTimeoutAndRetry(`${DOKU_BASE_URL}${targetPath}`, {
       method: 'POST',
       headers: {
         'client-id': DOKU_CLIENT_ID,
@@ -1667,14 +1683,16 @@ async function sendDokuRequest({ requestId, targetPath, rawBody }) {
         'content-type': 'application/json',
       },
       body: rawBody,
-      signal: controller.signal,
+    }, {
+      label: 'doku_checkout',
+      timeoutMs: DOKU_SEND_TIMEOUT_MS,
+      retries: DOKU_SEND_RETRIES,
     });
-    const text = await response.text();
     let payload;
     try {
-      payload = text ? JSON.parse(text) : {};
+      payload = response.text ? JSON.parse(response.text) : {};
     } catch (_) {
-      payload = { raw: text };
+      payload = { raw: response.text };
     }
     if (!response.ok) {
       throw httpError(502, `doku_checkout_failed_${response.status}`);
@@ -1685,8 +1703,6 @@ async function sendDokuRequest({ requestId, targetPath, rawBody }) {
       throw error;
     }
     throw httpError(502, 'doku_checkout_request_failed');
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -2953,13 +2969,122 @@ function addMinutes(date, minutes) {
   return next;
 }
 
-function logRequest(method, path, status, ms, ip) {
-  console.log(JSON.stringify({
-    ts: new Date().toISOString(),
+async function fetchTextWithTimeoutAndRetry(url, options = {}, config = {}) {
+  const label = config.label || 'external_request';
+  const timeoutMs = Math.max(1, Number(config.timeoutMs ?? 10_000));
+  const retries = Math.max(0, Number(config.retries ?? 0));
+  let lastError;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const startedAt = Date.now();
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      const durationMs = Date.now() - startedAt;
+      if (attempt < retries && shouldRetryExternalStatus(response.status)) {
+        logEvent('warn', 'external_request_retry', {
+          label,
+          attempt: attempt + 1,
+          status: response.status,
+          ms: durationMs,
+        });
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+      logEvent(response.ok ? 'info' : 'warn', 'external_request', {
+        label,
+        status: response.status,
+        ms: durationMs,
+        attempt: attempt + 1,
+      });
+      return {
+        ok: response.ok,
+        status: response.status,
+        headers: response.headers,
+        text,
+      };
+    } catch (error) {
+      lastError = error;
+      clearTimeout(timeout);
+      const durationMs = Date.now() - startedAt;
+      if (attempt < retries) {
+        logEvent('warn', 'external_request_retry', {
+          label,
+          attempt: attempt + 1,
+          ms: durationMs,
+          error: error.name === 'AbortError' ? 'timeout' : error.message,
+        });
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+      logError('external_request_failed', error, {
+        label,
+        attempt: attempt + 1,
+        ms: durationMs,
+      });
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  throw lastError ?? new Error(`${label}_failed`);
+}
+
+function shouldRetryExternalStatus(status) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function backoffMs(attempt) {
+  return Math.min(1000, 150 * 2 ** attempt);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function logRequest({ requestId, method, path, status, ms, ip, error }) {
+  logEvent(status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info', 'http_request', {
+    requestId,
     method,
     path,
     status,
     ms,
     ip,
-  }));
+    ...(error ? { error } : {}),
+  });
+}
+
+function logError(event, error, fields = {}) {
+  logEvent('error', event, {
+    ...fields,
+    error: error?.message ?? String(error),
+    stack: process.env.NODE_ENV === 'production' ? undefined : error?.stack,
+  });
+}
+
+function logEvent(level, event, fields = {}) {
+  const payload = compactObject({
+    ts: new Date().toISOString(),
+    level,
+    event,
+    ...fields,
+  });
+  const line = JSON.stringify(payload);
+  if (level === 'error') {
+    console.error(line);
+    return;
+  }
+  console.log(line);
+}
+
+function compactObject(value) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  );
 }

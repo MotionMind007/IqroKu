@@ -124,6 +124,10 @@ EMAIL_PROVIDER=none
 RESEND_API_KEY=
 EMAIL_FROM=IqroKu <noreply@iqroku.motionmind.store>
 EMAIL_REPLY_TO=
+EMAIL_SEND_TIMEOUT_MS=10000
+EMAIL_SEND_RETRIES=2
+GOOGLE_VERIFY_TIMEOUT_MS=10000
+GOOGLE_VERIFY_RETRIES=2
 RATE_WINDOW_MS=60000
 RATE_MAX_AUTH=10
 RATE_MAX_GENERAL=120
@@ -135,8 +139,14 @@ DOKU_CHECKOUT_RETURN_URL=https://iqroku.motionmind.store/payments/doku/return
 DOKU_CHECKOUT_FAILED_URL=https://iqroku.motionmind.store/payments/doku/failed
 DOKU_NOTIFICATION_URL=https://iqroku.motionmind.store/payments/doku/webhook
 DOKU_CHECKOUT_AMOUNT=49000
+DOKU_SEND_TIMEOUT_MS=15000
+DOKU_SEND_RETRIES=1
 # Optional for FCM push notification sending:
 FIREBASE_SERVICE_ACCOUNT_PATH=/opt/iqroku/secrets/firebase-service-account.json
+FCM_SEND_TIMEOUT_MS=10000
+FCM_SEND_RETRIES=2
+FCM_OAUTH_TIMEOUT_MS=10000
+FCM_OAUTH_RETRIES=2
 ```
 
 Firebase Android client config:
@@ -163,6 +173,13 @@ Auth/session cleanup:
 - Backend menjalankan cleanup sessions dan auth tokens expired otomatis tiap 6 jam.
 - `setup-vps.sh` juga memasang cron cleanup sebagai backup.
 - Interval app bisa diubah dengan `CLEANUP_EXPIRED_AUTH_INTERVAL_MS`; set `0` hanya jika cleanup ditangani scheduler eksternal.
+
+Logging dan external request reliability:
+
+- Backend menulis structured JSON log untuk request HTTP, retry external request, dan error internal.
+- Setiap response membawa header `x-request-id`; header request `x-request-id` dari client/proxy akan dipakai ulang kalau ada.
+- External call Google token verification, Resend, DOKU, dan FCM punya timeout + retry konservatif.
+- Retry hanya untuk timeout/network error atau HTTP transient seperti `408`, `429`, dan `5xx`; status validasi seperti `400/401/403` tidak diulang.
 
 Email provider:
 
