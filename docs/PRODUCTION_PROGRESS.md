@@ -361,6 +361,8 @@ Yang ditambahkan:
 ```text
 POST /payments/doku/checkout
 POST /payments/doku/webhook
+GET  /payments/doku/return
+GET  /payments/doku/failed
 GET  /subscriptions/status
 GET  /payments/status/:invoiceNumber
 ```
@@ -368,6 +370,7 @@ GET  /payments/status/:invoiceNumber
 - Tombol Plus di halaman Belajar dan Profil membuka `checkoutUrl` DOKU memakai `url_launcher`.
 - Saat app kembali dari DOKU, app refresh status subscription dari backend.
 - Aktivasi Plus lokal/prototype di client sudah dihapus dari flow UI.
+- DOKU return/failed redirect sekarang punya landing page agar simulator/user tidak mendapat 404.
 
 Security:
 
@@ -376,6 +379,7 @@ Security:
 - Webhook DOKU diverifikasi HMAC signature dari raw body.
 - Subscription premium hanya aktif saat order berubah valid menjadi `paid`.
 - Retry webhook dengan request id sama tidak memperpanjang masa aktif dua kali.
+- Return/failed redirect tidak mengubah status premium; sumber truth tetap webhook.
 
 Next:
 

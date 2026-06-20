@@ -98,6 +98,8 @@ POST /subscriptions/activate
 GET  /subscriptions/status
 POST /payments/doku/checkout
 POST /payments/doku/webhook
+GET  /payments/doku/return
+GET  /payments/doku/failed
 GET  /payments/status/:invoiceNumber
 POST /auth/set-parent-pin
 POST /auth/verify-parent-pin

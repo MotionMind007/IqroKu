@@ -359,6 +359,14 @@ async function route(method, url, body, request) {
     }
   }
 
+  if (method === 'GET' && path === '/payments/doku/return') {
+    return { html: renderDokuRedirectPage({ status: 'success', url }) };
+  }
+
+  if (method === 'GET' && path === '/payments/doku/failed') {
+    return { html: renderDokuRedirectPage({ status: 'failed', url }) };
+  }
+
   if (method === 'POST' && path === DOKU_WEBHOOK_PATH) {
     return handleDokuWebhook(body, request);
   }
@@ -1753,6 +1761,87 @@ function publicSubscription(subscription) {
     activeUntil: subscription.activeUntil ?? null,
     activatedAt: subscription.activatedAt ?? null,
   };
+}
+
+function renderDokuRedirectPage({ status, url }) {
+  const success = status === 'success';
+  const title = success ? 'Pembayaran Diproses' : 'Pembayaran Belum Berhasil';
+  const message = success
+    ? 'Terima kasih. Jika pembayaran sudah berhasil, status IqroKu Plus akan aktif setelah notifikasi DOKU diterima.'
+    : 'Pembayaran belum selesai atau dibatalkan. Kamu bisa kembali ke aplikasi dan mencoba lagi.';
+  const invoiceNumber = url.searchParams.get('invoice_number')
+    || url.searchParams.get('invoiceNumber')
+    || url.searchParams.get('order_id')
+    || '';
+  return `<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>${escapeHtml(title)} - IqroKu</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #f8f6ef;
+        color: #17201b;
+        font-family: Arial, sans-serif;
+      }
+      main {
+        width: min(420px, calc(100vw - 32px));
+        background: #fff;
+        border: 1px solid #e8e1d6;
+        border-radius: 18px;
+        padding: 24px;
+        box-shadow: 0 16px 48px rgba(23, 32, 27, 0.08);
+      }
+      .badge {
+        width: 52px;
+        height: 52px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        margin-bottom: 18px;
+        color: #fff;
+        background: ${success ? '#208c53' : '#c95f4b'};
+        font-size: 28px;
+        font-weight: 800;
+      }
+      h1 { margin: 0 0 10px; font-size: 26px; line-height: 1.15; }
+      p { margin: 0 0 14px; color: #68716b; font-size: 15px; line-height: 1.5; }
+      .invoice {
+        margin-top: 16px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: #f2eee6;
+        color: #17201b;
+        font-size: 13px;
+        word-break: break-all;
+      }
+      a {
+        display: inline-block;
+        margin-top: 10px;
+        color: #208c53;
+        font-weight: 700;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="badge">${success ? '&#10003;' : '!'}</div>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(message)}</p>
+      <p>Kembali ke aplikasi IqroKu, lalu tarik layar untuk refresh jika status Plus belum berubah.</p>
+      ${invoiceNumber ? `<div class="invoice">Invoice: ${escapeHtml(invoiceNumber)}</div>` : ''}
+      <a href="/">Tutup halaman ini</a>
+    </main>
+  </body>
+</html>`;
 }
 
 function publicParent(parent) {

@@ -150,6 +150,9 @@ test('DOKU payment foundation verifies webhooks and keeps premium server-side', 
   assert.match(serverSource, /const authedParent = await authenticateRequest\(request\);[\s\S]*return createDokuCheckout\(authedParent\);/);
   assert.match(serverSource, /path === '\/subscriptions\/status'/);
   assert.match(serverSource, /subscription: publicSubscription\(subscription\)/);
+  assert.match(serverSource, /path === '\/payments\/doku\/return'/);
+  assert.match(serverSource, /path === '\/payments\/doku\/failed'/);
+  assert.match(serverSource, /function renderDokuRedirectPage/);
   assert.match(serverSource, /path === DOKU_WEBHOOK_PATH/);
   assert.match(serverSource, /function verifyDokuSignature\(request\)/);
   assert.match(serverSource, /createHmac\('sha256', DOKU_SECRET_KEY\)/);

@@ -137,6 +137,8 @@ POST /payments/doku/checkout
 payment_orders table
 POST /payments/doku/webhook
 payment_events table
+GET /payments/doku/return
+GET /payments/doku/failed
 subscriptions table
 GET /subscriptions/status
 GET /payments/status/:invoiceNumber
@@ -149,6 +151,7 @@ Catatan:
 - Webhook disimpan idempotent memakai `provider + request_id` supaya retry DOKU tidak menggandakan masa aktif.
 - Tombol Plus di Flutter membuka `checkoutUrl` DOKU memakai browser/app eksternal.
 - Saat app resume dari DOKU, app refresh `GET /subscriptions/status`.
+- Redirect return/failed dari DOKU ditangani backend dengan halaman status ringan, bukan sebagai sumber aktivasi premium.
 
 ## Flow Jadwal Solat dan Adzan
 
