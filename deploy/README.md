@@ -112,6 +112,7 @@ PORT=8787
 DATABASE_URL=postgresql://...
 ALLOWED_ORIGIN=https://iqroku.motionmind.store
 IQROKU_ADMIN_TOKEN=<random-hex>
+ADMIN_CSRF_SECRET=
 ADMIN_ALLOWED_IPS=
 SESSION_SECRET=<random-hex>
 MAX_BODY_SIZE=5242880

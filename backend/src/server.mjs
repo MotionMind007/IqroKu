@@ -53,6 +53,8 @@ if (ADMIN_TOKEN === 'admin-dev-token' && process.env.NODE_ENV === 'production') 
   console.error('FATAL: IQROKU_ADMIN_TOKEN must be set in production. Refusing to start with default token.');
   process.exit(1);
 }
+const ADMIN_CSRF_SECRET = process.env.ADMIN_CSRF_SECRET || ADMIN_TOKEN;
+const ADMIN_CSRF_MAX_AGE_MS = Number(process.env.ADMIN_CSRF_MAX_AGE_MS ?? 24 * 60 * 60 * 1000);
 const ADMIN_ALLOWED_IPS = new Set(
   String(process.env.ADMIN_ALLOWED_IPS ?? '')
     .split(/[,\s]+/)
@@ -241,6 +243,44 @@ function authenticateAdmin(request) {
   }
 }
 
+function createAdminCsrfToken() {
+  const timestamp = String(Date.now());
+  const nonce = randomBytes(16).toString('base64url');
+  const payload = `${timestamp}.${nonce}`;
+  const signature = createHmac('sha256', ADMIN_CSRF_SECRET)
+    .update(payload)
+    .digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function verifyAdminCsrfToken(token) {
+  const parts = cleanString(token).split('.');
+  if (parts.length !== 3) {
+    return false;
+  }
+  const [timestamp, nonce, signature] = parts;
+  if (!/^\d{10,}$/.test(timestamp) || !nonce || !signature) {
+    return false;
+  }
+  const issuedAt = Number(timestamp);
+  if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > ADMIN_CSRF_MAX_AGE_MS) {
+    return false;
+  }
+  if (issuedAt - Date.now() > 60_000) {
+    return false;
+  }
+  const expected = createHmac('sha256', ADMIN_CSRF_SECRET)
+    .update(`${timestamp}.${nonce}`)
+    .digest('base64url');
+  return safeStrEqual(signature, expected);
+}
+
+function enforceAdminCsrf(body) {
+  if (!verifyAdminCsrfToken(body.csrfToken)) {
+    throw httpError(403, 'admin_csrf_invalid');
+  }
+}
+
 function enforceAdminIpAllowlist(request) {
   if (ADMIN_ALLOWED_IPS.size === 0) {
     return;
@@ -283,6 +323,12 @@ const server = createServer(async (request, response) => {
     const rateBucket = isDemoLogin ? 'demo' : isAuthEndpoint ? 'auth' : 'general';
     const rateMax = isDemoLogin ? RATE_MAX_DEMO : isAuthEndpoint ? RATE_MAX_AUTH : RATE_MAX_GENERAL;
     checkRateLimit(clientIp, rateBucket, rateMax);
+
+    if ((request.method ?? 'GET') === 'OPTIONS') {
+      sendCorsPreflight(response, request);
+      logRequest(request.method ?? 'OPTIONS', path, 204, Date.now() - startTime, clientIp);
+      return;
+    }
 
     const body = await readJson(request);
     const result = await route(request.method ?? 'GET', url, body, request);
@@ -377,6 +423,9 @@ async function route(method, url, body, request) {
   }
 
   if (method === 'POST' && path === '/admin/login') {
+    if (!verifyAdminCsrfToken(body.csrfToken)) {
+      return { html: renderAdminLogin('Form kedaluwarsa. Muat ulang halaman lalu coba lagi.') };
+    }
     const token = cleanString(body.token);
     if (!safeStrEqual(token, ADMIN_TOKEN)) {
       return { html: renderAdminLogin('Token salah. Silakan coba lagi.') };
@@ -440,6 +489,7 @@ async function route(method, url, body, request) {
 
   if (method === 'POST' && path === '/admin/prayers') {
     authenticateAdmin(request);
+    enforceAdminCsrf(body);
     const fields = prayerFromBody(body);
     await db.createPrayer({
       id: randomUUID(),
@@ -453,6 +503,7 @@ async function route(method, url, body, request) {
   const prayerAction = adminPrayerAction(path);
   if (method === 'POST' && prayerAction) {
     authenticateAdmin(request);
+    enforceAdminCsrf(body);
     const prayer = await db.findPrayerById(prayerAction.id);
     if (!prayer) {
       throw httpError(404, 'prayer_not_found');
@@ -473,6 +524,7 @@ async function route(method, url, body, request) {
   const parentAction = adminParentAction(path);
   if (method === 'POST' && parentAction?.action === 'delete') {
     authenticateAdmin(request);
+    enforceAdminCsrf(body);
     const parent = await db.findParentById(parentAction.id);
     if (!parent) {
       throw httpError(404, 'parent_not_found');
@@ -1097,6 +1149,19 @@ function sendJson(response, status, body) {
     'vary': 'Origin',
   });
   response.end(JSON.stringify(body));
+}
+
+function sendCorsPreflight(response, request) {
+  const requestedHeaders = cleanString(request.headers?.['access-control-request-headers']);
+  response.writeHead(204, {
+    'access-control-allow-origin': ALLOWED_ORIGIN,
+    'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS',
+    'access-control-allow-headers': requestedHeaders || 'content-type,authorization',
+    'access-control-max-age': '86400',
+    'x-content-type-options': 'nosniff',
+    'vary': 'Origin, Access-Control-Request-Headers',
+  });
+  response.end();
 }
 
 function sendHtml(response, status, html, extraHeaders = {}) {
@@ -2174,7 +2239,7 @@ function parseBoolean(value, fallback = false) {
   return ['true', '1', 'yes', 'on'].includes(String(value).toLowerCase());
 }
 
-function renderAdminLogin(error = '') {
+function renderAdminLogin(error = '', csrfToken = createAdminCsrfToken()) {
   return `<!doctype html>
 <html lang="id">
   <head>
@@ -2274,6 +2339,7 @@ function renderAdminLogin(error = '') {
       <p>Masukkan admin token untuk mengakses dashboard.</p>
       ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
       <form method="post" action="/admin/login">
+        <input name="csrfToken" type="hidden" value="${escapeHtml(csrfToken)}">
         <label>
           Admin Token
           <input name="token" type="password" placeholder="Masukkan token..." required autofocus>
@@ -2288,7 +2354,7 @@ function renderAdminLogin(error = '') {
 </html>`;
 }
 
-function renderAdminDashboard(metrics, notice = '') {
+function renderAdminDashboard(metrics, notice = '', csrfToken = createAdminCsrfToken()) {
   const cards = [
     ['Total Parent', metrics.totals.parents],
     ['Profil Anak', metrics.totals.children],
@@ -2492,14 +2558,14 @@ function renderAdminDashboard(metrics, notice = '') {
         `).join('')}
       </div>
 
-      ${renderParentsTable(metrics.parents, metrics.limits?.parents)}
+      ${renderParentsTable(metrics.parents, metrics.limits?.parents, csrfToken)}
       ${renderSubscriptionsTable(metrics.subscriptions, metrics.limits?.subscriptions)}
     </main>
   </body>
 </html>`;
 }
 
-function renderAdminPrayers(prayers, notice = '') {
+function renderAdminPrayers(prayers, notice = '', csrfToken = createAdminCsrfToken()) {
   return `<!doctype html>
 <html lang="id">
   <head>
@@ -2671,6 +2737,7 @@ function renderAdminPrayers(prayers, notice = '') {
         <h2>Tambah Doa Baru</h2>
         <p>Isi minimal judul, Arab, dan arti. Urutan kecil tampil lebih atas.</p>
         <form method="post" action="/admin/prayers">
+          <input name="csrfToken" type="hidden" value="${escapeHtml(csrfToken)}">
           ${renderPrayerFields({
             title: '',
             category: 'Harian',
@@ -2691,13 +2758,13 @@ function renderAdminPrayers(prayers, notice = '') {
         <p>${prayers.length} konten doa tersimpan.</p>
       </section>
 
-      ${prayers.length ? prayers.map(renderPrayerEditor).join('') : '<div class="empty">Belum ada doa.</div>'}
+      ${prayers.length ? prayers.map((prayer) => renderPrayerEditor(prayer, csrfToken)).join('') : '<div class="empty">Belum ada doa.</div>'}
     </main>
   </body>
 </html>`;
 }
 
-function renderPrayerEditor(prayer) {
+function renderPrayerEditor(prayer, csrfToken) {
   return `<div class="prayer">
     <div class="prayer-head">
       <div>
@@ -2707,12 +2774,14 @@ function renderPrayerEditor(prayer) {
       <span class="pill ${prayer.active === false ? 'off' : ''}">${prayer.active === false ? 'Nonaktif' : 'Aktif'}</span>
     </div>
     <form method="post" action="/admin/prayers/${encodeURIComponent(prayer.id)}/update">
+      <input name="csrfToken" type="hidden" value="${escapeHtml(csrfToken)}">
       ${renderPrayerFields(prayer)}
       <div class="actions">
         <button type="submit">Update</button>
       </div>
     </form>
     <form method="post" action="/admin/prayers/${encodeURIComponent(prayer.id)}/delete">
+      <input name="csrfToken" type="hidden" value="${escapeHtml(csrfToken)}">
       <div class="actions">
         <button class="danger" type="submit">Hapus</button>
       </div>
@@ -2760,7 +2829,7 @@ function nextPrayerSortOrder(prayers) {
   return maxSort + 10;
 }
 
-function renderParentsTable(parents, limit) {
+function renderParentsTable(parents, limit, csrfToken) {
   return `<section>
     <div class="section-head">
       <h2>Users Parent</h2>
@@ -2787,6 +2856,7 @@ function renderParentsTable(parents, limit) {
             <td>${escapeHtml(formatDateTime(parent.createdAt))}</td>
             <td>
               <form class="danger-form" method="post" action="/admin/parents/${encodeURIComponent(parent.id)}/delete">
+                <input name="csrfToken" type="hidden" value="${escapeHtml(csrfToken)}">
                 <input name="confirmEmail" type="email" placeholder="Ketik email untuk hapus" autocomplete="off" required>
                 <button type="submit">Delete user</button>
               </form>

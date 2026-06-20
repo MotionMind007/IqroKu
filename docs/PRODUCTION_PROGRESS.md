@@ -346,6 +346,8 @@ Content-Type: application/json
 - Constraint database mencegah status di luar enum aplikasi masuk ke tabel utama.
 - Upload audio yang bukan tipe audio valid ditolak sebelum ditulis ke storage.
 - Admin panel bisa menghapus user parent dengan konfirmasi email eksplisit. Data child/progress/attempt/subscription ikut cascade, dan notifikasi parent/child dibersihkan sebelum delete.
+- Admin form memakai CSRF token HMAC dengan expiry untuk login dan aksi mutasi admin.
+- CORS preflight `OPTIONS` sekarang dibalas eksplisit dengan status `204` dan header allow-methods/allow-headers.
 
 ## DOKU Payment Foundation
 

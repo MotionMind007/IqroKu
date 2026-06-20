@@ -142,6 +142,20 @@ test('admin routes support optional backend IP allowlist', () => {
   assert.match(envTemplateSource, /ADMIN_ALLOWED_IPS=/);
 });
 
+test('admin forms include CSRF tokens and admin mutations verify them', () => {
+  assert.match(serverSource, /const ADMIN_CSRF_SECRET =/);
+  assert.match(serverSource, /function createAdminCsrfToken\(\)/);
+  assert.match(serverSource, /function verifyAdminCsrfToken\(token\)/);
+  assert.match(serverSource, /function enforceAdminCsrf\(body\)/);
+  assert.match(serverSource, /throw httpError\(403, 'admin_csrf_invalid'\)/);
+  assert.match(serverSource, /verifyAdminCsrfToken\(body\.csrfToken\)/);
+  assert.match(serverSource, /enforceAdminCsrf\(body\);[\s\S]*const fields = prayerFromBody\(body\)/);
+  assert.match(serverSource, /enforceAdminCsrf\(body\);[\s\S]*const prayer = await db\.findPrayerById/);
+  assert.match(serverSource, /enforceAdminCsrf\(body\);[\s\S]*const parent = await db\.findParentById/);
+  assert.match(serverSource, /name="csrfToken" type="hidden"/);
+  assert.match(envTemplateSource, /ADMIN_CSRF_SECRET=/);
+});
+
 test('admin parent deletion requires admin auth and explicit email confirmation', () => {
   assert.match(serverSource, /function adminParentAction\(path\)/);
   assert.match(serverSource, /\^\\\/admin\\\/parents\\\/\(\[\^\/\]\+\)\\\/\(delete\)\$/);
@@ -209,6 +223,10 @@ test('audio upload handling enforces size, type, extension, and content sniffing
 test('basic HTTP response hardening is enabled for JSON, files, and admin cookies', () => {
   assert.match(serverSource, /'x-content-type-options': 'nosniff'/);
   assert.match(serverSource, /'vary': 'Origin'/);
+  assert.match(serverSource, /function sendCorsPreflight\(response, request\)/);
+  assert.match(serverSource, /'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS'/);
+  assert.match(serverSource, /'access-control-max-age': '86400'/);
+  assert.match(serverSource, /sendCorsPreflight\(response, request\)/);
   assert.match(serverSource, /function secureCookieAttribute\(\)/);
   assert.match(serverSource, /process\.env\.NODE_ENV === 'production' \? '; Secure' : ''/);
   assert.match(serverSource, /SameSite=Strict; Max-Age=86400\$\{secureCookieAttribute\(\)\}/);
