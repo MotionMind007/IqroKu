@@ -27,8 +27,7 @@ echo "${HEADERS}" | grep -qi '^vary: Origin'
 
 echo "[3/4] Checking backend syntax..."
 cd "$APP_DIR"
-node --check backend/src/server.mjs
-node --check backend/src/db.mjs
+npm run check --prefix backend
 
 echo "[4/4] Checking migration status..."
 npm run migrate:status --prefix backend

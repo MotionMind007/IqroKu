@@ -101,6 +101,7 @@ Lalu tes manual dari HP:
 | `restore-backup.sh` | Destructive restore helper for restore drills |
 | `restore-drill.sh` | Non-destructive backup restore verification using a temporary DB |
 | `smoke-test.sh` | Health, header, syntax, and migration smoke test |
+| `ops-check.sh` | Periodic operations check for health, PM2, backups, disk, permissions, and Nginx upload protection |
 
 ## Environment
 
@@ -236,6 +237,43 @@ Notes:
 - Production database is not stopped or modified.
 - The temporary database is dropped automatically after the drill passes or fails.
 - Set `KEEP_RESTORE_DRILL_DB=YES` only when debugging a failed drill.
+
+## Monitoring and Operations Checks
+
+Manual ops check:
+
+```bash
+cd /opt/iqroku
+BASE_URL=https://iqroku.motionmind.store ./deploy/ops-check.sh
+```
+
+The one-time setup and deploy script copy this script to `/opt/iqroku/ops-check.sh` and install cron:
+
+```bash
+*/15 * * * * BASE_URL=https://iqroku.motionmind.store /opt/iqroku/ops-check.sh >> /var/log/iqroku/ops-check.log 2>&1
+```
+
+What it checks:
+
+- `/health` returns `ok=true` and `store=postgresql`.
+- PM2 process `iqroku` has a running PID.
+- Migration status command succeeds.
+- Latest DB backup exists, is gzip-valid, and is fresh.
+- Latest uploads backup is tar-valid when present.
+- Disk usage is below `DISK_WARN_PERCENT`, default `85`.
+- `/opt/iqroku/backend/.env` permission is `600` or stricter.
+- Firebase service account file permission is `600` or stricter when configured.
+- Live Nginx does not serve `/uploads/` through a public `alias`.
+
+Common commands:
+
+```bash
+tail -n 100 /var/log/iqroku/ops-check.log
+tail -n 100 /var/log/iqroku/backup.log
+BACKUP_MAX_AGE_HOURS=48 DISK_WARN_PERCENT=90 ./deploy/ops-check.sh
+CHECK_MIGRATIONS=false ./deploy/ops-check.sh
+OPS_BASE_URL=https://iqroku.motionmind.store ./deploy/deploy.sh
+```
 
 Destructive restore on staging only:
 

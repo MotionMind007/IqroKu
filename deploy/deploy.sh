@@ -7,6 +7,7 @@ set -euo pipefail
 # =============================================================================
 
 APP_DIR="${APP_DIR:-/opt/iqroku}"
+OPS_BASE_URL="${OPS_BASE_URL:-https://iqroku.motionmind.store}"
 cd "$APP_DIR"
 
 echo "=== IqroKu Deploy ==="
@@ -37,9 +38,14 @@ git fetch origin main
 git reset --hard origin/main
 echo "  New commit: $(git rev-parse --short HEAD)"
 
+if [ -f "$APP_DIR/deploy/ops-check.sh" ]; then
+    cp "$APP_DIR/deploy/ops-check.sh" "$APP_DIR/ops-check.sh"
+    chmod +x "$APP_DIR/ops-check.sh"
+    (crontab -l 2>/dev/null; echo "*/15 * * * * BASE_URL=${OPS_BASE_URL} ${APP_DIR}/ops-check.sh >> /var/log/iqroku/ops-check.log 2>&1") | sort -u | crontab -
+fi
+
 echo "[4/7] Checking syntax..."
-node --check backend/src/server.mjs
-node --check backend/src/db.mjs
+npm run check --prefix backend
 if [ -f /etc/nginx/sites-enabled/iqroku ] || [ -f /etc/nginx/sites-available/iqroku ]; then
     LIVE_NGINX_CONFIG="$(mktemp)"
     if nginx -T > "$LIVE_NGINX_CONFIG" 2>/dev/null; then

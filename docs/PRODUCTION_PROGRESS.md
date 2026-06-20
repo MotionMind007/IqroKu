@@ -353,6 +353,9 @@ Content-Type: application/json
 - Migration `008_performance_indexes.sql` menambah index untuk query panas production: dashboard admin/parent, progress anak, pending review, notification feed/unread badge, payment status, session/auth cleanup, dan FCM device token lookup.
 - Backend mulai dipecah dari `server.mjs`: observability, external fetch retry, auth helpers, admin panel, billing/subscription routes, public content routes, family/child PIN routes, progress routes, learning/audio/review flow, notification/device-token routes, dan DOKU payment flow sudah pindah ke modul terpisah.
 - Database layer mulai dirapikan: mapper row PostgreSQL dipisah ke `backend/src/db-mappers.mjs`, sementara `backend/src/db.mjs` fokus ke query dan transaksi.
+- Menambahkan `deploy/ops-check.sh` untuk operational readiness: cek health, PM2, migration status, backup freshness, disk usage, permission secret, dan Nginx upload protection.
+- `setup-vps.sh` memasang cron ops-check tiap 15 menit ke `/var/log/iqroku/ops-check.log`.
+- Deploy dan smoke test sekarang menjalankan `npm run check --prefix backend` agar semua modul backend baru ikut syntax check.
 
 ## DOKU Payment Foundation
 

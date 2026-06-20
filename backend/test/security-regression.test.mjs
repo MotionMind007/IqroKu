@@ -7,7 +7,9 @@ const dbSource = await readFile(new URL('../src/db.mjs', import.meta.url), 'utf8
 const dbMappersSource = await readFile(new URL('../src/db-mappers.mjs', import.meta.url), 'utf8');
 const nginxSource = await readFile(new URL('../../deploy/nginx-iqroku.conf', import.meta.url), 'utf8');
 const deployScriptSource = await readFile(new URL('../../deploy/deploy.sh', import.meta.url), 'utf8');
+const opsCheckSource = await readFile(new URL('../../deploy/ops-check.sh', import.meta.url), 'utf8');
 const setupVpsSource = await readFile(new URL('../../deploy/setup-vps.sh', import.meta.url), 'utf8');
+const smokeTestSource = await readFile(new URL('../../deploy/smoke-test.sh', import.meta.url), 'utf8');
 const envTemplateSource = await readFile(new URL('../../deploy/.env.production', import.meta.url), 'utf8');
 const constraintsMigration = await readFile(
   new URL('../../deploy/migrations/002_security_constraints.sql', import.meta.url),
@@ -177,6 +179,21 @@ test('session tokens and auth cleanup avoid credential exposure', () => {
   assert.match(setupVpsSource, /DELETE FROM auth_tokens WHERE expires_at < NOW\(\) - INTERVAL '7 days'/);
 });
 
+test('operations checks cover health, backups, disk, permissions, and upload auth', () => {
+  assert.match(opsCheckSource, /BASE_URL="\$\{BASE_URL:-http:\/\/localhost:8787\}"/);
+  assert.match(opsCheckSource, /BACKUP_MAX_AGE_HOURS="\$\{BACKUP_MAX_AGE_HOURS:-30\}"/);
+  assert.match(opsCheckSource, /pm2 pid iqroku/);
+  assert.match(opsCheckSource, /npm run migrate:status --prefix "\$\{APP_DIR\}\/backend"/);
+  assert.match(opsCheckSource, /gzip -t "\$LATEST_DB_BACKUP"/);
+  assert.match(opsCheckSource, /DISK_WARN_PERCENT="\$\{DISK_WARN_PERCENT:-85\}"/);
+  assert.match(opsCheckSource, /FIREBASE_SERVICE_ACCOUNT_PATH/);
+  assert.match(opsCheckSource, /live nginx serves \/uploads\/ with alias/);
+  assert.match(deployScriptSource, /OPS_BASE_URL="\$\{OPS_BASE_URL:-https:\/\/iqroku\.motionmind\.store\}"/);
+  assert.match(deployScriptSource, /cp "\$APP_DIR\/deploy\/ops-check\.sh" "\$APP_DIR\/ops-check\.sh"/);
+  assert.match(setupVpsSource, /ops-check\.sh/);
+  assert.match(setupVpsSource, /\/var\/log\/iqroku\/ops-check\.log/);
+});
+
 test('admin metrics use bounded SQL aggregation instead of loading full tables', () => {
   assert.match(adminMetricsSource, /COUNT\(\*\)::int AS parents/);
   assert.match(adminMetricsSource, /LIMIT \$1/);
@@ -276,6 +293,13 @@ test('backend emits request ids and uses timeout/retry wrappers for external cal
   assert.match(authSource, /label: 'google_tokeninfo'/);
   assert.match(dokuSource, /label: 'doku_checkout'/);
   assert.match(envTemplateSource, /GOOGLE_VERIFY_RETRIES=2/);
+});
+
+test('deploy and smoke tests run full backend module syntax checks', () => {
+  assert.match(deployScriptSource, /npm run check --prefix backend/);
+  assert.match(smokeTestSource, /npm run check --prefix backend/);
+  assert.doesNotMatch(deployScriptSource, /node --check backend\/src\/server\.mjs/);
+  assert.doesNotMatch(smokeTestSource, /node --check backend\/src\/server\.mjs/);
 });
 
 test('review decisions are applied through one database transaction', () => {
