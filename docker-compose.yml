@@ -6,10 +6,10 @@ services:
     container_name: iqroku-postgres
     environment:
       POSTGRES_USER: iqroku
-      POSTGRES_PASSWORD: iqroku123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in your local .env}
       POSTGRES_DB: iqroku_db
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - iqroku_pgdata:/var/lib/postgresql/data
     healthcheck:

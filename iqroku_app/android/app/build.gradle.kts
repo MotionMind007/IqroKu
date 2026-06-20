@@ -5,6 +5,31 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+val releaseStoreFile = providers.gradleProperty("IQROKU_RELEASE_STORE_FILE")
+    .orElse(providers.environmentVariable("IQROKU_RELEASE_STORE_FILE"))
+val releaseStorePassword = providers.gradleProperty("IQROKU_RELEASE_STORE_PASSWORD")
+    .orElse(providers.environmentVariable("IQROKU_RELEASE_STORE_PASSWORD"))
+val releaseKeyAlias = providers.gradleProperty("IQROKU_RELEASE_KEY_ALIAS")
+    .orElse(providers.environmentVariable("IQROKU_RELEASE_KEY_ALIAS"))
+val releaseKeyPassword = providers.gradleProperty("IQROKU_RELEASE_KEY_PASSWORD")
+    .orElse(providers.environmentVariable("IQROKU_RELEASE_KEY_PASSWORD"))
+
+fun releaseSigningConfigured(): Boolean =
+    releaseStoreFile.isPresent &&
+        releaseStorePassword.isPresent &&
+        releaseKeyAlias.isPresent &&
+        releaseKeyPassword.isPresent
+
+gradle.taskGraph.whenReady {
+    if (!releaseSigningConfigured() && allTasks.any { it.name.contains("Release") }) {
+        throw GradleException(
+            "Release signing is not configured. Set IQROKU_RELEASE_STORE_FILE, " +
+                "IQROKU_RELEASE_STORE_PASSWORD, IQROKU_RELEASE_KEY_ALIAS, and " +
+                "IQROKU_RELEASE_KEY_PASSWORD."
+        )
+    }
+}
+
 android {
     namespace = "com.motionmind.iqroku"
     compileSdk = flutter.compileSdkVersion
@@ -27,11 +52,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            if (releaseSigningConfigured()) {
+                storeFile = file(releaseStoreFile.get())
+                storePassword = releaseStorePassword.get()
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

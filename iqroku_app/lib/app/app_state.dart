@@ -32,6 +32,12 @@ String _generateUuid() {
   return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}";
 }
 
+void _debugLog(String message) {
+  if (kDebugMode) {
+    debugPrint(message);
+  }
+}
+
 class IqrokuState extends ChangeNotifier {
   IqrokuState({
     required this.repository,
@@ -635,12 +641,13 @@ class IqrokuState extends ChangeNotifier {
         : stored.selectedChildId.isEmpty
         ? childProfiles.first.id
         : stored.selectedChildId;
-    familyPlusActive = stored.familyPlusActive;
-    subscriptionActivatedAt = stored.subscriptionActivatedAt;
-    subscriptionActiveUntil = stored.subscriptionActiveUntil;
     parentAccount = stored.parentAccount;
     authToken = stored.authToken;
     authService.authToken = stored.authToken;
+    familyPlusActive = false;
+    subscriptionActivatedAt = null;
+    subscriptionActiveUntil = null;
+    pendingDokuInvoiceNumber = stored.pendingDokuInvoiceNumber;
     hasParentPin = parentAccount?.hasPin ?? false;
     childSetupCompleted = stored.childSetupCompleted;
     selectedIqroBook = stored.selectedIqroBook;
@@ -664,6 +671,7 @@ class IqrokuState extends ChangeNotifier {
       await _scheduleAdzanReminder();
     }
     unawaited(_syncPushToken());
+    unawaited(refreshSubscriptionFromBackend());
 
     notifyListeners();
   }
@@ -963,6 +971,7 @@ class IqrokuState extends ChangeNotifier {
       if (status.active) {
         subscriptionNotice = null;
         subscriptionError = null;
+        pendingDokuInvoiceNumber = null;
       }
       _ensureSelectedIqroAccess();
       _persist();
@@ -1396,7 +1405,7 @@ class IqrokuState extends ChangeNotifier {
     try {
       final flow = await authService.requestPasswordReset(email.trim());
       passwordResetEmail = email.trim();
-      passwordResetDevToken = flow?.devToken;
+      passwordResetDevToken = kDebugMode ? flow?.devToken : null;
       authMessage =
           'Instruksi reset password sudah dikirim jika email terdaftar.';
     } catch (error) {
@@ -2065,6 +2074,7 @@ class IqrokuState extends ChangeNotifier {
       authToken: authToken,
       subscriptionActivatedAt: subscriptionActivatedAt,
       subscriptionActiveUntil: subscriptionActiveUntil,
+      pendingDokuInvoiceNumber: pendingDokuInvoiceNumber,
     );
     _saveQueue = _saveQueue.then((_) => storage.save(snapshot));
     unawaited(_saveQueue);
@@ -2230,7 +2240,9 @@ class IqrokuState extends ChangeNotifier {
 
   void _captureEmailVerification(AuthResult result) {
     pendingVerificationEmail = result.parent.email;
-    emailVerificationDevToken = result.emailVerification?.devToken;
+    emailVerificationDevToken = kDebugMode
+        ? result.emailVerification?.devToken
+        : null;
     emailVerificationRequired = result.emailVerification?.required ?? false;
   }
 
@@ -2350,7 +2362,7 @@ class IqrokuState extends ChangeNotifier {
             audioPath: attempt.audioPath!,
           );
         } catch (e) {
-          debugPrint('Audio upload failed: $e');
+          _debugLog('Audio upload failed.');
         }
       }
     } on AuthApiException catch (error) {
@@ -2359,7 +2371,7 @@ class IqrokuState extends ChangeNotifier {
       }
       debugPrint('Learning attempt sync failed: ${error.code}');
     } catch (error) {
-      debugPrint('Learning attempt sync failed: $error');
+      _debugLog('Learning attempt sync failed.');
     }
   }
 
@@ -2369,6 +2381,9 @@ class IqrokuState extends ChangeNotifier {
       familyPlusActive = status.active;
       subscriptionActivatedAt = status.active ? status.activatedAt : null;
       subscriptionActiveUntil = status.active ? status.activeUntil : null;
+      if (status.active) {
+        pendingDokuInvoiceNumber = null;
+      }
     } on AuthApiException catch (error) {
       if (error.statusCode == 401) {
         _handleTokenExpired();

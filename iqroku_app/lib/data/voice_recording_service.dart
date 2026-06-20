@@ -38,10 +38,8 @@ class LocalVoiceRecordingService implements VoiceRecordingService {
       recordingsDirectory.createSync(recursive: true);
     }
 
-    final safeChildId = childId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '_');
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final path =
-        '${recordingsDirectory.path}/${safeChildId}_j${bookId}_p${pageNumber}_$timestamp.m4a';
+    final path = '${recordingsDirectory.path}/attempt_$timestamp.m4a';
 
     await _recorder.start(
       const RecordConfig(

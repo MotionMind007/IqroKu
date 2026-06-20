@@ -386,16 +386,28 @@ function enforceAdminIpAllowlist(request) {
   }
 }
 
+function isAdminRestrictedPath(path) {
+  return path === '/admin'
+    || path.startsWith('/admin/')
+    || path === '/subscriptions/activate';
+}
+
 // Behind a reverse proxy (nginx) every request's socket address is the proxy
 // itself, so rate limiting on remoteAddress buckets ALL users into one counter.
-// Trust the first hop in X-Forwarded-For (set by our nginx) for the real IP.
+// Trust only headers set by our edge proxy. Nginx must overwrite X-Real-IP and
+// X-Forwarded-For with the immediate client address; client-supplied chains are
+// not accepted as authority.
 const TRUST_PROXY = (process.env.TRUST_PROXY ?? 'true') !== 'false';
 function getClientIp(request) {
   if (TRUST_PROXY) {
+    const realIp = request.headers?.['x-real-ip'];
+    if (typeof realIp === 'string' && realIp.length > 0) {
+      return normalizeClientIp(realIp);
+    }
     const fwd = request.headers?.['x-forwarded-for'];
     if (typeof fwd === 'string' && fwd.length > 0) {
-      const first = fwd.split(',')[0].trim();
-      if (first) return normalizeClientIp(first);
+      const lastTrustedHop = fwd.split(',').map((ip) => ip.trim()).filter(Boolean).pop();
+      if (lastTrustedHop) return normalizeClientIp(lastTrustedHop);
     }
   }
   return normalizeClientIp(request.socket?.remoteAddress ?? 'unknown');
@@ -502,7 +514,7 @@ async function route(method, url, body, request) {
     return {};
   }
 
-  if (path === '/admin' || path.startsWith('/admin/')) {
+  if (isAdminRestrictedPath(path)) {
     enforceAdminIpAllowlist(request);
   }
 
@@ -713,6 +725,7 @@ async function route(method, url, body, request) {
     validatePassword(password);
     const parent = await consumeAuthFlowToken('password_reset', token);
     await db.updateParentPassword(parent.id, hashPassword(password));
+    await db.deleteSessionsByParent(parent.id);
     await db.revokeAuthTokens(parent.id, 'password_reset');
     return { ok: true };
   }

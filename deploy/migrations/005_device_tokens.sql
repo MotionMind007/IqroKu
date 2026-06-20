@@ -1,5 +1,3 @@
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS device_tokens (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_id UUID NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
@@ -26,5 +24,3 @@ CREATE INDEX IF NOT EXISTS idx_device_tokens_parent
 
 CREATE INDEX IF NOT EXISTS idx_device_tokens_user
   ON device_tokens(user_type, (COALESCE(child_id, parent_id)), enabled);
-
-COMMIT;

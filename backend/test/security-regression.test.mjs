@@ -7,6 +7,9 @@ const dbSource = await readFile(new URL('../src/db.mjs', import.meta.url), 'utf8
 const dbMappersSource = await readFile(new URL('../src/db-mappers.mjs', import.meta.url), 'utf8');
 const nginxSource = await readFile(new URL('../../deploy/nginx-iqroku.conf', import.meta.url), 'utf8');
 const deployScriptSource = await readFile(new URL('../../deploy/deploy.sh', import.meta.url), 'utf8');
+const restoreBackupSource = await readFile(new URL('../../deploy/restore-backup.sh', import.meta.url), 'utf8');
+const backupSource = await readFile(new URL('../../deploy/backup.sh', import.meta.url), 'utf8');
+const dockerComposeSource = await readFile(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
 const opsCheckSource = await readFile(new URL('../../deploy/ops-check.sh', import.meta.url), 'utf8');
 const weeklyRestoreDrillSource = await readFile(new URL('../../deploy/weekly-restore-drill.sh', import.meta.url), 'utf8');
 const setupVpsSource = await readFile(new URL('../../deploy/setup-vps.sh', import.meta.url), 'utf8');
@@ -38,6 +41,42 @@ const dokuPaymentsMigration = await readFile(
 );
 const performanceIndexesMigration = await readFile(
   new URL('../../deploy/migrations/008_performance_indexes.sql', import.meta.url),
+  'utf8',
+);
+const securityHardeningMigration = await readFile(
+  new URL('../../deploy/migrations/009_security_hardening.sql', import.meta.url),
+  'utf8',
+);
+const androidManifestSource = await readFile(
+  new URL('../../iqroku_app/android/app/src/main/AndroidManifest.xml', import.meta.url),
+  'utf8',
+);
+const androidDebugManifestSource = await readFile(
+  new URL('../../iqroku_app/android/app/src/debug/AndroidManifest.xml', import.meta.url),
+  'utf8',
+);
+const androidBuildGradleSource = await readFile(
+  new URL('../../iqroku_app/android/app/build.gradle.kts', import.meta.url),
+  'utf8',
+);
+const flutterAuthApiSource = await readFile(
+  new URL('../../iqroku_app/lib/data/auth_api_service.dart', import.meta.url),
+  'utf8',
+);
+const flutterLocalStorageSource = await readFile(
+  new URL('../../iqroku_app/lib/data/local_app_storage.dart', import.meta.url),
+  'utf8',
+);
+const flutterAppStateSource = await readFile(
+  new URL('../../iqroku_app/lib/app/app_state.dart', import.meta.url),
+  'utf8',
+);
+const flutterVoiceRecordingSource = await readFile(
+  new URL('../../iqroku_app/lib/data/voice_recording_service.dart', import.meta.url),
+  'utf8',
+);
+const flutterPushSource = await readFile(
+  new URL('../../iqroku_app/lib/data/push_notification_service.dart', import.meta.url),
   'utf8',
 );
 const pushSource = await readFile(new URL('../src/push.mjs', import.meta.url), 'utf8');
@@ -188,6 +227,13 @@ test('session tokens and auth cleanup avoid credential exposure', () => {
   assert.match(authSource, /session_\$\{randomBytes\(32\)\.toString\('base64url'\)\}/);
   assert.doesNotMatch(serverSource, /session_\$\{parentId\}/);
   assert.doesNotMatch(serverSource, /createSessionToken\(parent\.id\)/);
+  assert.match(dbSource, /function hashSessionToken\(token\)/);
+  assert.match(dbSource, /createHash\('sha256'\)\.update\(String\(token\)\)\.digest\('hex'\)/);
+  assert.match(dbSource, /INSERT INTO sessions \(token_hash, parent_id\)/);
+  assert.match(dbSource, /WHERE token_hash = \$1 AND expires_at > NOW\(\)/);
+  assert.match(dbSource, /export async function deleteSessionsByParent\(parentId\)/);
+  assert.match(serverSource, /await db\.deleteSessionsByParent\(parent\.id\)/);
+  assert.doesNotMatch(dbSource, /INSERT INTO sessions \(token, parent_id\)/);
   assert.match(serverSource, /async function cleanupExpiredAuthData\(\)/);
   assert.match(serverSource, /await db\.cleanupExpiredSessions\(\)/);
   assert.match(serverSource, /await db\.cleanupExpiredAuthTokens\(\)/);
@@ -244,10 +290,39 @@ test('admin routes support optional backend IP allowlist', () => {
   assert.match(serverSource, /const ADMIN_ALLOWED_IPS = new Set/);
   assert.match(serverSource, /function enforceAdminIpAllowlist\(request\)/);
   assert.match(serverSource, /throw httpError\(403, 'admin_ip_not_allowed'\)/);
-  assert.match(serverSource, /if \(path === '\/admin' \|\| path\.startsWith\('\/admin\/'\)\)/);
+  assert.match(serverSource, /function isAdminRestrictedPath\(path\)/);
+  assert.match(serverSource, /path === '\/subscriptions\/activate'/);
+  assert.match(serverSource, /if \(isAdminRestrictedPath\(path\)\)/);
   assert.match(serverSource, /enforceAdminIpAllowlist\(request\)/);
+  assert.match(serverSource, /request\.headers\?\.\['x-real-ip'\]/);
+  assert.match(serverSource, /const lastTrustedHop = fwd\.split\(','\)/);
+  assert.match(serverSource, /\.filter\(Boolean\)\.pop\(\)/);
+  assert.match(nginxSource, /proxy_set_header X-Forwarded-For \$remote_addr;/);
+  assert.doesNotMatch(nginxSource, /\$proxy_add_x_forwarded_for/);
   assert.match(serverSource, /function normalizeClientIp\(value\)/);
   assert.match(envTemplateSource, /ADMIN_ALLOWED_IPS=/);
+});
+
+test('restore, backup, and local database defaults are hardened', () => {
+  assert.match(restoreBackupSource, /psql -v ON_ERROR_STOP=1 -d "\$DB_NAME"/);
+  assert.match(restoreBackupSource, /tar -tzf "\$UPLOADS_FILE" >\/dev\/null/);
+  assert.match(restoreBackupSource, /Uploads archive contains unsafe paths\./);
+  assert.match(restoreBackupSource, /tar --no-same-owner -xzf "\$UPLOADS_FILE"/);
+  assert.match(backupSource, /chmod 700 "\$BACKUP_DIR"/);
+  assert.match(backupSource, /chmod 600 "\$BACKUP_FILE"/);
+  assert.match(dockerComposeSource, /POSTGRES_PASSWORD: \$\{POSTGRES_PASSWORD:\?set POSTGRES_PASSWORD in your local \.env\}/);
+  assert.match(dockerComposeSource, /"127\.0\.0\.1:5433:5432"/);
+});
+
+test('production deploy rejects unsafe production defaults', () => {
+  assert.match(deployScriptSource, /STRICT_PRODUCTION_READINESS:-true/);
+  assert.match(deployScriptSource, /CHANGE_THIS\|admin-dev-token\|iqroku123/);
+  assert.match(deployScriptSource, /REQUIRE_EMAIL_VERIFICATION must be true/);
+  assert.match(deployScriptSource, /EMAIL_PROVIDER must be configured/);
+  assert.match(deployScriptSource, /DOKU_ENV=sandbox is not allowed/);
+  assert.doesNotMatch(setupVpsSource, /Admin:\s+https:\/\/\$\{DOMAIN\}\/admin\?token=/);
+  assert.doesNotMatch(setupVpsSource, /DB Password:\s+\$\{DB_PASS\}/);
+  assert.doesNotMatch(setupVpsSource, /Admin Token:\s+\$\{ADMIN_TOKEN\}/);
 });
 
 test('admin forms include CSRF tokens and admin mutations verify them', () => {
@@ -376,6 +451,32 @@ test('basic HTTP response hardening is enabled for JSON, files, and admin cookie
   assert.match(serverSource, /replaceAll\('`', '&#96;'\)/);
 });
 
+test('Flutter release build blocks cleartext API traffic and debug signing', () => {
+  assert.match(androidManifestSource, /android:usesCleartextTraffic="false"/);
+  assert.match(androidDebugManifestSource, /android:usesCleartextTraffic="true"/);
+  assert.match(flutterAuthApiSource, /if \(kReleaseMode\) \{/);
+  assert.match(flutterAuthApiSource, /IQROKU_API_BASE must use HTTPS in release builds/);
+  assert.match(androidBuildGradleSource, /IQROKU_RELEASE_STORE_FILE/);
+  assert.match(androidBuildGradleSource, /Release signing is not configured/);
+  assert.match(androidBuildGradleSource, /signingConfig = signingConfigs\.getByName\("release"\)/);
+  assert.doesNotMatch(androidBuildGradleSource, /signingConfig = signingConfigs\.getByName\("debug"\)/);
+});
+
+test('Flutter local child data and dev-only auth tokens are hardened', () => {
+  assert.match(flutterLocalStorageSource, /_secureStateKey = 'iqroku\.secure_state\.v1'/);
+  assert.match(flutterLocalStorageSource, /_secureStorage\.write\([\s\S]*key: _secureStateKey/);
+  assert.match(flutterLocalStorageSource, /preferences\.remove\(_key\)/);
+  assert.doesNotMatch(flutterLocalStorageSource, /setString\([\s\S]*excludeSensitive: true/);
+  assert.match(flutterAppStateSource, /familyPlusActive = false;/);
+  assert.match(flutterAppStateSource, /unawaited\(refreshSubscriptionFromBackend\(\)\)/);
+  assert.match(flutterAppStateSource, /emailVerificationDevToken = kDebugMode[\s\S]*result\.emailVerification\?\.devToken[\s\S]*: null/);
+  assert.match(flutterAppStateSource, /passwordResetDevToken = kDebugMode[\s\S]*flow\?\.devToken[\s\S]*: null/);
+  assert.match(flutterVoiceRecordingSource, /attempt_\$timestamp\.m4a/);
+  assert.doesNotMatch(flutterVoiceRecordingSource, /safeChildId/);
+  assert.match(flutterPushSource, /void _debugLog\(String message\)/);
+  assert.doesNotMatch(flutterPushSource, /Push notification setup failed: \$error/);
+});
+
 test('database constraints cover persisted status and reviewer references', () => {
   assert.match(constraintsMigration, /progress_status_check/);
   assert.match(constraintsMigration, /progress_review_status_check/);
@@ -448,12 +549,16 @@ test('migration creates device token storage for FCM push notifications', () => 
   assert.match(deviceTokensMigration, /REFERENCES children\(id\) ON DELETE CASCADE/);
   assert.match(deviceTokensMigration, /user_type IN \('parent', 'child'\)/);
   assert.match(deviceTokensMigration, /idx_device_tokens_user/);
+  assert.doesNotMatch(deviceTokensMigration, /\bBEGIN;\b/);
+  assert.doesNotMatch(deviceTokensMigration, /\bCOMMIT;\b/);
 });
 
 test('migration allows one FCM token to be registered for parent and child roles', () => {
   assert.match(deviceTokenRolesMigration, /DROP CONSTRAINT IF EXISTS device_tokens_token_key/);
   assert.match(deviceTokenRolesMigration, /idx_device_tokens_parent_token/);
   assert.match(deviceTokenRolesMigration, /idx_device_tokens_child_token/);
+  assert.doesNotMatch(deviceTokenRolesMigration, /\bBEGIN;\b/);
+  assert.doesNotMatch(deviceTokenRolesMigration, /\bCOMMIT;\b/);
   assert.match(upsertDeviceTokenSource, /SELECT id[\s\S]*FROM device_tokens[\s\S]*WHERE token = \$1/);
   assert.doesNotMatch(upsertDeviceTokenSource, /ON CONFLICT \(token\)/);
 });
@@ -466,6 +571,8 @@ test('migration creates idempotent DOKU payment order and event storage', () => 
   assert.match(dokuPaymentsMigration, /UNIQUE \(provider, request_id\)/);
   assert.match(dokuPaymentsMigration, /signature_valid BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(dokuPaymentsMigration, /REFERENCES parents\(id\) ON DELETE CASCADE/);
+  assert.doesNotMatch(dokuPaymentsMigration, /\bBEGIN;\b/);
+  assert.doesNotMatch(dokuPaymentsMigration, /\bCOMMIT;\b/);
 });
 
 test('performance migration indexes hot production query paths', () => {
@@ -475,10 +582,24 @@ test('performance migration indexes hot production query paths', () => {
   assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_attempts_review_created/);
   assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_attempts_audio_file_name/);
   assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_subscriptions_active_parent/);
+  assert.match(performanceIndexesMigration, /CREATE TABLE IF NOT EXISTS subscriptions/);
   assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_payment_orders_parent_status_created/);
   assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_notifications_user_created/);
   assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_device_tokens_active_last_seen/);
   assert.match(performanceIndexesMigration, /WHERE enabled = TRUE/);
   assert.doesNotMatch(performanceIndexesMigration, /idx_notifications_unread_lookup/);
   assert.doesNotMatch(performanceIndexesMigration, /idx_parents_google_id_not_null/);
+  assert.doesNotMatch(performanceIndexesMigration, /\bBEGIN;\b/);
+  assert.doesNotMatch(performanceIndexesMigration, /\bCOMMIT;\b/);
+});
+
+test('security hardening migration removes raw session token dependency and tightens child data constraints', () => {
+  assert.match(securityHardeningMigration, /ADD COLUMN IF NOT EXISTS token_hash CHAR\(64\)/);
+  assert.match(securityHardeningMigration, /encode\(digest\(token, 'sha256'\), 'hex'\)/);
+  assert.match(securityHardeningMigration, /ALTER COLUMN token DROP NOT NULL/);
+  assert.match(securityHardeningMigration, /idx_sessions_token_hash/);
+  assert.match(securityHardeningMigration, /attempts_book_id_check/);
+  assert.match(securityHardeningMigration, /attempts_page_number_check/);
+  assert.match(securityHardeningMigration, /children_study_days_check/);
+  assert.match(securityHardeningMigration, /children_repeat_progress_check/);
 });

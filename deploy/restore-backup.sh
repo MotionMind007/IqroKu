@@ -46,15 +46,20 @@ fi
 sudo -u postgres psql -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${DB_NAME}' AND pid <> pg_backend_pid();"
 sudo -u postgres dropdb --if-exists "$DB_NAME"
 sudo -u postgres createdb -O "$DB_USER" "$DB_NAME"
-gunzip -c "$BACKUP_FILE" | sudo -u postgres psql -d "$DB_NAME"
+gunzip -c "$BACKUP_FILE" | sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME"
 
 if [ -n "$UPLOADS_FILE" ]; then
     if [ ! -f "$UPLOADS_FILE" ]; then
         echo "Uploads backup not found: ${UPLOADS_FILE}"
         exit 1
     fi
+    tar -tzf "$UPLOADS_FILE" >/dev/null
+    if tar -tzf "$UPLOADS_FILE" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+        echo "Uploads archive contains unsafe paths."
+        exit 1
+    fi
     mkdir -p "$APP_DIR"
-    tar -xzf "$UPLOADS_FILE" -C "$APP_DIR"
+    tar --no-same-owner -xzf "$UPLOADS_FILE" -C "$APP_DIR"
 fi
 
 npm run migrate --prefix "${APP_DIR}/backend"

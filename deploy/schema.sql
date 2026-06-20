@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 -- Sessions
 CREATE TABLE IF NOT EXISTS sessions (
-  token VARCHAR(128) PRIMARY KEY,
+  token_hash CHAR(64) PRIMARY KEY,
   parent_id UUID NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days')
@@ -86,8 +86,8 @@ CREATE INDEX idx_progress_review_updated ON progress(review_status, updated_at D
 CREATE TABLE IF NOT EXISTS attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   child_id UUID NOT NULL REFERENCES children(id) ON DELETE CASCADE,
-  book_id SMALLINT NOT NULL,
-  page_number SMALLINT NOT NULL,
+  book_id SMALLINT NOT NULL CHECK (book_id BETWEEN 1 AND 99),
+  page_number SMALLINT NOT NULL CHECK (page_number BETWEEN 1 AND 999),
   duration_seconds INTEGER NOT NULL DEFAULT 1,
   audio_path VARCHAR(500),
   audio_url VARCHAR(500),

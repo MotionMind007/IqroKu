@@ -7,6 +7,12 @@ import 'package:flutter/services.dart';
 
 import 'auth_api_service.dart';
 
+void _debugLog(String message) {
+  if (kDebugMode) {
+    debugPrint(message);
+  }
+}
+
 @pragma('vm:entry-point')
 Future<void> iqrokuFirebaseMessagingBackgroundHandler(
   RemoteMessage message,
@@ -108,12 +114,12 @@ class FirebasePushNotificationService implements PushNotificationService {
             _lastToken = nextToken;
             unawaited(_registerKnownDevices(authService, nextToken));
           });
-    } on MissingPluginException catch (error) {
-      debugPrint('Push notification plugin unavailable: $error');
+    } on MissingPluginException catch (_) {
+      _debugLog('Push notification plugin unavailable.');
     } on FirebaseException catch (error) {
-      debugPrint('Firebase push setup failed: ${error.code}');
-    } catch (error) {
-      debugPrint('Push notification setup failed: $error');
+      _debugLog('Firebase push setup failed: ${error.code}');
+    } catch (_) {
+      _debugLog('Push notification setup failed.');
     }
   }
 
@@ -127,8 +133,8 @@ class FirebasePushNotificationService implements PushNotificationService {
       await authService.unregisterDeviceToken(token);
       _parentRegistered = false;
       _registeredChildIds.clear();
-    } catch (error) {
-      debugPrint('Push token unregister failed: $error');
+    } catch (_) {
+      _debugLog('Push token unregister failed.');
     }
   }
 
@@ -177,8 +183,8 @@ class FirebasePushNotificationService implements PushNotificationService {
           childId: childId,
         );
       }
-    } catch (error) {
-      debugPrint('Push token refresh registration failed: $error');
+    } catch (_) {
+      _debugLog('Push token refresh registration failed.');
     }
   }
 

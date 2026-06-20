@@ -21,6 +21,30 @@ if [ ! -f "$APP_DIR/backend/.env" ]; then
     exit 1
 fi
 
+env_value() {
+    local key="$1"
+    grep -E "^${key}=" "$APP_DIR/backend/.env" | tail -n 1 | cut -d= -f2- || true
+}
+
+if [ "$(env_value NODE_ENV)" = "production" ] && [ "${STRICT_PRODUCTION_READINESS:-true}" = "true" ]; then
+    if grep -Eq 'CHANGE_THIS|admin-dev-token|iqroku123' "$APP_DIR/backend/.env"; then
+        echo "  Production .env still contains placeholder/default secrets."
+        exit 1
+    fi
+    if [ "$(env_value REQUIRE_EMAIL_VERIFICATION)" != "true" ]; then
+        echo "  REQUIRE_EMAIL_VERIFICATION must be true for production deploys."
+        exit 1
+    fi
+    if [ "$(env_value EMAIL_PROVIDER)" = "none" ] || [ -z "$(env_value EMAIL_PROVIDER)" ]; then
+        echo "  EMAIL_PROVIDER must be configured for production deploys."
+        exit 1
+    fi
+    if [ "$(env_value DOKU_ENV)" = "sandbox" ]; then
+        echo "  DOKU_ENV=sandbox is not allowed for production deploys."
+        exit 1
+    fi
+fi
+
 echo "[2/7] Backing up current state..."
 PREVIOUS_COMMIT=$(git rev-parse HEAD)
 echo "  Current commit: $PREVIOUS_COMMIT"

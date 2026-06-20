@@ -1,5 +1,3 @@
-BEGIN;
-
 -- Parent/admin listing.
 CREATE INDEX IF NOT EXISTS idx_parents_created
   ON parents(created_at DESC);
@@ -30,6 +28,17 @@ CREATE INDEX IF NOT EXISTS idx_progress_review_updated
   ON progress(review_status, updated_at DESC);
 
 -- Subscription/payment dashboard reads.
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_id UUID NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
+  plan VARCHAR(50) NOT NULL DEFAULT 'plus',
+  price_id VARCHAR(100),
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  activated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  active_until TIMESTAMPTZ,
+  UNIQUE (parent_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_subscriptions_active_parent
   ON subscriptions(parent_id)
   WHERE active = TRUE;
@@ -60,5 +69,3 @@ CREATE INDEX IF NOT EXISTS idx_device_tokens_active_last_seen
 CREATE INDEX IF NOT EXISTS idx_daily_prayers_active_sort
   ON daily_prayers(sort_order, title)
   WHERE active = TRUE;
-
-COMMIT;

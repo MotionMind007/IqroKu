@@ -12,6 +12,7 @@ class LocalAppStorage {
     : _secureStorage = secureStorage ?? const FlutterSecureStorage();
 
   static const _key = 'iqroku.local_state.v1';
+  static const _secureStateKey = 'iqroku.secure_state.v1';
   static const _authTokenKey = 'iqroku.auth_token';
   static const _parentAccountKey = 'iqroku.parent_account';
 
@@ -19,18 +20,27 @@ class LocalAppStorage {
 
   Future<StoredIqrokuState?> load() async {
     final preferences = await SharedPreferences.getInstance();
-    final raw = preferences.getString(_key);
+    final secureRaw = await _secureStorage.read(key: _secureStateKey);
+    final raw = secureRaw ?? preferences.getString(_key);
     if (raw == null || raw.isEmpty) {
       return null;
     }
 
     final data = jsonDecode(raw) as Map<String, Object?>;
 
-    // Load sensitive data from secure storage
-    final authToken = await _secureStorage.read(key: _authTokenKey);
-    final parentAccountJson = await _secureStorage.read(key: _parentAccountKey);
+    // Compatibility path for versions that stored only auth fields securely.
+    final authToken =
+        data['authToken'] as String? ??
+        await _secureStorage.read(key: _authTokenKey);
+    final parentAccountJson = data['parentAccount'] == null
+        ? await _secureStorage.read(key: _parentAccountKey)
+        : null;
     ParentAccount? parentAccount;
-    if (parentAccountJson != null && parentAccountJson.isNotEmpty) {
+    if (data['parentAccount'] is Map<String, Object?>) {
+      parentAccount = ParentAccount.fromJson(
+        data['parentAccount'] as Map<String, Object?>,
+      );
+    } else if (parentAccountJson != null && parentAccountJson.isNotEmpty) {
       parentAccount = ParentAccount.fromJson(
         jsonDecode(parentAccountJson) as Map<String, Object?>,
       );
@@ -45,33 +55,21 @@ class LocalAppStorage {
 
   Future<void> save(StoredIqrokuState state) async {
     final preferences = await SharedPreferences.getInstance();
-
-    // Save sensitive data to secure storage
-    if (state.authToken != null && state.authToken!.isNotEmpty) {
-      await _secureStorage.write(key: _authTokenKey, value: state.authToken);
-    } else {
-      await _secureStorage.delete(key: _authTokenKey);
-    }
-
-    if (state.parentAccount != null) {
-      await _secureStorage.write(
-        key: _parentAccountKey,
-        value: jsonEncode(state.parentAccount!.toJson()),
-      );
-    } else {
-      await _secureStorage.delete(key: _parentAccountKey);
-    }
-
-    // Save non-sensitive data to SharedPreferences (without authToken and parentAccount)
-    await preferences.setString(
-      _key,
-      jsonEncode(state.toJson(excludeSensitive: true)),
+    await _secureStorage.write(
+      key: _secureStateKey,
+      value: jsonEncode(state.toJson()),
     );
+    await _secureStorage.delete(key: _authTokenKey);
+    await _secureStorage.delete(key: _parentAccountKey);
+    await preferences.remove(_key);
   }
 
   Future<void> clearSecureData() async {
+    final preferences = await SharedPreferences.getInstance();
+    await _secureStorage.delete(key: _secureStateKey);
     await _secureStorage.delete(key: _authTokenKey);
     await _secureStorage.delete(key: _parentAccountKey);
+    await preferences.remove(_key);
   }
 }
 
@@ -91,6 +89,7 @@ class StoredIqrokuState {
     this.authToken,
     this.subscriptionActivatedAt,
     this.subscriptionActiveUntil,
+    this.pendingDokuInvoiceNumber,
   });
 
   final List<ChildProfile> childProfiles;
@@ -107,6 +106,7 @@ class StoredIqrokuState {
   final String? authToken;
   final DateTime? subscriptionActivatedAt;
   final DateTime? subscriptionActiveUntil;
+  final String? pendingDokuInvoiceNumber;
 
   Map<String, Object?> toJson({bool excludeSensitive = false}) {
     return {
@@ -126,6 +126,7 @@ class StoredIqrokuState {
       if (!excludeSensitive) 'authToken': authToken,
       'subscriptionActivatedAt': subscriptionActivatedAt?.toIso8601String(),
       'subscriptionActiveUntil': subscriptionActiveUntil?.toIso8601String(),
+      'pendingDokuInvoiceNumber': pendingDokuInvoiceNumber,
     };
   }
 
@@ -168,6 +169,7 @@ class StoredIqrokuState {
       subscriptionActiveUntil: _decodeDateTime(
         json['subscriptionActiveUntil'] as String?,
       ),
+      pendingDokuInvoiceNumber: json['pendingDokuInvoiceNumber'] as String?,
     );
   }
 

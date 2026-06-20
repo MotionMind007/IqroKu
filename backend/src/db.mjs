@@ -4,6 +4,7 @@
  * Install: npm install pg
  */
 
+import { createHash } from 'node:crypto';
 import pg from 'pg';
 import {
   rowToAttempt,
@@ -245,27 +246,39 @@ export async function cleanupExpiredAuthTokens() {
 // =============================================================================
 
 export async function createSession(token, parentId) {
+  const tokenHash = hashSessionToken(token);
   await query(
-    `INSERT INTO sessions (token, parent_id) VALUES ($1, $2)
-     ON CONFLICT (token) DO UPDATE SET parent_id = $2, created_at = NOW(), expires_at = NOW() + INTERVAL '7 days'`,
-    [token, parentId],
+    `INSERT INTO sessions (token_hash, parent_id) VALUES ($1, $2)
+     ON CONFLICT (token_hash) DO UPDATE
+       SET parent_id = $2,
+           created_at = NOW(),
+           expires_at = NOW() + INTERVAL '7 days'`,
+    [tokenHash, parentId],
   );
 }
 
 export async function resolveSession(token) {
   const row = await queryOne(
-    'SELECT parent_id FROM sessions WHERE token = $1 AND expires_at > NOW()',
-    [token],
+    'SELECT parent_id FROM sessions WHERE token_hash = $1 AND expires_at > NOW()',
+    [hashSessionToken(token)],
   );
   return row?.parent_id ?? null;
 }
 
 export async function deleteSession(token) {
-  await query('DELETE FROM sessions WHERE token = $1', [token]);
+  await query('DELETE FROM sessions WHERE token_hash = $1', [hashSessionToken(token)]);
+}
+
+export async function deleteSessionsByParent(parentId) {
+  await query('DELETE FROM sessions WHERE parent_id = $1', [parentId]);
 }
 
 export async function cleanupExpiredSessions() {
   await query('DELETE FROM sessions WHERE expires_at < NOW()');
+}
+
+function hashSessionToken(token) {
+  return createHash('sha256').update(String(token)).digest('hex');
 }
 
 // =============================================================================

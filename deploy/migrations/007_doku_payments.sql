@@ -1,5 +1,3 @@
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS payment_orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_id UUID NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
@@ -42,5 +40,3 @@ CREATE TABLE IF NOT EXISTS payment_events (
 
 CREATE INDEX IF NOT EXISTS idx_payment_events_invoice
   ON payment_events(provider, invoice_number, received_at DESC);
-
-COMMIT;

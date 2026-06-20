@@ -62,9 +62,8 @@ sudo -u postgres psql -d ${DB_NAME} -c "GRANT ALL ON SCHEMA public TO ${DB_USER}
 
 echo "  Database: ${DB_NAME}"
 echo "  User: ${DB_USER}"
-echo "  Password: ${DB_PASS}"
 echo ""
-echo "  >>> SAVE THIS PASSWORD! <<<"
+echo "  Database password was written to ${APP_DIR}/backend/.env (mode 600)."
 echo ""
 
 # --- 5. App directory ---
@@ -120,8 +119,10 @@ EOF
 
 chmod 600 "${APP_DIR}/backend/.env"
 
-echo "  Admin token: ${ADMIN_TOKEN}"
-echo "  >>> SAVE THIS TOKEN for admin dashboard access! <<<"
+echo "  Admin token was written to ${APP_DIR}/backend/.env (mode 600)."
+echo ""
+echo "  Recording idempotent migration baseline..."
+npm run migrate --prefix "${APP_DIR}/backend"
 echo ""
 
 # --- 6. Nginx ---
@@ -194,7 +195,7 @@ echo "  IqroKu Setup Complete!"
 echo "============================================"
 echo ""
 echo "  URL:    https://${DOMAIN}"
-echo "  Admin:  https://${DOMAIN}/admin?token=${ADMIN_TOKEN}"
+echo "  Admin:  https://${DOMAIN}/admin"
 echo "  Health: https://${DOMAIN}/health"
 echo ""
 echo "  Commands:"
@@ -206,6 +207,5 @@ echo "  Deploy new version:"
 echo "    cd ${APP_DIR} && ./deploy/deploy.sh"
 echo ""
 echo "  IMPORTANT: Save these values somewhere safe:"
-echo "    DB Password:  ${DB_PASS}"
-echo "    Admin Token:  ${ADMIN_TOKEN}"
+echo "    Production secrets are in ${APP_DIR}/backend/.env"
 echo "============================================"

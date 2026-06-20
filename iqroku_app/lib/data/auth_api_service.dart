@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/learning_status.dart';
@@ -14,6 +15,11 @@ class AuthApiService {
     ),
   }) {
     if (baseUrl.startsWith('http://')) {
+      if (kReleaseMode) {
+        throw UnsupportedError(
+          'IQROKU_API_BASE must use HTTPS in release builds.',
+        );
+      }
       developer.log(
         'WARNING: Using insecure HTTP connection to $baseUrl. '
         'Use HTTPS in production builds.',
@@ -534,10 +540,7 @@ class SubscriptionStatus {
 }
 
 class DokuCheckoutResult {
-  const DokuCheckoutResult({
-    required this.checkoutUrl,
-    required this.payment,
-  });
+  const DokuCheckoutResult({required this.checkoutUrl, required this.payment});
 
   final String checkoutUrl;
   final DokuPaymentOrder payment;

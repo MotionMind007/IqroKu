@@ -14,14 +14,17 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="${BACKUP_DIR}/iqroku_${TIMESTAMP}.sql.gz"
 
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
 # Dump and compress
 sudo -u postgres pg_dump "$DB_NAME" | gzip > "$BACKUP_FILE"
+chmod 600 "$BACKUP_FILE"
 
 # Also backup uploads
 UPLOADS_BACKUP="${BACKUP_DIR}/uploads_${TIMESTAMP}.tar.gz"
 if [ -d "${APP_DIR}/uploads" ] && [ "$(ls -A "${APP_DIR}/uploads" 2>/dev/null)" ]; then
     tar -czf "$UPLOADS_BACKUP" -C "$APP_DIR" uploads/
+    chmod 600 "$UPLOADS_BACKUP"
 fi
 
 # Remove old backups
