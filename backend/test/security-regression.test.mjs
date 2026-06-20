@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 const serverSource = await readFile(new URL('../src/server.mjs', import.meta.url), 'utf8');
 const dbSource = await readFile(new URL('../src/db.mjs', import.meta.url), 'utf8');
+const dbMappersSource = await readFile(new URL('../src/db-mappers.mjs', import.meta.url), 'utf8');
 const nginxSource = await readFile(new URL('../../deploy/nginx-iqroku.conf', import.meta.url), 'utf8');
 const deployScriptSource = await readFile(new URL('../../deploy/deploy.sh', import.meta.url), 'utf8');
 const setupVpsSource = await readFile(new URL('../../deploy/setup-vps.sh', import.meta.url), 'utf8');
@@ -64,10 +65,25 @@ test('demo login is explicitly gated and does not issue deterministic parent-id 
 test('public serializers strip PIN hashes from parent and child responses', () => {
   assert.match(serverSource, /const \{ passwordHash, pinHash, \.\.\.safeParent \} = parent;/);
   assert.match(serverSource, /hasPin: Boolean\(pinHash\)/);
+  assert.match(dbSource, /from '\.\/db-mappers\.mjs'/);
+  assert.match(dbMappersSource, /export function rowToParent\(row\)/);
+  assert.match(dbMappersSource, /passwordHash: row\.password_hash \?\? undefined/);
+  assert.match(dbMappersSource, /pinHash: row\.pin_hash \?\? undefined/);
   assert.match(familySource, /function publicChild\(child\)/);
   assert.match(familySource, /const \{ pinHash, \.\.\.safeChild \} = child;/);
   assert.match(familySource, /return children\.map\(publicChild\);/);
   assert.match(familySource, /return \{ valid: true, child: publicChild\(child\) \};/);
+});
+
+test('database row mappers are isolated from query code', () => {
+  assert.match(dbMappersSource, /export function rowToAttempt\(row\)/);
+  assert.match(dbMappersSource, /audioUploadedAt: row\.audio_uploaded_at\?\.toISOString\(\)/);
+  assert.match(dbMappersSource, /export function rowToPaymentOrder\(row\)/);
+  assert.match(dbMappersSource, /checkoutUrl: row\.checkout_url \?\? undefined/);
+  assert.match(dbMappersSource, /export function rowToDeviceToken\(row\)/);
+  assert.doesNotMatch(dbSource, /function rowToAttempt\(row\)/);
+  assert.doesNotMatch(dbSource, /function rowToPaymentOrder\(row\)/);
+  assert.doesNotMatch(dbSource, /function rowToDeviceToken\(row\)/);
 });
 
 test('audio downloads authenticate before serving stored files', () => {

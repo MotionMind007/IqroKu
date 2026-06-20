@@ -87,6 +87,7 @@ Backend module pendukung:
 Database access:
 
 - `backend/src/db.mjs`
+- `backend/src/db-mappers.mjs`: mapper row PostgreSQL ke object aplikasi.
 
 Route penting:
 

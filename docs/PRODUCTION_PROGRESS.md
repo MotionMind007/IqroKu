@@ -352,6 +352,7 @@ Content-Type: application/json
 - External call Google auth, Resend, DOKU, dan FCM memakai timeout + retry konservatif untuk timeout/network error, `408`, `429`, dan `5xx`.
 - Migration `008_performance_indexes.sql` menambah index untuk query panas production: dashboard admin/parent, progress anak, pending review, notification feed/unread badge, payment status, session/auth cleanup, dan FCM device token lookup.
 - Backend mulai dipecah dari `server.mjs`: observability, external fetch retry, auth helpers, admin panel, billing/subscription routes, public content routes, family/child PIN routes, progress routes, learning/audio/review flow, notification/device-token routes, dan DOKU payment flow sudah pindah ke modul terpisah.
+- Database layer mulai dirapikan: mapper row PostgreSQL dipisah ke `backend/src/db-mappers.mjs`, sementara `backend/src/db.mjs` fokus ke query dan transaksi.
 
 ## DOKU Payment Foundation
 
