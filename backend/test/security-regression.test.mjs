@@ -8,6 +8,7 @@ const dbMappersSource = await readFile(new URL('../src/db-mappers.mjs', import.m
 const nginxSource = await readFile(new URL('../../deploy/nginx-iqroku.conf', import.meta.url), 'utf8');
 const deployScriptSource = await readFile(new URL('../../deploy/deploy.sh', import.meta.url), 'utf8');
 const opsCheckSource = await readFile(new URL('../../deploy/ops-check.sh', import.meta.url), 'utf8');
+const weeklyRestoreDrillSource = await readFile(new URL('../../deploy/weekly-restore-drill.sh', import.meta.url), 'utf8');
 const setupVpsSource = await readFile(new URL('../../deploy/setup-vps.sh', import.meta.url), 'utf8');
 const smokeTestSource = await readFile(new URL('../../deploy/smoke-test.sh', import.meta.url), 'utf8');
 const envTemplateSource = await readFile(new URL('../../deploy/.env.production', import.meta.url), 'utf8');
@@ -182,10 +183,15 @@ test('session tokens and auth cleanup avoid credential exposure', () => {
 test('operations checks cover health, backups, disk, permissions, and upload auth', () => {
   assert.match(opsCheckSource, /BASE_URL="\$\{BASE_URL:-http:\/\/localhost:8787\}"/);
   assert.match(opsCheckSource, /BACKUP_MAX_AGE_HOURS="\$\{BACKUP_MAX_AGE_HOURS:-30\}"/);
+  assert.match(opsCheckSource, /UPLOADS_WARN_MB="\$\{UPLOADS_WARN_MB:-5120\}"/);
+  assert.match(opsCheckSource, /BACKUPS_WARN_MB="\$\{BACKUPS_WARN_MB:-10240\}"/);
+  assert.match(opsCheckSource, /AUDIO_FILE_WARN_COUNT="\$\{AUDIO_FILE_WARN_COUNT:-10000\}"/);
   assert.match(opsCheckSource, /pm2 pid iqroku/);
   assert.match(opsCheckSource, /npm run migrate:status --prefix "\$\{APP_DIR\}\/backend"/);
   assert.match(opsCheckSource, /gzip -t "\$LATEST_DB_BACKUP"/);
   assert.match(opsCheckSource, /DISK_WARN_PERCENT="\$\{DISK_WARN_PERCENT:-85\}"/);
+  assert.match(opsCheckSource, /section 6 "IqroKu storage footprint"/);
+  assert.match(opsCheckSource, /audio files: \$\{AUDIO_COUNT\}/);
   assert.match(opsCheckSource, /FIREBASE_SERVICE_ACCOUNT_PATH/);
   assert.match(opsCheckSource, /live nginx serves \/uploads\/ with alias/);
   assert.match(opsCheckSource, /sudo -n nginx -T/);
@@ -194,6 +200,17 @@ test('operations checks cover health, backups, disk, permissions, and upload aut
   assert.match(deployScriptSource, /cp "\$APP_DIR\/deploy\/ops-check\.sh" "\$APP_DIR\/ops-check\.sh"/);
   assert.match(setupVpsSource, /ops-check\.sh/);
   assert.match(setupVpsSource, /\/var\/log\/iqroku\/ops-check\.log/);
+});
+
+test('weekly restore drill uses latest backup and is installed by setup and deploy', () => {
+  assert.match(weeklyRestoreDrillSource, /LATEST_DB_BACKUP="\$\(ls -1t "\$\{BACKUP_DIR\}"\/iqroku_\*\.sql\.gz/);
+  assert.match(weeklyRestoreDrillSource, /LATEST_UPLOADS_BACKUP="\$\(ls -1t "\$\{BACKUP_DIR\}"\/uploads_\*\.tar\.gz/);
+  assert.match(weeklyRestoreDrillSource, /REQUIRE_UPLOADS_BACKUP="\$\{REQUIRE_UPLOADS_BACKUP:-false\}"/);
+  assert.match(weeklyRestoreDrillSource, /"\$RESTORE_DRILL_SCRIPT" "\$LATEST_DB_BACKUP" "\$LATEST_UPLOADS_BACKUP"/);
+  assert.match(setupVpsSource, /weekly-restore-drill\.sh/);
+  assert.match(setupVpsSource, /\/var\/log\/iqroku\/restore-drill\.log/);
+  assert.match(deployScriptSource, /weekly-restore-drill\.sh/);
+  assert.match(deployScriptSource, /\/var\/log\/iqroku\/restore-drill\.log/);
 });
 
 test('admin metrics use bounded SQL aggregation instead of loading full tables', () => {

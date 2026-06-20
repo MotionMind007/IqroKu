@@ -356,6 +356,8 @@ Content-Type: application/json
 - Menambahkan `deploy/ops-check.sh` untuk operational readiness: cek health, PM2, migration status, backup freshness, disk usage, permission secret, dan Nginx upload protection.
 - `setup-vps.sh` memasang cron ops-check tiap 15 menit ke `/var/log/iqroku/ops-check.log`.
 - Deploy dan smoke test sekarang menjalankan `npm run check --prefix backend` agar semua modul backend baru ikut syntax check.
+- Ops check sekarang menampilkan footprint IqroKu khusus uploads/backups/audio count dengan threshold configurable.
+- Menambahkan `deploy/weekly-restore-drill.sh` dan cron mingguan untuk memverifikasi backup terbaru bisa direstore ke database sementara.
 
 ## DOKU Payment Foundation
 

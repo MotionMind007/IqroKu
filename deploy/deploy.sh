@@ -44,6 +44,12 @@ if [ -f "$APP_DIR/deploy/ops-check.sh" ]; then
     (crontab -l 2>/dev/null; echo "*/15 * * * * BASE_URL=${OPS_BASE_URL} ${APP_DIR}/ops-check.sh >> /var/log/iqroku/ops-check.log 2>&1") | sort -u | crontab -
 fi
 
+if [ -f "$APP_DIR/deploy/weekly-restore-drill.sh" ]; then
+    cp "$APP_DIR/deploy/weekly-restore-drill.sh" "$APP_DIR/weekly-restore-drill.sh"
+    chmod +x "$APP_DIR/weekly-restore-drill.sh"
+    (crontab -l 2>/dev/null; echo "30 4 * * 0 ${APP_DIR}/weekly-restore-drill.sh >> /var/log/iqroku/restore-drill.log 2>&1") | sort -u | crontab -
+fi
+
 echo "[4/7] Checking syntax..."
 npm run check --prefix backend
 if [ -f /etc/nginx/sites-enabled/iqroku ] || [ -f /etc/nginx/sites-available/iqroku ]; then

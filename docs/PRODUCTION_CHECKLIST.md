@@ -23,6 +23,7 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 - Buat backup otomatis harian.
 - Tes restore backup memakai `deploy/restore-backup.sh` di staging.
 - Jalankan restore drill non-destruktif dengan `deploy/restore-drill.sh`.
+- Aktifkan restore drill mingguan dengan `deploy/weekly-restore-drill.sh`.
 - Tambahkan index jika query review/progress mulai besar.
 - Pastikan data parent/child tidak bisa terbaca lintas akun.
 
@@ -90,7 +91,8 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 
 - Tambahkan logging structured untuk request penting.
 - Jalankan `deploy/ops-check.sh` manual dan via cron.
-- Pantau `/var/log/iqroku/ops-check.log` dan `/var/log/iqroku/backup.log`.
+- Pantau `/var/log/iqroku/ops-check.log`, `/var/log/iqroku/backup.log`, dan `/var/log/iqroku/restore-drill.log`.
+- Pastikan ukuran uploads/backups IqroKu tidak melewati threshold ops-check.
 - Tambahkan error tracking eksternal jika user sudah mulai banyak.
 - Monitor latency, error rate, storage usage, dan database connection.
 - Buat alert untuk backend down, DB error, dan payment webhook gagal.

@@ -180,6 +180,11 @@ cp deploy/ops-check.sh "${APP_DIR}/ops-check.sh"
 chmod +x "${APP_DIR}/ops-check.sh"
 (crontab -l 2>/dev/null; echo "*/15 * * * * BASE_URL=https://${DOMAIN} ${APP_DIR}/ops-check.sh >> /var/log/iqroku/ops-check.log 2>&1") | sort -u | crontab -
 
+# --- Setup weekly restore drill cron ---
+cp deploy/weekly-restore-drill.sh "${APP_DIR}/weekly-restore-drill.sh"
+chmod +x "${APP_DIR}/weekly-restore-drill.sh"
+(crontab -l 2>/dev/null; echo "30 4 * * 0 ${APP_DIR}/weekly-restore-drill.sh >> /var/log/iqroku/restore-drill.log 2>&1") | sort -u | crontab -
+
 # --- Setup auth cleanup cron ---
 (crontab -l 2>/dev/null; echo "0 */6 * * * sudo -u postgres psql -d ${DB_NAME} -c \"DELETE FROM sessions WHERE expires_at < NOW(); DELETE FROM auth_tokens WHERE expires_at < NOW() - INTERVAL '7 days';\"") | sort -u | crontab -
 

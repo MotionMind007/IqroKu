@@ -17,6 +17,9 @@ BASE_URL="${BASE_URL:-http://localhost:8787}"
 BACKUP_DIR="${BACKUP_DIR:-${APP_DIR}/backups}"
 BACKUP_MAX_AGE_HOURS="${BACKUP_MAX_AGE_HOURS:-30}"
 DISK_WARN_PERCENT="${DISK_WARN_PERCENT:-85}"
+UPLOADS_WARN_MB="${UPLOADS_WARN_MB:-5120}"
+BACKUPS_WARN_MB="${BACKUPS_WARN_MB:-10240}"
+AUDIO_FILE_WARN_COUNT="${AUDIO_FILE_WARN_COUNT:-10000}"
 CHECK_MIGRATIONS="${CHECK_MIGRATIONS:-true}"
 
 FAILURES=0
@@ -46,6 +49,15 @@ file_mode() {
 is_mode_private() {
     local mode="$1"
     [ -n "$mode" ] && [ "$mode" -le 600 ]
+}
+
+dir_size_mb() {
+    local path="$1"
+    if [ ! -d "$path" ]; then
+        echo "0"
+        return
+    fi
+    du -sm "$path" 2>/dev/null | awk '{print $1}'
 }
 
 echo "=== IqroKu Operations Check ==="
@@ -136,12 +148,38 @@ else
     fail "app directory not found: ${APP_DIR}"
 fi
 
-if [ -d "${APP_DIR}/uploads" ]; then
-    UPLOADS_SIZE="$(du -sh "${APP_DIR}/uploads" 2>/dev/null | cut -f1 || true)"
-    echo "  uploads size: ${UPLOADS_SIZE:-unknown}"
+section 6 "IqroKu storage footprint"
+UPLOADS_DIR="${APP_DIR}/uploads"
+UPLOADS_MB="$(dir_size_mb "$UPLOADS_DIR")"
+BACKUPS_MB="$(dir_size_mb "$BACKUP_DIR")"
+AUDIO_COUNT="0"
+if [ -d "${UPLOADS_DIR}/audio" ]; then
+    AUDIO_COUNT="$(find "${UPLOADS_DIR}/audio" -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
 fi
 
-section 6 "Sensitive file permissions"
+echo "  uploads: ${UPLOADS_MB} MB (${UPLOADS_DIR})"
+echo "  backups: ${BACKUPS_MB} MB (${BACKUP_DIR})"
+echo "  audio files: ${AUDIO_COUNT}"
+
+if [ "$UPLOADS_MB" -le "$UPLOADS_WARN_MB" ]; then
+    pass "uploads size is below ${UPLOADS_WARN_MB} MB"
+else
+    warn "uploads size ${UPLOADS_MB} MB is above ${UPLOADS_WARN_MB} MB"
+fi
+
+if [ "$BACKUPS_MB" -le "$BACKUPS_WARN_MB" ]; then
+    pass "backups size is below ${BACKUPS_WARN_MB} MB"
+else
+    warn "backups size ${BACKUPS_MB} MB is above ${BACKUPS_WARN_MB} MB"
+fi
+
+if [ "$AUDIO_COUNT" -le "$AUDIO_FILE_WARN_COUNT" ]; then
+    pass "audio file count is below ${AUDIO_FILE_WARN_COUNT}"
+else
+    warn "audio file count ${AUDIO_COUNT} is above ${AUDIO_FILE_WARN_COUNT}"
+fi
+
+section 7 "Sensitive file permissions"
 ENV_FILE="${APP_DIR}/backend/.env"
 if [ -f "$ENV_FILE" ]; then
     ENV_MODE="$(file_mode "$ENV_FILE")"
@@ -173,7 +211,7 @@ else
     warn "FIREBASE_SERVICE_ACCOUNT_PATH is not configured"
 fi
 
-section 7 "Nginx upload protection"
+section 8 "Nginx upload protection"
 if command -v nginx >/dev/null 2>&1; then
     LIVE_NGINX_CONFIG="$(mktemp)"
     if nginx -T > "$LIVE_NGINX_CONFIG" 2>/dev/null \

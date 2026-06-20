@@ -100,6 +100,7 @@ Lalu tes manual dari HP:
 | `backup.sh` | Daily database backup script |
 | `restore-backup.sh` | Destructive restore helper for restore drills |
 | `restore-drill.sh` | Non-destructive backup restore verification using a temporary DB |
+| `weekly-restore-drill.sh` | Weekly wrapper that restores the latest backup into a temporary DB |
 | `smoke-test.sh` | Health, header, syntax, and migration smoke test |
 | `ops-check.sh` | Periodic operations check for health, PM2, backups, disk, permissions, and Nginx upload protection |
 
@@ -238,6 +239,20 @@ Notes:
 - The temporary database is dropped automatically after the drill passes or fails.
 - Set `KEEP_RESTORE_DRILL_DB=YES` only when debugging a failed drill.
 
+Weekly automated restore drill:
+
+```bash
+cd /opt/iqroku
+./deploy/weekly-restore-drill.sh
+tail -n 100 /var/log/iqroku/restore-drill.log
+```
+
+The setup and deploy scripts install this weekly cron:
+
+```bash
+30 4 * * 0 /opt/iqroku/weekly-restore-drill.sh >> /var/log/iqroku/restore-drill.log 2>&1
+```
+
 ## Monitoring and Operations Checks
 
 Manual ops check:
@@ -261,6 +276,9 @@ What it checks:
 - Latest DB backup exists, is gzip-valid, and is fresh.
 - Latest uploads backup is tar-valid when present.
 - Disk usage is below `DISK_WARN_PERCENT`, default `85`.
+- IqroKu uploads size is below `UPLOADS_WARN_MB`, default `5120`.
+- IqroKu backups size is below `BACKUPS_WARN_MB`, default `10240`.
+- Audio file count is below `AUDIO_FILE_WARN_COUNT`, default `10000`.
 - `/opt/iqroku/backend/.env` permission is `600` or stricter.
 - Firebase service account file permission is `600` or stricter when configured.
 - Live Nginx does not serve `/uploads/` through a public `alias`.
@@ -284,8 +302,10 @@ Common commands:
 ```bash
 tail -n 100 /var/log/iqroku/ops-check.log
 tail -n 100 /var/log/iqroku/backup.log
-BACKUP_MAX_AGE_HOURS=48 DISK_WARN_PERCENT=90 ./deploy/ops-check.sh
+tail -n 100 /var/log/iqroku/restore-drill.log
+BACKUP_MAX_AGE_HOURS=48 DISK_WARN_PERCENT=90 UPLOADS_WARN_MB=10240 BACKUPS_WARN_MB=20480 ./deploy/ops-check.sh
 CHECK_MIGRATIONS=false ./deploy/ops-check.sh
+REQUIRE_UPLOADS_BACKUP=true ./deploy/weekly-restore-drill.sh
 OPS_BASE_URL=https://iqroku.motionmind.store ./deploy/deploy.sh
 ```
 
