@@ -43,6 +43,7 @@ const observabilitySource = await readFile(new URL('../src/observability.mjs', i
 const authSource = await readFile(new URL('../src/auth.mjs', import.meta.url), 'utf8');
 const adminSource = await readFile(new URL('../src/admin.mjs', import.meta.url), 'utf8');
 const learningSource = await readFile(new URL('../src/learning.mjs', import.meta.url), 'utf8');
+const notificationSource = await readFile(new URL('../src/notifications.mjs', import.meta.url), 'utf8');
 const upsertDeviceTokenSource =
   dbSource.match(/export async function upsertDeviceToken[\s\S]*?export async function disableDeviceToken/)?.[0] ??
   '';
@@ -285,11 +286,23 @@ test('database constraints cover persisted status and reviewer references', () =
 });
 
 test('device token routes require auth and validate child ownership', () => {
-  assert.match(serverSource, /path === '\/devices\/register'/);
-  assert.match(serverSource, /path === '\/devices\/unregister'/);
-  assert.match(serverSource, /const authedParent = await authenticateRequest\(request\);/);
-  assert.match(serverSource, /normalizeDeviceToken\(requiredBody\(body, 'token'\)\)/);
-  assert.match(serverSource, /await enforceChildOwnership\(authedParent\.id, childId\);/);
+  assert.match(serverSource, /createNotificationRoutes\(\{/);
+  assert.match(serverSource, /notificationRoutes\.handle\(method, path, url, body, request\)/);
+  assert.match(notificationSource, /path === '\/devices\/register'/);
+  assert.match(notificationSource, /path === '\/devices\/unregister'/);
+  assert.match(notificationSource, /const authedParent = await authenticateRequest\(request\);/);
+  assert.match(notificationSource, /normalizeDeviceToken\(requiredBody\(body, 'token'\)\)/);
+  assert.match(notificationSource, /await enforceChildOwnership\(authedParent\.id, childId\);/);
+});
+
+test('notification routes require ownership checks before reads and mutations', () => {
+  assert.match(notificationSource, /path === '\/notifications'/);
+  assert.match(notificationSource, /path === '\/notifications\/unread-count'/);
+  assert.match(notificationSource, /path === '\/notifications\/read-all'/);
+  assert.match(notificationSource, /function notificationReadAction\(path\)/);
+  assert.match(notificationSource, /db\.findNotificationById\(notificationRead\.id\)/);
+  assert.match(notificationSource, /notification\.user_type === 'child'[\s\S]*await enforceChildOwnership\(authedParent\.id, notification\.user_id\)/);
+  assert.match(notificationSource, /notification\.user_id !== authedParent\.id[\s\S]*throw httpError\(403, 'access_denied'\)/);
 });
 
 test('push sender uses FCM HTTP v1 without firebase-admin dependency', () => {

@@ -76,6 +76,7 @@ Backend module pendukung:
 - `backend/src/auth.mjs`: session bearer auth, Google token verification, password/PIN hash helpers, dan email auth flow.
 - `backend/src/admin.mjs`: admin panel routes, login cookie, CSRF form handling, prayers CMS, metrics view, dan delete user.
 - `backend/src/learning.mjs`: attempts, upload/playback audio, pending review, approve review, dan repeat review.
+- `backend/src/notifications.mjs`: register/unregister device token dan notification feed/read routes.
 - `backend/src/payments/doku.mjs`: DOKU checkout, webhook signature, return/failed page, dan serializer payment order.
 - `backend/src/push.mjs`: FCM HTTP v1 sender.
 

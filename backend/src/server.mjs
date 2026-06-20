@@ -10,6 +10,7 @@ import { createDokuPayments, DOKU_WEBHOOK_PATH } from './payments/doku.mjs';
 import { createAuthServices } from './auth.mjs';
 import { createAdminPanel } from './admin.mjs';
 import { createLearningRoutes } from './learning.mjs';
+import { createNotificationRoutes } from './notifications.mjs';
 
 // Initialize PostgreSQL connection
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -245,6 +246,17 @@ const learningRoutes = createLearningRoutes({
   allowedAudioContentTypes: ALLOWED_AUDIO_CONTENT_TYPES,
   genericAudioUploadContentTypes: GENERIC_AUDIO_UPLOAD_CONTENT_TYPES,
   allowedAudioExtensions: ALLOWED_AUDIO_EXTENSIONS,
+});
+
+const notificationRoutes = createNotificationRoutes({
+  db,
+  push,
+  authenticateRequest,
+  enforceChildOwnership,
+  requiredBody,
+  cleanString,
+  truncateString,
+  httpError,
 });
 
 // Constant-time string comparison to avoid leaking the admin token via timing.
@@ -830,97 +842,9 @@ async function route(method, url, body, request) {
     return { ok: true, child: publicChild(child) };
   }
 
-  // --- Device tokens for push notifications ---
-  if (method === 'POST' && path === '/devices/register') {
-    const authedParent = await authenticateRequest(request);
-    const token = normalizeDeviceToken(requiredBody(body, 'token'));
-    const platform = normalizeDevicePlatform(body.platform);
-    const userType = cleanString(body.userType) || 'parent';
-    const childId = cleanString(body.childId);
-
-    if (!['parent', 'child'].includes(userType)) {
-      throw httpError(400, 'invalid_user_type');
-    }
-    if (userType === 'child') {
-      if (!childId) {
-        throw httpError(400, 'missing_childId');
-      }
-      await enforceChildOwnership(authedParent.id, childId);
-    }
-
-    await db.upsertDeviceToken({
-      parentId: authedParent.id,
-      childId: userType === 'child' ? childId : null,
-      userType,
-      token,
-      platform,
-      appVersion: truncateString(cleanString(body.appVersion)).slice(0, 80),
-      deviceModel: truncateString(cleanString(body.deviceModel)).slice(0, 200),
-    });
-    return { ok: true, pushConfigured: push.pushConfigured() };
-  }
-
-  if (method === 'POST' && path === '/devices/unregister') {
-    const authedParent = await authenticateRequest(request);
-    const token = normalizeDeviceToken(requiredBody(body, 'token'));
-    await db.disableDeviceToken({ parentId: authedParent.id, token });
-    return { ok: true };
-  }
-
-  // --- Notifications ---
-  if (method === 'GET' && path === '/notifications') {
-    const authedParent = await authenticateRequest(request);
-    const userType = url.searchParams.get('type') || 'parent';
-    const childId = url.searchParams.get('childId');
-
-    if (userType === 'child' && childId) {
-      await enforceChildOwnership(authedParent.id, childId);
-      return db.getNotifications(childId, 'child');
-    }
-    return db.getNotifications(authedParent.id, 'parent');
-  }
-
-  if (method === 'GET' && path === '/notifications/unread-count') {
-    const authedParent = await authenticateRequest(request);
-    const userType = url.searchParams.get('type') || 'parent';
-    const childId = url.searchParams.get('childId');
-
-    if (userType === 'child' && childId) {
-      await enforceChildOwnership(authedParent.id, childId);
-      return { count: await db.countUnreadNotifications(childId, 'child') };
-    }
-    return { count: await db.countUnreadNotifications(authedParent.id, 'parent') };
-  }
-
-  const notificationRead = notificationReadAction(path);
-  if (method === 'POST' && notificationRead) {
-    const authedParent = await authenticateRequest(request);
-    const notification = await db.findNotificationById(notificationRead.id);
-    if (!notification) {
-      throw httpError(404, 'notification_not_found');
-    }
-    // Verify the notification belongs to this parent, or to one of their children.
-    if (notification.user_type === 'child') {
-      await enforceChildOwnership(authedParent.id, notification.user_id);
-    } else if (notification.user_id !== authedParent.id) {
-      throw httpError(403, 'access_denied');
-    }
-    await db.markNotificationRead(notification.id);
-    return { ok: true };
-  }
-
-  if (method === 'POST' && path === '/notifications/read-all') {
-    const authedParent = await authenticateRequest(request);
-    const userType = cleanString(body.type) || 'parent';
-    const childId = cleanString(body.childId);
-
-    if (userType === 'child' && childId) {
-      await enforceChildOwnership(authedParent.id, childId);
-      await db.markAllNotificationsRead(childId, 'child');
-    } else {
-      await db.markAllNotificationsRead(authedParent.id, 'parent');
-    }
-    return { ok: true };
+  const notificationResult = await notificationRoutes.handle(method, path, url, body, request);
+  if (notificationResult) {
+    return notificationResult;
   }
 
   throw httpError(404, 'not_found');
@@ -1041,19 +965,6 @@ function truncateString(value) {
 function clampNumber(value, min, max) {
   const num = Number.isFinite(value) ? value : min;
   return Math.max(min, Math.min(max, num));
-}
-
-function normalizeDeviceToken(value) {
-  const token = cleanString(value);
-  if (token.length < 20 || token.length > 4096 || /[\s\x00-\x1F]/.test(token)) {
-    throw httpError(400, 'invalid_device_token');
-  }
-  return token;
-}
-
-function normalizeDevicePlatform(value) {
-  const platform = cleanString(value).toLowerCase() || 'unknown';
-  return ['android', 'ios', 'web'].includes(platform) ? platform : 'unknown';
 }
 
 async function enforceChildOwnership(parentId, childId) {
@@ -1211,14 +1122,6 @@ function childSetPinAction(path) {
 
 function childScheduleAction(path) {
   const match = /^\/children\/([^/]+)\/schedule$/.exec(path);
-  if (!match) {
-    return null;
-  }
-  return { id: decodeURIComponent(match[1]) };
-}
-
-function notificationReadAction(path) {
-  const match = /^\/notifications\/([^/]+)\/read$/.exec(path);
   if (!match) {
     return null;
   }

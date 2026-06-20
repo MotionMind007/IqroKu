@@ -189,6 +189,25 @@ iqroku_app/lib/features/learning/
 
 Gunakan `shouldShowAds` sebagai flag utama agar saat user subscribe semua slot iklan bisa hilang konsisten.
 
+## Mengubah Push Notification
+
+File utama:
+
+```text
+iqroku_app/lib/core/services/push_notification_service.dart
+backend/src/notifications.mjs
+backend/src/push.mjs
+backend/src/db.mjs
+deploy/migrations/
+```
+
+Catatan:
+
+- Register/unregister token dan feed notifikasi ada di `backend/src/notifications.mjs`.
+- Pengiriman FCM HTTP v1 ada di `backend/src/push.mjs`.
+- Jika menambah tipe notifikasi, pastikan payload `data` tetap string-safe untuk FCM.
+- Untuk notification child, backend wajib cek ownership anak sebelum read/read-all.
+
 ## Mengubah Admin Panel
 
 File utama:
