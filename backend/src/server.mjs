@@ -14,6 +14,7 @@ import { createNotificationRoutes } from './notifications.mjs';
 import { createFamilyRoutes } from './family.mjs';
 import { createProgressRoutes } from './progress.mjs';
 import { createBillingRoutes } from './billing.mjs';
+import { createContentRoutes } from './content.mjs';
 
 // Initialize PostgreSQL connection
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -300,6 +301,10 @@ const billingRoutes = createBillingRoutes({
   httpError,
 });
 
+const contentRoutes = createContentRoutes({
+  db,
+});
+
 // Constant-time string comparison to avoid leaking the admin token via timing.
 function safeStrEqual(a, b) {
   const bufA = Buffer.from(String(a));
@@ -527,9 +532,9 @@ async function route(method, url, body, request) {
     }
   }
 
-  if (method === 'GET' && path === '/daily-prayers') {
-    const prayers = await db.getActivePrayers();
-    return prayers.map(publicPrayer);
+  const contentResult = await contentRoutes.handle(method, path);
+  if (contentResult) {
+    return contentResult;
   }
 
   const learningResult = await learningRoutes.handle(method, path, url, body, request);
@@ -935,18 +940,6 @@ function requiredQuery(url, key) {
     throw httpError(400, `missing_${key}`);
   }
   return value;
-}
-
-function publicPrayer(prayer) {
-  return {
-    id: prayer.id,
-    title: prayer.title,
-    category: prayer.category,
-    arabic: prayer.arabic,
-    latin: prayer.latin,
-    meaning: prayer.meaning,
-    sortOrder: Number(prayer.sortOrder ?? 0),
-  };
 }
 
 function multipartBoundary(contentType) {

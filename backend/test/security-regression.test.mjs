@@ -43,6 +43,7 @@ const observabilitySource = await readFile(new URL('../src/observability.mjs', i
 const authSource = await readFile(new URL('../src/auth.mjs', import.meta.url), 'utf8');
 const adminSource = await readFile(new URL('../src/admin.mjs', import.meta.url), 'utf8');
 const billingSource = await readFile(new URL('../src/billing.mjs', import.meta.url), 'utf8');
+const contentSource = await readFile(new URL('../src/content.mjs', import.meta.url), 'utf8');
 const familySource = await readFile(new URL('../src/family.mjs', import.meta.url), 'utf8');
 const learningSource = await readFile(new URL('../src/learning.mjs', import.meta.url), 'utf8');
 const notificationSource = await readFile(new URL('../src/notifications.mjs', import.meta.url), 'utf8');
@@ -95,6 +96,14 @@ test('child dynamic routes are matched with concrete path regex helpers', () => 
   assert.match(familySource, /function childScheduleAction\(path\)/);
   assert.doesNotMatch(serverSource, /path === '\/children\/:id\/set-pin'/);
   assert.doesNotMatch(serverSource, /path === '\/children\/:id\/schedule'/);
+});
+
+test('public content routes serialize daily prayers through a dedicated module', () => {
+  assert.match(serverSource, /createContentRoutes\(\{/);
+  assert.match(serverSource, /contentRoutes\.handle\(method, path\)/);
+  assert.match(contentSource, /path === '\/daily-prayers'/);
+  assert.match(contentSource, /db\.getActivePrayers\(\)/);
+  assert.match(contentSource, /sortOrder: Number\(prayer\.sortOrder \?\? 0\)/);
 });
 
 test('progress routes require child ownership and validate statuses', () => {

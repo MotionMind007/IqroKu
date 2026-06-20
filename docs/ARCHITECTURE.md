@@ -76,6 +76,7 @@ Backend module pendukung:
 - `backend/src/auth.mjs`: session bearer auth, Google token verification, password/PIN hash helpers, dan email auth flow.
 - `backend/src/admin.mjs`: admin panel routes, login cookie, CSRF form handling, prayers CMS, metrics view, dan delete user.
 - `backend/src/billing.mjs`: subscription status, admin activate, DOKU checkout route, dan payment status route.
+- `backend/src/content.mjs`: route konten publik seperti doa harian.
 - `backend/src/family.mjs`: profil anak, limit child free/plus, PIN parent/anak, child login, dan jadwal belajar.
 - `backend/src/progress.mjs`: progress halaman anak dan endpoint assessment lama yang selalu disabled.
 - `backend/src/learning.mjs`: attempts, upload/playback audio, pending review, approve review, dan repeat review.
