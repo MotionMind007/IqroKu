@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS parents (
 
 CREATE INDEX idx_parents_email ON parents(email);
 CREATE INDEX idx_parents_google_id ON parents(google_id);
+CREATE INDEX idx_parents_created ON parents(created_at DESC);
 
 -- Idempotent migration bookkeeping
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -78,6 +79,8 @@ CREATE INDEX idx_progress_child ON progress(child_id);
 CREATE INDEX idx_progress_child_book_page ON progress(child_id, book_id, page_number);
 CREATE INDEX idx_progress_child_updated ON progress(child_id, updated_at DESC);
 CREATE INDEX idx_progress_review ON progress(review_status);
+CREATE INDEX idx_progress_updated ON progress(updated_at DESC);
+CREATE INDEX idx_progress_review_updated ON progress(review_status, updated_at DESC);
 
 -- Reading attempts (voice recordings)
 CREATE TABLE IF NOT EXISTS attempts (
@@ -111,6 +114,9 @@ CREATE INDEX idx_attempts_child ON attempts(child_id);
 CREATE INDEX idx_attempts_child_created ON attempts(child_id, created_at DESC);
 CREATE INDEX idx_attempts_created ON attempts(created_at DESC);
 CREATE INDEX idx_attempts_review ON attempts(review_status);
+CREATE INDEX idx_attempts_review_created ON attempts(review_status, created_at DESC);
+CREATE INDEX idx_attempts_audio_file_name ON attempts(audio_file_name)
+  WHERE audio_file_name IS NOT NULL;
 CREATE INDEX idx_attempts_pending_review ON attempts(child_id, created_at DESC)
   WHERE review_status = 'pending';
 
@@ -130,6 +136,8 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
 CREATE INDEX idx_auth_tokens_parent_purpose ON auth_tokens(parent_id, purpose, created_at DESC);
 CREATE INDEX idx_auth_tokens_lookup ON auth_tokens(purpose, token_hash)
   WHERE used_at IS NULL;
+CREATE INDEX idx_auth_tokens_expires_unused ON auth_tokens(expires_at)
+  WHERE used_at IS NULL;
 
 -- Subscriptions
 CREATE TABLE IF NOT EXISTS subscriptions (
@@ -144,6 +152,9 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 
 CREATE INDEX idx_subscriptions_parent ON subscriptions(parent_id);
+CREATE INDEX idx_subscriptions_active_parent ON subscriptions(parent_id)
+  WHERE active = TRUE;
+CREATE INDEX idx_subscriptions_activated ON subscriptions(activated_at DESC NULLS LAST);
 
 -- Payment orders and webhook events
 CREATE TABLE IF NOT EXISTS payment_orders (
@@ -169,6 +180,11 @@ CREATE TABLE IF NOT EXISTS payment_orders (
 
 CREATE INDEX idx_payment_orders_parent ON payment_orders(parent_id, created_at DESC);
 CREATE INDEX idx_payment_orders_status ON payment_orders(status, created_at DESC);
+CREATE INDEX idx_payment_orders_parent_status_created
+  ON payment_orders(parent_id, status, created_at DESC);
+CREATE INDEX idx_payment_orders_expires_pending
+  ON payment_orders(expires_at)
+  WHERE status = 'pending' AND expires_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS payment_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -201,6 +217,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE INDEX idx_notifications_user ON notifications(user_id, user_type);
 CREATE INDEX idx_notifications_unread ON notifications(user_id, user_type, read);
+CREATE INDEX idx_notifications_user_created ON notifications(user_id, user_type, created_at DESC);
 CREATE INDEX idx_notifications_unread_partial ON notifications(user_id, user_type, created_at DESC)
   WHERE read = FALSE;
 
@@ -236,6 +253,11 @@ CREATE UNIQUE INDEX idx_device_tokens_parent_token
 CREATE UNIQUE INDEX idx_device_tokens_child_token
   ON device_tokens(child_id, token)
   WHERE user_type = 'child';
+CREATE INDEX idx_device_tokens_token
+  ON device_tokens(token);
+CREATE INDEX idx_device_tokens_active_last_seen
+  ON device_tokens(user_type, (COALESCE(child_id, parent_id)), last_seen_at DESC)
+  WHERE enabled = TRUE;
 
 -- Daily prayers content
 CREATE TABLE IF NOT EXISTS daily_prayers (

@@ -31,6 +31,7 @@ chmod +x deploy.sh
 # 5. Check database migrations
 cd /opt/iqroku
 npm run migrate:status --prefix backend
+npm run migrate --prefix backend
 
 # 6. Run smoke test
 BASE_URL=https://iqroku.motionmind.store ./deploy/smoke-test.sh
@@ -45,6 +46,7 @@ cd /opt/iqroku
 git fetch origin main
 git status
 npm run migrate:status --prefix backend
+npm run migrate --prefix backend
 npm run check --prefix backend
 npm test --prefix backend
 BASE_URL=https://iqroku.motionmind.store ./deploy/smoke-test.sh
@@ -202,6 +204,12 @@ DOKU Checkout:
 - Jalankan migration setelah pull: `npm run migrate --prefix backend`.
 - Production premium aktif hanya dari webhook DOKU valid signature; client tidak boleh mengaktifkan subscription langsung.
 - Email saat ini mengirim kode manual karena app belum memakai universal/deep link.
+
+Database performance:
+
+- Migration `008_performance_indexes.sql` menambah index idempotent untuk query production yang sering dipakai.
+- Jalankan `npm run migrate --prefix backend` setelah pull sebelum restart PM2.
+- Untuk tabel kecil efeknya belum terasa, tapi ini mencegah dashboard, notification, payment, dan review flow melambat saat data membesar.
 
 ## Backup and Restore
 

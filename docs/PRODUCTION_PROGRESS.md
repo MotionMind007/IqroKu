@@ -350,6 +350,7 @@ Content-Type: application/json
 - CORS preflight `OPTIONS` sekarang dibalas eksplisit dengan status `204` dan header allow-methods/allow-headers.
 - Request backend sekarang memakai structured JSON log dengan `requestId`, method, path, status, durasi, IP, dan error code jika ada.
 - External call Google auth, Resend, DOKU, dan FCM memakai timeout + retry konservatif untuk timeout/network error, `408`, `429`, dan `5xx`.
+- Migration `008_performance_indexes.sql` menambah index untuk query panas production: dashboard admin/parent, progress anak, pending review, notification feed/unread badge, payment status, session/auth cleanup, dan FCM device token lookup.
 
 ## DOKU Payment Foundation
 
@@ -389,6 +390,16 @@ Security:
 Next:
 
 - Isi credential DOKU sandbox di VPS.
-- Jalankan migration `007`.
+- Jalankan migration terbaru.
 - Test checkout sandbox dan webhook sukses/gagal/expired di device.
 - Build APK staging baru setelah env DOKU sandbox aktif.
+
+## Database Performance Hardening
+
+Status: migration siap.
+
+Yang ditambahkan:
+
+- Migration `008_performance_indexes.sql`.
+- Index untuk dashboard admin/parent, progress anak, pending review, notification feed/unread badge, payment status, session/auth cleanup, dan FCM device token lookup.
+- `deploy/schema.sql` disinkronkan agar fresh install punya index yang sama dengan production migration.

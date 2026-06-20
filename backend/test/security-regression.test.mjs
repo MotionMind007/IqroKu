@@ -32,6 +32,10 @@ const dokuPaymentsMigration = await readFile(
   new URL('../../deploy/migrations/007_doku_payments.sql', import.meta.url),
   'utf8',
 );
+const performanceIndexesMigration = await readFile(
+  new URL('../../deploy/migrations/008_performance_indexes.sql', import.meta.url),
+  'utf8',
+);
 const pushSource = await readFile(new URL('../src/push.mjs', import.meta.url), 'utf8');
 const upsertDeviceTokenSource =
   dbSource.match(/export async function upsertDeviceToken[\s\S]*?export async function disableDeviceToken/)?.[0] ??
@@ -329,4 +333,19 @@ test('migration creates idempotent DOKU payment order and event storage', () => 
   assert.match(dokuPaymentsMigration, /UNIQUE \(provider, request_id\)/);
   assert.match(dokuPaymentsMigration, /signature_valid BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(dokuPaymentsMigration, /REFERENCES parents\(id\) ON DELETE CASCADE/);
+});
+
+test('performance migration indexes hot production query paths', () => {
+  assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_parents_created/);
+  assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_sessions_expires/);
+  assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires_unused/);
+  assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_attempts_review_created/);
+  assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_attempts_audio_file_name/);
+  assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_subscriptions_active_parent/);
+  assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_payment_orders_parent_status_created/);
+  assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_notifications_user_created/);
+  assert.match(performanceIndexesMigration, /CREATE INDEX IF NOT EXISTS idx_device_tokens_active_last_seen/);
+  assert.match(performanceIndexesMigration, /WHERE enabled = TRUE/);
+  assert.doesNotMatch(performanceIndexesMigration, /idx_notifications_unread_lookup/);
+  assert.doesNotMatch(performanceIndexesMigration, /idx_parents_google_id_not_null/);
 });
