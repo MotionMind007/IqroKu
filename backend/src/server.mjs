@@ -2296,12 +2296,7 @@ function renderAdminDashboard(metrics, notice = '') {
     ['Plus Users', metrics.totals.plusParents],
     ['Subscription Aktif', metrics.totals.activeSubscriptions],
     ['MRR Estimasi', rupiah(metrics.totals.monthlyRevenue)],
-    ['Rekaman Bacaan', metrics.totals.attempts],
-    ['Assessment Selesai', metrics.totals.assessedAttempts],
-    ['Pending Review', metrics.totals.pendingAttempts],
     ['Parent Aktif Hari Ini', metrics.totals.activeParentsToday],
-    ['Halaman Lancar', metrics.totals.fluentPages],
-    ['Perlu Ulang', metrics.totals.reviewPages],
   ];
 
   return `<!doctype html>
@@ -2499,7 +2494,6 @@ function renderAdminDashboard(metrics, notice = '') {
 
       ${renderParentsTable(metrics.parents, metrics.limits?.parents)}
       ${renderSubscriptionsTable(metrics.subscriptions, metrics.limits?.subscriptions)}
-      ${renderAttemptsTable(metrics.attempts, metrics.limits?.attempts)}
     </main>
   </body>
 </html>`;
@@ -2833,63 +2827,6 @@ function renderSubscriptionsTable(subscriptions, limit) {
       </tbody>
     </table>` : '<div class="empty">Belum ada subscription.</div>'}
   </section>`;
-}
-
-function renderAttemptsTable(attempts, limit) {
-  return `<section>
-    <div class="section-head">
-      <h2>Rekaman & Review Terbaru</h2>
-      <span class="muted">${attempts.length}${limit ? `/${limit}` : ''} terbaru</span>
-    </div>
-    ${attempts.length ? `<table>
-      <thead>
-        <tr>
-          <th>Anak</th>
-          <th>Parent</th>
-          <th>Materi</th>
-          <th>Status</th>
-          <th>Created</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${attempts.map((attempt) => `
-          <tr>
-            <td>${escapeHtml(attempt.childName)}</td>
-            <td>${escapeHtml(attempt.parentEmail)}</td>
-            <td>Iqro ${attempt.bookId} - Halaman ${attempt.pageNumber}</td>
-            <td>${renderAttemptStatus(attempt.assessmentStatus)}</td>
-            <td>${escapeHtml(formatDateTime(attempt.createdAt ?? attempt.assessedAt))}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>` : '<div class="empty">Belum ada rekaman bacaan.</div>'}
-  </section>`;
-}
-
-function renderAttemptStatus(status = 'recorded') {
-  const className = status === 'recorded' ? 'pending' : status === 'needsReview' ? 'review' : '';
-  return `<span class="pill ${className}">${escapeHtml(status)}</span>`;
-}
-
-function childName(state, childId) {
-  return state.children.find((child) => child.id === childId)?.name ?? 'Unknown';
-}
-
-function childParentId(state, childId) {
-  return state.children.find((child) => child.id === childId)?.parentId ?? '';
-}
-
-function childParentEmail(state, childId) {
-  const parentId = childParentId(state, childId);
-  return state.parents.find((parent) => parent.id === parentId)?.email ?? '-';
-}
-
-function sameDay(value, yyyyMmDd) {
-  return typeof value === 'string' && value.slice(0, 10) === yyyyMmDd;
-}
-
-function compareDateDesc(a, b) {
-  return String(b ?? '').localeCompare(String(a ?? ''));
 }
 
 function formatDateTime(value) {

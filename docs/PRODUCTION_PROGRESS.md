@@ -216,12 +216,12 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 ### 12. Admin Dashboard Query Optimization
 
 - `getAdminMetrics()` tidak lagi membaca semua parent, anak, subscription, attempt, dan progress ke memory.
-- Totals dashboard sekarang dihitung lewat SQL aggregation (`COUNT`, `COUNT FILTER`, `COUNT DISTINCT`).
+- Totals dashboard sekarang dihitung lewat SQL aggregation (`COUNT`, `COUNT DISTINCT`).
 - Tabel admin dibatasi:
   - parent terbaru 100 row
   - subscription terbaru 100 row
-  - rekaman/review terbaru 25 row
-- Recent attempts dan subscriptions memakai join SQL untuk mengambil nama anak/email parent tanpa full-table lookup di JavaScript.
+- Dashboard admin disederhanakan: history rekaman/review terbaru dan kartu assessment/progress dihapus.
+- Subscriptions memakai join SQL untuk mengambil email parent tanpa full-table lookup di JavaScript.
 - Security regression test ditambah supaya admin metrics tidak kembali memakai `getAllParents()`, `getAllChildren()`, `getAllSubscriptions()`, atau `getAllProgress()`.
 
 ### 13. Admin IP Restriction Foundation

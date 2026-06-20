@@ -820,17 +820,13 @@ function rowToPrayer(row) {
 export async function getAdminMetrics() {
   const parentListLimit = 100;
   const subscriptionListLimit = 100;
-  const attemptListLimit = 25;
   const today = new Date().toISOString().slice(0, 10);
 
   const [
     totals,
-    attemptTotals,
-    progressTotals,
     activeToday,
     parents,
     subscriptions,
-    attempts,
   ] = await Promise.all([
     queryOne(
       `SELECT
@@ -838,21 +834,6 @@ export async function getAdminMetrics() {
          COALESCE((SELECT COUNT(*)::int FROM children), 0) AS children,
          COALESCE((SELECT COUNT(DISTINCT parent_id)::int FROM subscriptions WHERE active = TRUE), 0) AS plus_parents,
          COALESCE((SELECT COUNT(*)::int FROM subscriptions WHERE active = TRUE), 0) AS active_subscriptions`,
-    ),
-    queryOne(
-      `SELECT
-         COUNT(*)::int AS attempts,
-         COUNT(*) FILTER (
-           WHERE assessed_at IS NOT NULL OR assessment_status IN ('fluent', 'needsReview')
-         )::int AS assessed_attempts
-       FROM attempts`,
-    ),
-    queryOne(
-      `SELECT
-         COUNT(*)::int AS progress_records,
-         COUNT(*) FILTER (WHERE status = 'fluent')::int AS fluent_pages,
-         COUNT(*) FILTER (WHERE status = 'review')::int AS review_pages
-       FROM progress`,
     ),
     queryOne(
       `SELECT COUNT(DISTINCT c.parent_id)::int AS total
@@ -898,15 +879,6 @@ export async function getAdminMetrics() {
        LIMIT $1`,
       [subscriptionListLimit],
     ),
-    queryAll(
-      `SELECT a.*, c.name AS child_name, p.email AS parent_email
-       FROM attempts a
-       LEFT JOIN children c ON c.id = a.child_id
-       LEFT JOIN parents p ON p.id = c.parent_id
-       ORDER BY a.created_at DESC
-       LIMIT $1`,
-      [attemptListLimit],
-    ),
   ]);
 
   return {
@@ -918,21 +890,11 @@ export async function getAdminMetrics() {
       plusParents: totals?.plus_parents ?? 0,
       activeSubscriptions: totals?.active_subscriptions ?? 0,
       monthlyRevenue: (totals?.active_subscriptions ?? 0) * 49000,
-      attempts: attemptTotals?.attempts ?? 0,
-      assessedAttempts: attemptTotals?.assessed_attempts ?? 0,
-      pendingAttempts: Math.max(
-        (attemptTotals?.attempts ?? 0) - (attemptTotals?.assessed_attempts ?? 0),
-        0,
-      ),
-      progressRecords: progressTotals?.progress_records ?? 0,
-      fluentPages: progressTotals?.fluent_pages ?? 0,
-      reviewPages: progressTotals?.review_pages ?? 0,
       activeParentsToday: activeToday?.total ?? 0,
     },
     limits: {
       parents: parentListLimit,
       subscriptions: subscriptionListLimit,
-      attempts: attemptListLimit,
     },
     parents: parents.map((row) => ({
       id: row.id,
@@ -944,11 +906,6 @@ export async function getAdminMetrics() {
     })),
     subscriptions: subscriptions.map((row) => ({
       ...rowToSubscription(row),
-      parentEmail: row.parent_email ?? '',
-    })),
-    attempts: attempts.map((row) => ({
-      ...rowToAttempt(row),
-      childName: row.child_name ?? 'Unknown',
       parentEmail: row.parent_email ?? '',
     })),
   };

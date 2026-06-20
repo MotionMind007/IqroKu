@@ -122,14 +122,14 @@ test('session tokens and auth cleanup avoid credential exposure', () => {
 
 test('admin metrics use bounded SQL aggregation instead of loading full tables', () => {
   assert.match(adminMetricsSource, /COUNT\(\*\)::int AS parents/);
-  assert.match(adminMetricsSource, /COUNT\(\*\) FILTER/);
   assert.match(adminMetricsSource, /LIMIT \$1/);
   assert.match(adminMetricsSource, /parentListLimit = 100/);
-  assert.match(adminMetricsSource, /attemptListLimit = 25/);
   assert.doesNotMatch(adminMetricsSource, /getAllParents\(\)/);
   assert.doesNotMatch(adminMetricsSource, /getAllChildren\(\)/);
   assert.doesNotMatch(adminMetricsSource, /getAllSubscriptions\(\)/);
   assert.doesNotMatch(adminMetricsSource, /getAllProgress\(\)/);
+  assert.doesNotMatch(adminMetricsSource, /attemptListLimit/);
+  assert.doesNotMatch(adminMetricsSource, /ORDER BY a\.created_at DESC/);
 });
 
 test('admin routes support optional backend IP allowlist', () => {
