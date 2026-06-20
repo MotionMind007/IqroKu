@@ -42,6 +42,7 @@ const externalFetchSource = await readFile(new URL('../src/external-fetch.mjs', 
 const observabilitySource = await readFile(new URL('../src/observability.mjs', import.meta.url), 'utf8');
 const authSource = await readFile(new URL('../src/auth.mjs', import.meta.url), 'utf8');
 const adminSource = await readFile(new URL('../src/admin.mjs', import.meta.url), 'utf8');
+const billingSource = await readFile(new URL('../src/billing.mjs', import.meta.url), 'utf8');
 const familySource = await readFile(new URL('../src/family.mjs', import.meta.url), 'utf8');
 const learningSource = await readFile(new URL('../src/learning.mjs', import.meta.url), 'utf8');
 const notificationSource = await readFile(new URL('../src/notifications.mjs', import.meta.url), 'utf8');
@@ -206,11 +207,15 @@ test('DOKU payment foundation verifies webhooks and keeps premium server-side', 
   assert.match(serverSource, /const DOKU_SECRET_KEY =/);
   assert.match(serverSource, /const DOKU_SEND_RETRIES =/);
   assert.match(serverSource, /createDokuPayments\(\{/);
+  assert.match(serverSource, /createBillingRoutes\(\{/);
+  assert.match(serverSource, /billingRoutes\.handle\(method, path, body, request\)/);
   assert.match(dokuSource, /export const DOKU_CHECKOUT_PATH = '\/checkout\/v1\/payment'/);
-  assert.match(serverSource, /path === '\/payments\/doku\/checkout'/);
-  assert.match(serverSource, /const authedParent = await authenticateRequest\(request\);[\s\S]*return dokuPayments\.createCheckout\(authedParent\);/);
-  assert.match(serverSource, /path === '\/subscriptions\/status'/);
-  assert.match(serverSource, /subscription: publicSubscription\(subscription\)/);
+  assert.match(billingSource, /path === '\/payments\/doku\/checkout'/);
+  assert.match(billingSource, /const authedParent = await authenticateRequest\(request\);[\s\S]*return dokuPayments\.createCheckout\(authedParent\);/);
+  assert.match(billingSource, /path === '\/subscriptions\/status'/);
+  assert.match(billingSource, /subscription: publicSubscription\(subscription\)/);
+  assert.match(billingSource, /paymentStatusAction\(path\)/);
+  assert.match(billingSource, /order\.parentId !== authedParent\.id[\s\S]*throw httpError\(403, 'access_denied'\)/);
   assert.match(serverSource, /path === '\/payments\/doku\/return'/);
   assert.match(serverSource, /path === '\/payments\/doku\/failed'/);
   assert.match(serverSource, /dokuPayments\.renderRedirectPage/);

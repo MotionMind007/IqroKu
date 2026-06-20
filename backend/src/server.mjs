@@ -13,6 +13,7 @@ import { createLearningRoutes } from './learning.mjs';
 import { createNotificationRoutes } from './notifications.mjs';
 import { createFamilyRoutes } from './family.mjs';
 import { createProgressRoutes } from './progress.mjs';
+import { createBillingRoutes } from './billing.mjs';
 
 // Initialize PostgreSQL connection
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -284,6 +285,18 @@ const progressRoutes = createProgressRoutes({
   requiredQuery,
   cleanString,
   clampNumber,
+  httpError,
+});
+
+const billingRoutes = createBillingRoutes({
+  db,
+  dokuPayments,
+  authenticateRequest,
+  authenticateAdmin,
+  requiredBody,
+  randomUUID,
+  now,
+  addDays,
   httpError,
 });
 
@@ -707,49 +720,9 @@ async function route(method, url, body, request) {
     return progressResult;
   }
 
-  if (method === 'POST' && path === '/subscriptions/activate') {
-    authenticateAdmin(request);
-    const parentId = requiredBody(body, 'parentId');
-    const parent = await db.findParentById(parentId);
-    if (!parent) {
-      throw httpError(404, 'parent_not_found');
-    }
-    const activeUntil = addDays(new Date(), 30).toISOString();
-    return db.upsertSubscription({
-      id: randomUUID(),
-      parentId,
-      plan: 'plus',
-      priceId: 'iqroku_plus_49000_monthly',
-      active: true,
-      activatedAt: now(),
-      activeUntil,
-    });
-  }
-
-  if (method === 'GET' && path === '/subscriptions/status') {
-    const authedParent = await authenticateRequest(request);
-    const subscription = await db.findSubscriptionByParent(authedParent.id);
-    return {
-      subscription: publicSubscription(subscription),
-    };
-  }
-
-  if (method === 'POST' && path === '/payments/doku/checkout') {
-    const authedParent = await authenticateRequest(request);
-    return dokuPayments.createCheckout(authedParent);
-  }
-
-  const paymentStatus = paymentStatusAction(path);
-  if (method === 'GET' && paymentStatus) {
-    const authedParent = await authenticateRequest(request);
-    const order = await db.findPaymentOrderByInvoiceNumber(paymentStatus.invoiceNumber);
-    if (!order) {
-      throw httpError(404, 'payment_order_not_found');
-    }
-    if (order.parentId !== authedParent.id) {
-      throw httpError(403, 'access_denied');
-    }
-    return dokuPayments.publicPaymentOrder(order);
+  const billingResult = await billingRoutes.handle(method, path, body, request);
+  if (billingResult) {
+    return billingResult;
   }
 
   const notificationResult = await notificationRoutes.handle(method, path, url, body, request);
@@ -940,26 +913,6 @@ async function sendPushNotification(notification) {
   );
 }
 
-function publicSubscription(subscription) {
-  if (!subscription) {
-    return {
-      active: false,
-      plan: 'free',
-      activeUntil: null,
-      activatedAt: null,
-    };
-  }
-  const activeUntil = subscription.activeUntil ? new Date(subscription.activeUntil) : null;
-  const active = subscription.active === true
-    && (!activeUntil || activeUntil.getTime() > Date.now());
-  return {
-    active,
-    plan: active ? subscription.plan : 'free',
-    activeUntil: subscription.activeUntil ?? null,
-    activatedAt: subscription.activatedAt ?? null,
-  };
-}
-
 function publicParent(parent) {
   const { passwordHash, pinHash, ...safeParent } = parent;
   return {
@@ -994,14 +947,6 @@ function publicPrayer(prayer) {
     meaning: prayer.meaning,
     sortOrder: Number(prayer.sortOrder ?? 0),
   };
-}
-
-function paymentStatusAction(path) {
-  const match = /^\/payments\/status\/([^/]+)$/.exec(path);
-  if (!match) {
-    return null;
-  }
-  return { invoiceNumber: decodeURIComponent(match[1]) };
 }
 
 function multipartBoundary(contentType) {

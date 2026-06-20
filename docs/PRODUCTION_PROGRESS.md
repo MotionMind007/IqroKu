@@ -351,7 +351,7 @@ Content-Type: application/json
 - Request backend sekarang memakai structured JSON log dengan `requestId`, method, path, status, durasi, IP, dan error code jika ada.
 - External call Google auth, Resend, DOKU, dan FCM memakai timeout + retry konservatif untuk timeout/network error, `408`, `429`, dan `5xx`.
 - Migration `008_performance_indexes.sql` menambah index untuk query panas production: dashboard admin/parent, progress anak, pending review, notification feed/unread badge, payment status, session/auth cleanup, dan FCM device token lookup.
-- Backend mulai dipecah dari `server.mjs`: observability, external fetch retry, auth helpers, admin panel, family/child PIN routes, progress routes, learning/audio/review flow, notification/device-token routes, dan DOKU payment flow sudah pindah ke modul terpisah.
+- Backend mulai dipecah dari `server.mjs`: observability, external fetch retry, auth helpers, admin panel, billing/subscription routes, family/child PIN routes, progress routes, learning/audio/review flow, notification/device-token routes, dan DOKU payment flow sudah pindah ke modul terpisah.
 
 ## DOKU Payment Foundation
 
@@ -378,7 +378,7 @@ GET  /payments/status/:invoiceNumber
 - Saat app kembali dari DOKU, app refresh status subscription dari backend.
 - Aktivasi Plus lokal/prototype di client sudah dihapus dari flow UI.
 - DOKU return/failed redirect sekarang punya landing page agar simulator/user tidak mendapat 404.
-- Implementasi DOKU sudah berada di `backend/src/payments/doku.mjs`; `server.mjs` hanya menghubungkan route ke modul tersebut.
+- Implementasi DOKU core berada di `backend/src/payments/doku.mjs`; route checkout/status/subscription berada di `backend/src/billing.mjs`.
 
 Security:
 
