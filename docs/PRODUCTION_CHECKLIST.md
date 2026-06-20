@@ -7,7 +7,7 @@ Checklist ini untuk mengubah IqroKu dari prototype kuat menjadi production ready
 - Ganti semua secret default.
 - Set `IQROKU_ADMIN_TOKEN` yang kuat.
 - Set database URL production dari secret manager atau env aman.
-- Pastikan `.env.production` tidak berisi secret asli di Git.
+- Pastikan file env asli tidak pernah masuk Git; gunakan `deploy/env.production.example` sebagai template.
 - Pisahkan env local, staging, dan production.
 - Aktifkan HTTPS untuk semua traffic.
 

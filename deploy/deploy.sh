@@ -17,7 +17,7 @@ echo ""
 echo "[1/7] Checking environment..."
 if [ ! -f "$APP_DIR/backend/.env" ]; then
     echo "  Missing $APP_DIR/backend/.env"
-    echo "  Copy deploy/.env.production to backend/.env and fill real values first."
+    echo "  Copy deploy/env.production.example to backend/.env and fill real values first."
     exit 1
 fi
 

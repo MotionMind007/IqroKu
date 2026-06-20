@@ -236,6 +236,7 @@ const learningRoutes = createLearningRoutes({
   db,
   authenticateRequest,
   enforceChildOwnership,
+  enforceIqroBookAccess,
   queuePushNotification,
   logError,
   requiredBody,
@@ -282,6 +283,7 @@ const progressRoutes = createProgressRoutes({
   db,
   authenticateRequest,
   enforceChildOwnership,
+  enforceIqroBookAccess,
   requiredBody,
   requiredQuery,
   cleanString,
@@ -859,6 +861,19 @@ async function enforceChildOwnership(parentId, childId) {
   const child = await db.findChildById(childId);
   if (!child || child.parentId !== parentId) {
     throw httpError(403, 'access_denied');
+  }
+}
+
+async function enforceIqroBookAccess(parentId, bookId) {
+  if (bookId <= 1) {
+    return;
+  }
+  const subscription = await db.findSubscriptionByParent(parentId);
+  const activeUntil = subscription?.activeUntil ? new Date(subscription.activeUntil) : null;
+  const active = subscription?.active === true
+    && (!activeUntil || activeUntil.getTime() > Date.now());
+  if (!active) {
+    throw httpError(402, 'iqroku_plus_required');
   }
 }
 

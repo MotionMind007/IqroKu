@@ -230,7 +230,7 @@ Dokumen ini mencatat pekerjaan production readiness yang sudah masuk supaya peru
 - Jika `ADMIN_ALLOWED_IPS` kosong, admin tetap memakai token/cookie seperti sebelumnya.
 - Jika diisi, `/admin/login`, `/admin`, `/admin/metrics`, dan `/admin/prayers` hanya menerima request dari IP yang ada di allowlist.
 - IP client dibaca dari `X-Forwarded-For` saat `TRUST_PROXY=true` dan dinormalisasi dari format IPv4-mapped (`::ffff:x.x.x.x`).
-- `deploy/.env.production` dan `deploy/README.md` sudah menambahkan cara konfigurasi.
+- `deploy/env.production.example` dan `deploy/README.md` sudah menambahkan cara konfigurasi.
 
 ### 14. Firebase Android Config Hygiene
 
@@ -368,7 +368,7 @@ Yang ditambahkan:
 - Migration `007_doku_payments.sql`.
 - Tabel `payment_orders` untuk invoice/checkout/status DOKU.
 - Tabel `payment_events` untuk webhook DOKU idempotent memakai `(provider, request_id)`.
-- Env DOKU di `deploy/.env.production`.
+- Env DOKU di `deploy/env.production.example`.
 - Endpoint:
 
 ```text

@@ -96,7 +96,7 @@ Lalu tes manual dari HP:
 | `nginx-iqroku.conf` | Nginx site config for iqroku.motionmind.store |
 | `schema.sql` | PostgreSQL database schema |
 | `migrations/` | Idempotent schema changes applied by `npm run migrate --prefix backend` |
-| `.env.production` | Environment template (fill in secrets) |
+| `env.production.example` | Environment template (fill in secrets) |
 | `backup.sh` | Daily database backup script |
 | `restore-backup.sh` | Destructive restore helper for restore drills |
 | `restore-drill.sh` | Non-destructive backup restore verification using a temporary DB |

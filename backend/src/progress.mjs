@@ -2,6 +2,7 @@ export function createProgressRoutes({
   db,
   authenticateRequest,
   enforceChildOwnership,
+  enforceIqroBookAccess,
   requiredBody,
   requiredQuery,
   cleanString,
@@ -22,6 +23,7 @@ export function createProgressRoutes({
       await enforceChildOwnership(authedParent.id, childId);
       const bookId = clampNumber(Number(requiredBody(body, 'bookId')), 1, 99);
       const pageNumber = clampNumber(Number(requiredBody(body, 'pageNumber')), 1, 999);
+      await enforceIqroBookAccess(authedParent.id, bookId);
       const status = cleanString(requiredBody(body, 'status'));
       const validStatuses = ['notStarted', 'learning', 'fluent', 'review'];
       if (!validStatuses.includes(status)) {

@@ -5,6 +5,7 @@ export function createLearningRoutes({
   db,
   authenticateRequest,
   enforceChildOwnership,
+  enforceIqroBookAccess,
   queuePushNotification,
   logError,
   requiredBody,
@@ -49,6 +50,7 @@ export function createLearningRoutes({
       const attemptId = cleanString(body.id) || randomUUID();
       const bookId = clampNumber(Number(requiredBody(body, 'bookId')), 1, 99);
       const pageNumber = clampNumber(Number(requiredBody(body, 'pageNumber')), 1, 999);
+      await enforceIqroBookAccess(authedParent.id, bookId);
 
       const attempt = await db.createAttempt({
         id: attemptId,

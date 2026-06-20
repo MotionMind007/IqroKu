@@ -221,7 +221,7 @@ export function createDokuPayments({
 
   function verifySignature(request) {
     const clientId = requiredHeader(request, 'client-id');
-    if (clientId !== config.clientId) {
+    if (!safeStrEqual(clientId, config.clientId)) {
       throw httpError(401, 'invalid_doku_client_id');
     }
     const requestId = requiredHeader(request, 'request-id');

@@ -11,7 +11,7 @@ const opsCheckSource = await readFile(new URL('../../deploy/ops-check.sh', impor
 const weeklyRestoreDrillSource = await readFile(new URL('../../deploy/weekly-restore-drill.sh', import.meta.url), 'utf8');
 const setupVpsSource = await readFile(new URL('../../deploy/setup-vps.sh', import.meta.url), 'utf8');
 const smokeTestSource = await readFile(new URL('../../deploy/smoke-test.sh', import.meta.url), 'utf8');
-const envTemplateSource = await readFile(new URL('../../deploy/.env.production', import.meta.url), 'utf8');
+const envTemplateSource = await readFile(new URL('../../deploy/env.production.example', import.meta.url), 'utf8');
 const constraintsMigration = await readFile(
   new URL('../../deploy/migrations/002_security_constraints.sql', import.meta.url),
   'utf8',
@@ -78,6 +78,11 @@ test('public serializers strip PIN hashes from parent and child responses', () =
   assert.match(familySource, /return \{ valid: true, child: publicChild\(child\) \};/);
 });
 
+test('production env template is explicit example file, not tracked as a real env file', () => {
+  assert.match(envTemplateSource, /CHANGE_THIS_PASSWORD/);
+  assert.match(envTemplateSource, /DOKU_SECRET_KEY=/);
+});
+
 test('database row mappers are isolated from query code', () => {
   assert.match(dbMappersSource, /export function rowToAttempt\(row\)/);
   assert.match(dbMappersSource, /audioUploadedAt: row\.audio_uploaded_at\?\.toISOString\(\)/);
@@ -128,9 +133,19 @@ test('public content routes serialize daily prayers through a dedicated module',
 test('progress routes require child ownership and validate statuses', () => {
   assert.match(progressSource, /path === '\/progress'/);
   assert.match(progressSource, /await enforceChildOwnership\(authedParent\.id, childId\);/);
+  assert.match(progressSource, /await enforceIqroBookAccess\(authedParent\.id, bookId\);/);
   assert.match(progressSource, /const validStatuses = \['notStarted', 'learning', 'fluent', 'review'\]/);
   assert.match(progressSource, /throw httpError\(400, 'invalid_status'\)/);
   assert.match(progressSource, /db\.upsertProgress\(\{ childId, bookId, pageNumber, status \}\)/);
+});
+
+test('premium Iqro books are enforced server-side for recording and progress writes', () => {
+  assert.match(serverSource, /function enforceIqroBookAccess\(parentId, bookId\)/);
+  assert.match(serverSource, /if \(bookId <= 1\)/);
+  assert.match(serverSource, /db\.findSubscriptionByParent\(parentId\)/);
+  assert.match(serverSource, /throw httpError\(402, 'iqroku_plus_required'\)/);
+  assert.match(learningSource, /await enforceIqroBookAccess\(authedParent\.id, bookId\);/);
+  assert.match(progressSource, /await enforceIqroBookAccess\(authedParent\.id, bookId\);/);
 });
 
 test('nginx proxies uploads through backend authorization instead of public alias serving', () => {
@@ -283,6 +298,7 @@ test('DOKU payment foundation verifies webhooks and keeps premium server-side', 
   assert.match(serverSource, /path === DOKU_WEBHOOK_PATH/);
   assert.match(serverSource, /dokuPayments\.handleWebhook\(body, request\)/);
   assert.match(dokuSource, /function verifySignature\(request\)/);
+  assert.match(dokuSource, /!safeStrEqual\(clientId, config\.clientId\)/);
   assert.match(dokuSource, /createHmac\('sha256', config\.secretKey\)/);
   assert.match(dokuSource, /Client-Id:\$\{config\.clientId\}/);
   assert.match(dokuSource, /typeof request\.rawBody !== 'string'/);

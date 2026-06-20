@@ -23,7 +23,7 @@ npm test
 
 ## Environment Variables
 
-Lihat `deploy/.env.production` untuk template production.
+Lihat `deploy/env.production.example` untuk template production.
 
 Variable penting:
 
