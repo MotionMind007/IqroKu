@@ -90,6 +90,8 @@ iqroku_app/lib/features/auth/login_screen.dart
 iqroku_app/lib/features/auth/register_screen.dart
 iqroku_app/lib/app/app_state.dart
 backend/src/server.mjs
+backend/src/auth.mjs
+backend/src/family.mjs
 backend/src/db.mjs
 ```
 
@@ -98,6 +100,7 @@ Aturan produk saat ini:
 - Register memakai email/password dan wajib setuju legal docs.
 - Google login hanya ada di halaman login awal.
 - Setelah register pertama kali, user masuk ke setup keluarga.
+- Setup profil anak, PIN parent/anak, dan child login ada di `backend/src/family.mjs`.
 
 Jika menambah email verification:
 

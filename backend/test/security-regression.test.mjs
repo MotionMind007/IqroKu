@@ -42,6 +42,7 @@ const externalFetchSource = await readFile(new URL('../src/external-fetch.mjs', 
 const observabilitySource = await readFile(new URL('../src/observability.mjs', import.meta.url), 'utf8');
 const authSource = await readFile(new URL('../src/auth.mjs', import.meta.url), 'utf8');
 const adminSource = await readFile(new URL('../src/admin.mjs', import.meta.url), 'utf8');
+const familySource = await readFile(new URL('../src/family.mjs', import.meta.url), 'utf8');
 const learningSource = await readFile(new URL('../src/learning.mjs', import.meta.url), 'utf8');
 const notificationSource = await readFile(new URL('../src/notifications.mjs', import.meta.url), 'utf8');
 const upsertDeviceTokenSource =
@@ -60,10 +61,10 @@ test('demo login is explicitly gated and does not issue deterministic parent-id 
 test('public serializers strip PIN hashes from parent and child responses', () => {
   assert.match(serverSource, /const \{ passwordHash, pinHash, \.\.\.safeParent \} = parent;/);
   assert.match(serverSource, /hasPin: Boolean\(pinHash\)/);
-  assert.match(serverSource, /function publicChild\(child\)/);
-  assert.match(serverSource, /const \{ pinHash, \.\.\.safeChild \} = child;/);
-  assert.match(serverSource, /return children\.map\(publicChild\);/);
-  assert.match(serverSource, /return \{ valid: true, child: publicChild\(child\) \};/);
+  assert.match(familySource, /function publicChild\(child\)/);
+  assert.match(familySource, /const \{ pinHash, \.\.\.safeChild \} = child;/);
+  assert.match(familySource, /return children\.map\(publicChild\);/);
+  assert.match(familySource, /return \{ valid: true, child: publicChild\(child\) \};/);
 });
 
 test('audio downloads authenticate before serving stored files', () => {
@@ -83,9 +84,11 @@ test('AI and mock assessment endpoints are disabled', () => {
 });
 
 test('child dynamic routes are matched with concrete path regex helpers', () => {
-  assert.match(serverSource, /function childSetPinAction\(path\)/);
-  assert.match(serverSource, /\^\\\/children\\\/\(\[\^\/\]\+\)\\\/set-pin\$/);
-  assert.match(serverSource, /function childScheduleAction\(path\)/);
+  assert.match(serverSource, /createFamilyRoutes\(\{/);
+  assert.match(serverSource, /familyRoutes\.handle\(method, path, url, body, request\)/);
+  assert.match(familySource, /function childSetPinAction\(path\)/);
+  assert.match(familySource, /\^\\\/children\\\/\(\[\^\/\]\+\)\\\/set-pin\$/);
+  assert.match(familySource, /function childScheduleAction\(path\)/);
   assert.doesNotMatch(serverSource, /path === '\/children\/:id\/set-pin'/);
   assert.doesNotMatch(serverSource, /path === '\/children\/:id\/schedule'/);
 });
