@@ -41,6 +41,7 @@ const dokuSource = await readFile(new URL('../src/payments/doku.mjs', import.met
 const externalFetchSource = await readFile(new URL('../src/external-fetch.mjs', import.meta.url), 'utf8');
 const observabilitySource = await readFile(new URL('../src/observability.mjs', import.meta.url), 'utf8');
 const authSource = await readFile(new URL('../src/auth.mjs', import.meta.url), 'utf8');
+const adminSource = await readFile(new URL('../src/admin.mjs', import.meta.url), 'utf8');
 const upsertDeviceTokenSource =
   dbSource.match(/export async function upsertDeviceToken[\s\S]*?export async function disableDeviceToken/)?.[0] ??
   '';
@@ -155,27 +156,28 @@ test('admin routes support optional backend IP allowlist', () => {
 });
 
 test('admin forms include CSRF tokens and admin mutations verify them', () => {
+  assert.match(serverSource, /createAdminPanel\(\{/);
   assert.match(serverSource, /const ADMIN_CSRF_SECRET =/);
   assert.match(serverSource, /function createAdminCsrfToken\(\)/);
   assert.match(serverSource, /function verifyAdminCsrfToken\(token\)/);
   assert.match(serverSource, /function enforceAdminCsrf\(body\)/);
   assert.match(serverSource, /throw httpError\(403, 'admin_csrf_invalid'\)/);
-  assert.match(serverSource, /verifyAdminCsrfToken\(body\.csrfToken\)/);
-  assert.match(serverSource, /enforceAdminCsrf\(body\);[\s\S]*const fields = prayerFromBody\(body\)/);
-  assert.match(serverSource, /enforceAdminCsrf\(body\);[\s\S]*const prayer = await db\.findPrayerById/);
-  assert.match(serverSource, /enforceAdminCsrf\(body\);[\s\S]*const parent = await db\.findParentById/);
-  assert.match(serverSource, /name="csrfToken" type="hidden"/);
+  assert.match(adminSource, /verifyCsrfToken\(body\.csrfToken\)/);
+  assert.match(adminSource, /enforceCsrf\(body\);[\s\S]*const fields = prayerFromBody\(body\)/);
+  assert.match(adminSource, /enforceCsrf\(body\);[\s\S]*const prayer = await db\.findPrayerById/);
+  assert.match(adminSource, /enforceCsrf\(body\);[\s\S]*const parent = await db\.findParentById/);
+  assert.match(adminSource, /name="csrfToken" type="hidden"/);
   assert.match(envTemplateSource, /ADMIN_CSRF_SECRET=/);
 });
 
 test('admin parent deletion requires admin auth and explicit email confirmation', () => {
-  assert.match(serverSource, /function adminParentAction\(path\)/);
-  assert.match(serverSource, /\^\\\/admin\\\/parents\\\/\(\[\^\/\]\+\)\\\/\(delete\)\$/);
-  assert.match(serverSource, /authenticateAdmin\(request\);[\s\S]*const parent = await db\.findParentById\(parentAction\.id\)/);
-  assert.match(serverSource, /const confirmEmail = normalizeEmail\(requiredBody\(body, 'confirmEmail'\)\)/);
-  assert.match(serverSource, /confirmEmail !== parent\.email/);
-  assert.match(serverSource, /await db\.deleteParent\(parent\.id\)/);
-  assert.match(serverSource, /Ketik email untuk hapus/);
+  assert.match(adminSource, /function adminParentAction\(path\)/);
+  assert.match(adminSource, /\^\\\/admin\\\/parents\\\/\(\[\^\/\]\+\)\\\/\(delete\)\$/);
+  assert.match(adminSource, /authenticateAdmin\(request\);[\s\S]*const parent = await db\.findParentById\(parentAction\.id\)/);
+  assert.match(adminSource, /const confirmEmail = normalizeEmail\(requiredBody\(body, 'confirmEmail'\)\)/);
+  assert.match(adminSource, /confirmEmail !== parent\.email/);
+  assert.match(adminSource, /await db\.deleteParent\(parent\.id\)/);
+  assert.match(adminSource, /Ketik email untuk hapus/);
   assert.match(dbSource, /export async function deleteParent/);
   assert.match(dbSource, /DELETE FROM notifications/);
   assert.match(dbSource, /DELETE FROM parents WHERE id = \$1 RETURNING \*/);
@@ -263,7 +265,7 @@ test('basic HTTP response hardening is enabled for JSON, files, and admin cookie
   assert.match(serverSource, /sendCorsPreflight\(response, request\)/);
   assert.match(serverSource, /function secureCookieAttribute\(\)/);
   assert.match(serverSource, /process\.env\.NODE_ENV === 'production' \? '; Secure' : ''/);
-  assert.match(serverSource, /SameSite=Strict; Max-Age=86400\$\{secureCookieAttribute\(\)\}/);
+  assert.match(adminSource, /SameSite=Strict; Max-Age=86400\$\{secureCookieAttribute\(\)\}/);
   assert.match(serverSource, /replaceAll\('`', '&#96;'\)/);
 });
 

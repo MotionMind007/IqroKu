@@ -188,6 +188,23 @@ iqroku_app/lib/features/learning/
 
 Gunakan `shouldShowAds` sebagai flag utama agar saat user subscribe semua slot iklan bisa hilang konsisten.
 
+## Mengubah Admin Panel
+
+File utama:
+
+```text
+backend/src/admin.mjs
+backend/src/server.mjs
+backend/src/db.mjs
+backend/test/security-regression.test.mjs
+```
+
+Catatan:
+
+- Route dan HTML admin ada di `backend/src/admin.mjs`.
+- IP allowlist, CSRF token generator, dan secure cookie helper masih disediakan dari `server.mjs`.
+- Setelah mengubah admin form, pastikan hidden `csrfToken` tetap ada dan aksi mutasi tetap memanggil `enforceCsrf`.
+
 ## Mengubah Asset/Icon
 
 File utama:
